@@ -15,7 +15,7 @@ export default async function HostLayout({
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      <HostNav email={host.email} />
+      <HostNav email={host.email ?? ""} />
       <main className="max-w-4xl mx-auto px-4 py-8">{children}</main>
     </div>
   );
