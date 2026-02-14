@@ -17,10 +17,8 @@ datasource db {
 // ============================================================
 
 enum BoardStatus {
-  open        // accepting players + payments
-  closed      // no more purchases, pre-randomization
-  randomized  // numbers assigned to rows/columns
-  revealed    // board visible with numbers, game day
+  open
+  closed
 }
 
 enum PaymentStatus {
@@ -39,20 +37,30 @@ enum ReleaseReason {
   manual  // Host or admin manually released the square
 }
 
+/// Determines scoring period structure for the board.
+/// Drives payout slots, score entry UI, and winner highlighting.
+///
+/// PHASE 1 (March Madness): Default to "halves"
+/// FUTURE  (CFB/NFL season): Host selects at board creation
+enum PeriodType {
+  halves   // College basketball, college football â†' H1, Final
+  quarters // NFL, NBA, etc. â†' Q1, Q2, Q3, Q4
+}
+
 // ============================================================
 // OBJECT 1: HOST
 // ============================================================
 
 model Host {
-  id              String   @id @default(uuid())
-  supabaseUserId  String   @unique @map("supabase_user_id") // auth identity — never key on email
-  name            String?  // allow null during magic-link-first flow
-  email           String   @unique
-  stripeAccountId String?  @map("stripe_account_id")
+  id             String @id @default(uuid())
+  supabaseUserId String @unique @map("supabase_user_id") // auth identity — never key on email
+  name           String? // allow null during magic-link-first flow
+  email          String? // display/contact only — NOT the identity key
 
-  // Stripe account readiness — updated via account.updated webhook
-  stripeChargesEnabled Boolean @default(false) @map("stripe_charges_enabled")
-  stripePayoutsEnabled Boolean @default(false) @map("stripe_payouts_enabled")
+  // Stripe Connect
+  stripeAccountId      String?  @map("stripe_account_id")
+  stripeChargesEnabled Boolean  @default(false) @map("stripe_charges_enabled")  // gate board creation on this
+  stripePayoutsEnabled Boolean  @default(false) @map("stripe_payouts_enabled")  // updated via account.updated webhook
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -79,14 +87,24 @@ model Board {
   rowNumbers   Int[]?      @map("row_numbers")
   colNumbers   Int[]?      @map("col_numbers")
 
-  // Team names — row team and column team for game-day display
-  teamRow      String?     @map("team_row")
-  teamCol      String?     @map("team_col")
+  // Team names — row team and column team for display + score entry
+  teamRow String? @map("team_row") // e.g. "Duke"
+  teamCol String? @map("team_col") // e.g. "Vermont"
 
-  // Quarter scores — populated by host during the game
-  // Shape: { q1?: { row: number, col: number }, q2?: ..., q3?: ..., final?: ... }
-  // row = teamRow score, col = teamCol score
-  scores       Json?
+  // --- Scoring period config ---
+  // Drives payout structure keys, score entry UI, and winner highlighting.
+  // Phase 1: default "halves" for March Madness
+  // Future:  host picks at creation (quarters for NFL, halves for CFB)
+  periodType   PeriodType @default(halves) @map("period_type")
+  periodLabels String[]   @map("period_labels") // e.g. ["H1","Final"] or ["Q1","Q2","Q3","Q4"]
+                                                  // No default — enforced at board creation:
+                                                  //   halves  → ["H1","Final"]
+                                                  //   quarters → ["Q1","Q2","Q3","Q4"]
+
+  // Scores entered by host on game day. Parallel arrays indexed to periodLabels.
+  // Store FULL scores (e.g. [35, 70]). Compute last digit in code: score % 10.
+  scoresTeamA  Int[]?     @map("scores_team_a")  // e.g. [35, 70] for halves or [7, 14, 21, 28] for quarters
+  scoresTeamB  Int[]?     @map("scores_team_b")
 
   // --- Smart fields ---
   payoutStructure        Json?     @map("payout_structure")
@@ -108,7 +126,7 @@ model Board {
 model Square {
   squareId        String        @id @default(uuid()) @map("square_id")
   boardId         String        @map("board_id")
-  position        Int
+  position        Int           // 0–99. Row = position / 10, col = position % 10
   playerName      String?       @map("player_name")
   playerEmail     String?       @map("player_email")
   paymentStatus   PaymentStatus @default(open) @map("payment_status")
@@ -121,7 +139,6 @@ model Square {
   payment PaymentReference?
 
   @@unique([boardId, position])
-  @@index([boardId], map: "idx_squares_board")
   @@index([boardId, playerEmail], map: "idx_squares_board_email") // fast lookup for max_squares_per_player enforcement
   @@map("squares")
 }

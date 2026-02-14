@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
-import { calculateWinners, type Scores } from "@/lib/winners";
+import { calculateWinnersFromArrays } from "@/lib/winners";
 import type { Metadata } from "next";
 
 interface Props {
@@ -53,25 +53,20 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
     (s) => s.paymentStatus === "paid"
   ).length;
 
-  const payout = board.payoutStructure as {
-    q1: number;
-    q2: number;
-    q3: number;
-    final: number;
-  } | null;
-
+  // Payout structure keyed by period labels: { "H1": 50, "Final": 50 }
+  const payout = board.payoutStructure as Record<string, number> | null;
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
 
-  // Calculate winners from scores
-  const scores = (board.scores as Scores) ?? null;
-  const winners = calculateWinners(
-    scores,
-    board.rowNumbers ?? null,
-    board.colNumbers ?? null
+  // Calculate winners from typed arrays
+  const winners = calculateWinnersFromArrays(
+    board.periodLabels,
+    board.scoresTeamA,
+    board.scoresTeamB,
+    board.rowNumbers,
+    board.colNumbers
   );
   const winnerPositions = winners.map((w) => w.position);
 
-  // Squares are already client-safe (email not selected)
   const clientSquares = board.squares;
 
   return (
@@ -123,44 +118,39 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           </span>
         </div>
 
-        {/* Payout structure — show as dollars for players */}
+        {/* Payout structure — dynamic from periodLabels, show as dollars for players */}
         {payout && (
           <div className="flex gap-2 mb-5">
-            {(
-              [
-                ["Q1", payout.q1],
-                ["Q2", payout.q2],
-                ["Q3", payout.q3],
-                ["Final", payout.final],
-              ] as const
-            ).map(([label, pct]) => (
-              <div
-                key={label}
-                className="flex-1 rounded-lg border border-gray-800 bg-gray-900 p-2 text-center"
-              >
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">
-                  {label}
+            {board.periodLabels.map((label) => {
+              const pct = payout[label] ?? 0;
+              return (
+                <div
+                  key={label}
+                  className="flex-1 rounded-lg border border-gray-800 bg-gray-900 p-2 text-center"
+                >
+                  <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                    {label}
+                  </div>
+                  <div className="text-xs font-medium mt-0.5">
+                    ${Math.round(totalPot * (pct / 100))}
+                  </div>
                 </div>
-                <div className="text-xs font-medium mt-0.5">
-                  ${Math.round(totalPot * (pct / 100))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        {/* Winner summary cards — shown during/after game */}
+        {/* Winner summary cards — dynamic from periodLabels */}
         {winners.length > 0 && (
           <div className="grid grid-cols-2 gap-2 mb-5">
             {winners.map((w) => {
               const sq = clientSquares[w.position];
-              const quarterPct =
-                payout?.[w.quarter as keyof typeof payout] ?? 0;
-              const prize = Math.round(totalPot * (quarterPct / 100));
+              const periodPct = payout?.[w.label] ?? 0;
+              const prize = Math.round(totalPot * (periodPct / 100));
 
               return (
                 <div
-                  key={w.quarter}
+                  key={w.label}
                   className="rounded-lg border border-yellow-900/50 bg-yellow-950/30 p-3"
                 >
                   <div className="text-[10px] text-yellow-500 uppercase tracking-wider font-medium">

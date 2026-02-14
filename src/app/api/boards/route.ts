@@ -3,17 +3,19 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { generateSlug } from "@/lib/slug";
 
+// Period labels derived from periodType
+const PERIOD_LABELS: Record<string, string[]> = {
+  halves: ["H1", "Final"],
+  quarters: ["Q1", "Q2", "Q3", "Q4"],
+};
+
 interface CreateBoardBody {
   gameName: string;
   squarePrice: number; // dollars (converted to cents)
   teamRow: string;
   teamCol: string;
-  payoutStructure: {
-    q1: number;
-    q2: number;
-    q3: number;
-    final: number;
-  };
+  periodType?: "halves" | "quarters"; // defaults to halves for pilot
+  payoutStructure: Record<string, number>; // keyed by period label, e.g. { "H1": 50, "Final": 50 }
 }
 
 export async function POST(request: Request) {
@@ -68,24 +70,47 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. Validate payout structure sums to 100% (±0.01 tolerance)
-    const { q1, q2, q3, final: finalPct } = body.payoutStructure ?? {};
+    // 4. Determine period type and labels
+    const periodType = body.periodType ?? "halves"; // default for March Madness pilot
+    const periodLabels = PERIOD_LABELS[periodType];
 
-    if (q1 == null || q2 == null || q3 == null || finalPct == null) {
+    if (!periodLabels) {
       return NextResponse.json(
-        { error: "Payout structure must include q1, q2, q3, and final." },
+        { error: "Invalid period type. Must be 'halves' or 'quarters'." },
         { status: 400 }
       );
     }
 
-    if ([q1, q2, q3, finalPct].some((v) => v < 0)) {
+    // 5. Validate payout structure — keys must match periodLabels, values sum to 100%
+    const payoutStructure = body.payoutStructure;
+
+    if (!payoutStructure || typeof payoutStructure !== "object") {
+      return NextResponse.json(
+        { error: "Payout structure is required." },
+        { status: 400 }
+      );
+    }
+
+    // Check that every period label has a payout entry
+    for (const label of periodLabels) {
+      if (payoutStructure[label] == null) {
+        return NextResponse.json(
+          { error: `Payout structure must include "${label}".` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const values = periodLabels.map((l) => payoutStructure[l]);
+
+    if (values.some((v) => typeof v !== "number" || v < 0)) {
       return NextResponse.json(
         { error: "Payout percentages cannot be negative." },
         { status: 400 }
       );
     }
 
-    const total = q1 + q2 + q3 + finalPct;
+    const total = values.reduce((sum, v) => sum + v, 0);
     if (Math.abs(total - 100) > 0.01) {
       return NextResponse.json(
         { error: "Payout percentages must total 100%." },
@@ -93,7 +118,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Generate unique slug (retry on collision)
+    // 6. Generate unique slug (retry on collision)
     let slug = generateSlug();
     let attempts = 0;
     while (attempts < 5) {
@@ -103,7 +128,7 @@ export async function POST(request: Request) {
       attempts++;
     }
 
-    // 6. Create Board + 100 Squares in one transaction
+    // 7. Create Board + 100 Squares in one transaction
     const squarePriceCents = Math.round(body.squarePrice * 100);
 
     const board = await prisma.$transaction(async (tx) => {
@@ -117,7 +142,9 @@ export async function POST(request: Request) {
           slug,
           teamRow: body.teamRow.trim(),
           teamCol: body.teamCol.trim(),
-          payoutStructure: body.payoutStructure,
+          periodType,
+          periodLabels,
+          payoutStructure,
           maxSquaresPerPlayer: 10,
           currency: "USD",
           hostPayoutResponsible: true,

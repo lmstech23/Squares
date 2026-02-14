@@ -6,11 +6,16 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
+type ScoresBody = {
+  scoresTeamA: number[]; // col team scores per period
+  scoresTeamB: number[]; // row team scores per period
+};
+
 export async function POST(request: Request, { params }: Props) {
   try {
     const { id } = await params;
 
-    // 1. Authenticate
+    // 1. Auth
     const supabase = await createClient();
     const {
       data: { user },
@@ -28,7 +33,7 @@ export async function POST(request: Request, { params }: Props) {
       return NextResponse.json({ error: "Host not found" }, { status: 404 });
     }
 
-    // 2. Fetch board + ownership check
+    // 2. Board + ownership
     const board = await prisma.board.findUnique({
       where: { boardId: id },
     });
@@ -37,7 +42,7 @@ export async function POST(request: Request, { params }: Props) {
       return NextResponse.json({ error: "Board not found" }, { status: 404 });
     }
 
-    // 3. Board must be closed (numbers assigned)
+    // 3. Must be closed (numbers assigned)
     if (board.status !== "closed") {
       return NextResponse.json(
         { error: "Board must be closed with numbers assigned before entering scores." },
@@ -45,7 +50,7 @@ export async function POST(request: Request, { params }: Props) {
       );
     }
 
-    // 3b. Data-based guard: numbers must actually exist (defense against partial state)
+    // 3b. Belt-and-suspenders: numbers must actually exist
     if (
       !board.rowNumbers ||
       !board.colNumbers ||
@@ -58,51 +63,48 @@ export async function POST(request: Request, { params }: Props) {
       );
     }
 
-    // 4. Parse + validate scores — only allow known quarter keys
-    const body = await request.json();
-    const quarters = ["q1", "q2", "q3", "final"] as const;
-    type Quarter = (typeof quarters)[number];
+    // 4. Parse + validate — arrays must match periodLabels length
+    const body: ScoresBody = await request.json();
 
-    const validatedScores: Partial<Record<Quarter, { col: number; row: number }>> = {};
-
-    for (const q of quarters) {
-      const score = body[q];
-      if (score !== undefined) {
-        if (
-          typeof score.col !== "number" ||
-          typeof score.row !== "number" ||
-          score.col < 0 ||
-          score.row < 0 ||
-          !Number.isInteger(score.col) ||
-          !Number.isInteger(score.row)
-        ) {
-          return NextResponse.json(
-            { error: `Invalid score for ${q}. Scores must be non-negative integers.` },
-            { status: 400 }
-          );
-        }
-        validatedScores[q] = { col: score.col, row: score.row };
-      }
-    }
-
-    if (Object.keys(validatedScores).length === 0) {
+    if (!Array.isArray(body.scoresTeamA) || !Array.isArray(body.scoresTeamB)) {
       return NextResponse.json(
-        { error: "No valid quarter scores provided." },
+        { error: "scoresTeamA and scoresTeamB must be arrays." },
         { status: 400 }
       );
     }
 
-    // 5. Merge with existing scores (partial updates allowed)
-    const existingScores = (board.scores as Record<string, unknown>) ?? {};
-    const mergedScores = { ...existingScores, ...validatedScores };
+    const n = board.periodLabels.length;
 
-    // 6. Save
-    await prisma.board.update({
+    if (body.scoresTeamA.length !== n || body.scoresTeamB.length !== n) {
+      return NextResponse.json(
+        { error: `Scores arrays must match periodLabels length (${n}).` },
+        { status: 400 }
+      );
+    }
+
+    for (let i = 0; i < n; i++) {
+      const a = body.scoresTeamA[i];
+      const b = body.scoresTeamB[i];
+
+      if (!Number.isInteger(a) || a < 0 || !Number.isInteger(b) || b < 0) {
+        return NextResponse.json(
+          { error: `Invalid score at index ${i}. Scores must be non-negative integers.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 5. Save
+    const updated = await prisma.board.update({
       where: { boardId: id },
-      data: { scores: mergedScores },
+      data: {
+        scoresTeamA: body.scoresTeamA,
+        scoresTeamB: body.scoresTeamB,
+      },
+      select: { scoresTeamA: true, scoresTeamB: true, periodLabels: true },
     });
 
-    return NextResponse.json({ scores: mergedScores });
+    return NextResponse.json(updated);
   } catch (error) {
     console.error("Score update error:", error);
     return NextResponse.json(

@@ -3,76 +3,90 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface QuarterScore {
-  col: number;
-  row: number;
-}
-
-interface Scores {
-  q1?: QuarterScore;
-  q2?: QuarterScore;
-  q3?: QuarterScore;
-  final?: QuarterScore;
-}
-
 interface ScoreEntryProps {
   boardId: string;
   teamCol: string;
   teamRow: string;
-  existingScores: Scores | null;
+  periodLabels: string[];
+  existingScoresA: number[] | null;
+  existingScoresB: number[] | null;
 }
-
-const QUARTERS = [
-  { key: "q1" as const, label: "Q1" },
-  { key: "q2" as const, label: "Q2" },
-  { key: "q3" as const, label: "Q3" },
-  { key: "final" as const, label: "Final" },
-];
 
 export default function ScoreEntry({
   boardId,
   teamCol,
   teamRow,
-  existingScores,
+  periodLabels,
+  existingScoresA,
+  existingScoresB,
 }: ScoreEntryProps) {
   const router = useRouter();
-  const [scores, setScores] = useState<Scores>(existingScores ?? {});
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
 
   // Track input values as strings so empty fields work cleanly
-  const [inputs, setInputs] = useState<
-    Record<string, { col: string; row: string }>
-  >(() => {
-    const init: Record<string, { col: string; row: string }> = {};
-    for (const q of QUARTERS) {
-      const s = existingScores?.[q.key];
-      init[q.key] = {
-        col: s !== undefined ? String(s.col) : "",
-        row: s !== undefined ? String(s.row) : "",
-      };
-    }
-    return init;
-  });
+  const [inputsA, setInputsA] = useState<string[]>(() =>
+    periodLabels.map((_, i) =>
+      existingScoresA?.[i] !== undefined && existingScoresA?.[i] !== null
+        ? String(existingScoresA[i])
+        : ""
+    )
+  );
+  const [inputsB, setInputsB] = useState<string[]>(() =>
+    periodLabels.map((_, i) =>
+      existingScoresB?.[i] !== undefined && existingScoresB?.[i] !== null
+        ? String(existingScoresB[i])
+        : ""
+    )
+  );
 
-  function updateInput(quarter: string, team: "col" | "row", value: string) {
-    setInputs((prev) => ({
-      ...prev,
-      [quarter]: { ...prev[quarter], [team]: value },
-    }));
+  function updateInput(
+    team: "a" | "b",
+    index: number,
+    value: string
+  ) {
+    if (team === "a") {
+      setInputsA((prev) => {
+        const next = [...prev];
+        next[index] = value;
+        return next;
+      });
+    } else {
+      setInputsB((prev) => {
+        const next = [...prev];
+        next[index] = value;
+        return next;
+      });
+    }
+    setSaved(false);
   }
 
-  async function saveQuarter(quarterKey: string) {
-    const input = inputs[quarterKey];
-    const colVal = parseInt(input.col, 10);
-    const rowVal = parseInt(input.row, 10);
+  // Check if at least one complete period has scores
+  function hasAnyScores(): boolean {
+    return periodLabels.some(
+      (_, i) => inputsA[i] !== "" && inputsB[i] !== ""
+    );
+  }
 
-    if (isNaN(colVal) || isNaN(rowVal) || colVal < 0 || rowVal < 0) {
-      setError("Enter valid scores for both teams.");
+  async function saveScores() {
+    // Build arrays — fill incomplete periods with existing values or 0
+    const scoresA = periodLabels.map((_, i) => {
+      const val = parseInt(inputsA[i], 10);
+      return isNaN(val) ? (existingScoresA?.[i] ?? 0) : val;
+    });
+    const scoresB = periodLabels.map((_, i) => {
+      const val = parseInt(inputsB[i], 10);
+      return isNaN(val) ? (existingScoresB?.[i] ?? 0) : val;
+    });
+
+    // Validate all values are non-negative
+    if (scoresA.some((v) => v < 0) || scoresB.some((v) => v < 0)) {
+      setError("Scores must be non-negative.");
       return;
     }
 
-    setSaving(quarterKey);
+    setSaving(true);
     setError("");
 
     try {
@@ -80,24 +94,24 @@ export default function ScoreEntry({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          [quarterKey]: { col: colVal, row: rowVal },
+          scoresTeamA: scoresA,
+          scoresTeamB: scoresB,
         }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Failed to save score.");
-        setSaving(null);
+        setError(data.error || "Failed to save scores.");
+        setSaving(false);
         return;
       }
 
-      const data = await res.json();
-      setScores(data.scores);
-      setSaving(null);
+      setSaving(false);
+      setSaved(true);
       router.refresh();
     } catch {
       setError("Network error. Try again.");
-      setSaving(null);
+      setSaving(false);
     }
   }
 
@@ -106,54 +120,50 @@ export default function ScoreEntry({
       <p className="text-sm font-medium mb-3">Enter Scores</p>
 
       {/* Header row */}
-      <div className="grid grid-cols-[1fr_80px_80px_64px] gap-2 mb-2 text-[10px] text-gray-500 uppercase tracking-wider">
+      <div className="grid grid-cols-[1fr_80px_80px] gap-2 mb-2 text-[10px] text-gray-500 uppercase tracking-wider">
         <div />
         <div className="text-center">{teamCol}</div>
         <div className="text-center">{teamRow}</div>
-        <div />
       </div>
 
-      {/* Quarter rows */}
-      {QUARTERS.map((q) => {
-        const saved = scores[q.key];
-        const isSaving = saving === q.key;
+      {/* Period rows — dynamic from periodLabels */}
+      {periodLabels.map((label, i) => (
+        <div
+          key={label}
+          className="grid grid-cols-[1fr_80px_80px] gap-2 items-center mb-2"
+        >
+          <div className="text-xs text-gray-400 font-medium">{label}</div>
+          <input
+            type="number"
+            min="0"
+            value={inputsA[i] ?? ""}
+            onChange={(e) => updateInput("a", i, e.target.value)}
+            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white text-center outline-none focus:border-gray-500 transition-colors w-full"
+            placeholder="—"
+          />
+          <input
+            type="number"
+            min="0"
+            value={inputsB[i] ?? ""}
+            onChange={(e) => updateInput("b", i, e.target.value)}
+            className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white text-center outline-none focus:border-gray-500 transition-colors w-full"
+            placeholder="—"
+          />
+        </div>
+      ))}
 
-        return (
-          <div
-            key={q.key}
-            className="grid grid-cols-[1fr_80px_80px_64px] gap-2 items-center mb-2"
-          >
-            <div className="text-xs text-gray-400 font-medium">{q.label}</div>
-            <input
-              type="number"
-              min="0"
-              value={inputs[q.key]?.col ?? ""}
-              onChange={(e) => updateInput(q.key, "col", e.target.value)}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white text-center outline-none focus:border-gray-500 transition-colors w-full"
-              placeholder="—"
-            />
-            <input
-              type="number"
-              min="0"
-              value={inputs[q.key]?.row ?? ""}
-              onChange={(e) => updateInput(q.key, "row", e.target.value)}
-              className="rounded border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white text-center outline-none focus:border-gray-500 transition-colors w-full"
-              placeholder="—"
-            />
-            <button
-              onClick={() => saveQuarter(q.key)}
-              disabled={isSaving}
-              className={`rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                saved
-                  ? "bg-green-950 text-green-400 border border-green-900 hover:bg-green-900"
-                  : "bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700"
-              } disabled:opacity-50`}
-            >
-              {isSaving ? "…" : saved ? "✓ Saved" : "Save"}
-            </button>
-          </div>
-        );
-      })}
+      {/* Save button */}
+      <button
+        onClick={saveScores}
+        disabled={saving || !hasAnyScores()}
+        className={`mt-2 w-full rounded px-3 py-2 text-sm font-medium transition-colors ${
+          saved
+            ? "bg-green-950 text-green-400 border border-green-900"
+            : "bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700"
+        } disabled:opacity-50`}
+      >
+        {saving ? "Saving…" : saved ? "✓ Scores Saved" : "Save Scores"}
+      </button>
 
       {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
     </div>

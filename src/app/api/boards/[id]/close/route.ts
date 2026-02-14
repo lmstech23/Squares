@@ -57,51 +57,34 @@ export async function POST(request: Request, { params }: Props) {
       );
     }
 
-    // 4. Atomic transition: open → randomized
-    //    Uses updateMany because `status` is not part of Board's unique
-    //    constraint — update() can't filter on it.
+    // 4. Atomic transition: open → closed with numbers assigned
+    //    Single write with optimistic lock on status = "open".
+    //    Race condition: two concurrent close requests → only one succeeds.
     const rowNumbers = shuffleArray();
     const colNumbers = shuffleArray();
 
-    const updated = await prisma.$transaction(async (tx) => {
-      // Close the board — optimistic lock on status = "open"
-      const { count } = await tx.board.updateMany({
-        where: { boardId: id, status: "open" },
-        data: { status: "closed" },
-      });
-
-      if (count === 0) {
-        throw new Error("RACE_CONDITION");
-      }
-
-      // Assign numbers + set to randomized
-      await tx.board.updateMany({
-        where: { boardId: id, status: "closed" },
-        data: {
-          rowNumbers,
-          colNumbers,
-          status: "randomized",
-        },
-      });
-
-      // Fetch the final state to return
-      return tx.board.findUniqueOrThrow({
-        where: { boardId: id },
-      });
+    const { count } = await prisma.board.updateMany({
+      where: { boardId: id, status: "open" },
+      data: {
+        status: "closed",
+        rowNumbers,
+        colNumbers,
+      },
     });
 
-    return NextResponse.json({
-      status: updated.status,
-      rowNumbers: updated.rowNumbers,
-      colNumbers: updated.colNumbers,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message === "RACE_CONDITION") {
+    if (count === 0) {
       return NextResponse.json(
         { error: "Board was already closed by another request." },
         { status: 409 }
       );
     }
+
+    return NextResponse.json({
+      status: "closed",
+      rowNumbers,
+      colNumbers,
+    });
+  } catch (error) {
     console.error("Close board error:", error);
     return NextResponse.json(
       { error: "Failed to close board." },

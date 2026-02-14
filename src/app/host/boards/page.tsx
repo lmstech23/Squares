@@ -86,9 +86,7 @@ export default async function HostBoardsPage() {
                   className={`text-xs px-2 py-0.5 rounded-full ${
                     board.status === "open"
                       ? "bg-green-950 text-green-400 border border-green-900"
-                      : board.status === "randomized" || board.status === "revealed"
-                        ? "bg-blue-950 text-blue-400 border border-blue-900"
-                        : "bg-gray-800 text-gray-400 border border-gray-700"
+                      : "bg-gray-800 text-gray-400 border border-gray-700"
                   }`}
                 >
                   {board.status}

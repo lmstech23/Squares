@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const DEFAULT_PAYOUTS = { q1: 25, q2: 25, q3: 25, final: 25 };
+// Phase 1: default to halves for March Madness
+// Future: surface a period type selector for CFB/NFL
+const PERIOD_LABELS = ["H1", "Final"];
+const DEFAULT_PAYOUTS: Record<string, number> = { H1: 50, Final: 50 };
 
 export default function NewBoardForm() {
   const router = useRouter();
@@ -15,7 +18,10 @@ export default function NewBoardForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const payoutTotal = payouts.q1 + payouts.q2 + payouts.q3 + payouts.final;
+  const payoutTotal = PERIOD_LABELS.reduce(
+    (sum, label) => sum + (payouts[label] ?? 0),
+    0
+  );
   const payoutValid = Math.abs(payoutTotal - 100) <= 0.01;
   const priceNum = parseFloat(squarePrice);
   const formValid =
@@ -25,9 +31,9 @@ export default function NewBoardForm() {
     priceNum >= 1 &&
     payoutValid;
 
-  function updatePayout(key: keyof typeof payouts, value: string) {
+  function updatePayout(label: string, value: string) {
     const num = parseFloat(value) || 0;
-    setPayouts((prev) => ({ ...prev, [key]: num }));
+    setPayouts((prev) => ({ ...prev, [label]: num }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -46,6 +52,7 @@ export default function NewBoardForm() {
           squarePrice: priceNum,
           teamRow: teamRow.trim(),
           teamCol: teamCol.trim(),
+          periodType: "halves",
           payoutStructure: payouts,
         }),
       });
@@ -58,7 +65,6 @@ export default function NewBoardForm() {
         return;
       }
 
-      // Redirect to host board management view
       router.push(`/host/boards/${data.boardId}`);
     } catch {
       setError("Failed to create board");
@@ -147,21 +153,14 @@ export default function NewBoardForm() {
         )}
       </div>
 
-      {/* Payout Structure */}
+      {/* Payout Structure — dynamic from period labels */}
       <div>
         <label className="block text-sm text-gray-400 mb-1.5">
           Payout split
         </label>
-        <div className="grid grid-cols-4 gap-2">
-          {(
-            [
-              ["q1", "Q1"],
-              ["q2", "Q2"],
-              ["q3", "Q3"],
-              ["final", "Final"],
-            ] as const
-          ).map(([key, label]) => (
-            <div key={key}>
+        <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${PERIOD_LABELS.length}, 1fr)` }}>
+          {PERIOD_LABELS.map((label) => (
+            <div key={label}>
               <div className="text-xs text-gray-500 mb-1 text-center">
                 {label}
               </div>
@@ -171,8 +170,8 @@ export default function NewBoardForm() {
                   min="0"
                   max="100"
                   step="1"
-                  value={payouts[key] || ""}
-                  onChange={(e) => updatePayout(key, e.target.value)}
+                  value={payouts[label] || ""}
+                  onChange={(e) => updatePayout(label, e.target.value)}
                   className="w-full rounded-lg border border-gray-800 bg-gray-900 px-2 py-2 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
                 />
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">

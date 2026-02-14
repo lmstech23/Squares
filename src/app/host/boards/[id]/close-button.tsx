@@ -29,7 +29,7 @@ export default function CloseBoardButton({ boardId }: { boardId: string }) {
         return;
       }
 
-      // Refresh the page to show randomized state
+      // Refresh the page to show closed state with numbers
       router.refresh();
     } catch {
       alert("Failed to close board");
