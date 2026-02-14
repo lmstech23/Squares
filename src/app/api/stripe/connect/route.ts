@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     if (!stripeAccountId) {
       const account = await stripe.accounts.create({
         type: "express",
-        email: host.email,
+        email: host.email ?? undefined,
         metadata: {
           hostId: host.id,
         },
