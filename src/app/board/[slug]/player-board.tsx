@@ -51,7 +51,7 @@ export default function PlayerBoard({
   const [error, setError] = useState("");
 
   const isOpen = status === "open";
-  const hasNumbers = rowNumbers && colNumbers;
+  const hasNumbers = (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
 
