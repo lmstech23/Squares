@@ -136,8 +136,14 @@ export default function PlayerBoard({
         <div className="overflow-x-auto pb-2">
         {/* Team col label */}
         {teamCol && (
-          <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-7" : ""}`}>
-            {teamCol}
+          <div
+            className="inline-grid gap-[3px] mb-1"
+            style={{ gridTemplateColumns: hasNumbers ? '28px repeat(10, 1fr)' : teamRow ? '18px repeat(10, 1fr)' : 'repeat(10, 1fr)' }}
+          >
+            <div />
+            <div className="col-span-10 text-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium">
+              {teamCol}
+            </div>
           </div>
         )}
 
