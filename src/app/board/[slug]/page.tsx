@@ -56,6 +56,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
   // Payout structure keyed by period labels: { "H1": 50, "Final": 50 }
   const payout = board.payoutStructure as Record<string, number> | null;
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
+  const playerPool = Math.round(totalPot * (1 - board.hostCutPercent / 100));
 
   // Calculate winners from typed arrays
   const winners = calculateWinnersFromArrays(
@@ -132,7 +133,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
                     {label}
                   </div>
                   <div className="text-xs font-medium mt-0.5">
-                    ${Math.round(totalPot * (pct / 100))}
+                    ${Math.round(playerPool * (pct / 100))}
                   </div>
                 </div>
               );
@@ -146,7 +147,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
             {winners.map((w) => {
               const sq = clientSquares[w.position];
               const periodPct = payout?.[w.label] ?? 0;
-              const prize = Math.round(totalPot * (periodPct / 100));
+              const prize = Math.round(playerPool * (periodPct / 100));
 
               return (
                 <div

@@ -84,8 +84,8 @@ model Board {
   slug         String      @unique
 
   // Null until board closes, then arrays of [0-9] shuffled
-  rowNumbers   Int[]       @map("row_numbers")
-  colNumbers   Int[]       @map("col_numbers")
+  rowNumbers   Int[]?      @map("row_numbers")
+  colNumbers   Int[]?      @map("col_numbers")
 
   // Team names — row team and column team for display + score entry
   teamRow String? @map("team_row") // e.g. "Duke"
@@ -103,11 +103,12 @@ model Board {
 
   // Scores entered by host on game day. Parallel arrays indexed to periodLabels.
   // Store FULL scores (e.g. [35, 70]). Compute last digit in code: score % 10.
-  scoresTeamA  Int[]      @map("scores_team_a")  // e.g. [35, 70] for halves or [7, 14, 21, 28] for quarters
-  scoresTeamB  Int[]      @map("scores_team_b")
+  scoresTeamA  Int[]?     @map("scores_team_a")  // e.g. [35, 70] for halves or [7, 14, 21, 28] for quarters
+  scoresTeamB  Int[]?     @map("scores_team_b")
 
   // --- Smart fields ---
   payoutStructure        Json?     @map("payout_structure")
+  hostCutPercent         Int       @default(0) @map("host_cut_percent") // e.g. 20 = host keeps 20%, players split remaining 80%
   maxSquaresPerPlayer    Int       @default(10) @map("max_squares_per_player")
   boardCloseTime         DateTime? @map("board_close_time")
   hostPayoutResponsible  Boolean   @default(true) @map("host_payout_responsible")

@@ -42,6 +42,8 @@ export default async function HostBoardPage({ params }: Props) {
   // Payout structure keyed by period labels: { "H1": 50, "Final": 50 }
   const payout = board.payoutStructure as Record<string, number> | null;
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
+  const playerPool = Math.round(totalPot * (1 - board.hostCutPercent / 100));
+  const hostTake = totalPot - playerPool;
 
   // Calculate winners from typed arrays
   const winners = calculateWinnersFromArrays(
@@ -61,6 +63,9 @@ export default async function HostBoardPage({ params }: Props) {
           <h1 className="text-xl font-bold">{board.gameName}</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             ${board.squarePrice / 100} per square · ${totalPot} total pot
+            {board.hostCutPercent > 0 && (
+              <span> · ${hostTake} your cut · ${playerPool} player pool</span>
+            )}
           </p>
           {(board.teamCol || board.teamRow) && (
             <p className="text-xs text-gray-600 mt-0.5">
@@ -148,7 +153,7 @@ export default async function HostBoardPage({ params }: Props) {
           {winners.map((w) => {
             const sq = board.squares[w.position];
             const periodPct = payout?.[w.label] ?? 0;
-            const prize = Math.round(totalPot * (periodPct / 100));
+            const prize = Math.round(playerPool * (periodPct / 100));
 
             return (
               <div
@@ -185,7 +190,7 @@ export default async function HostBoardPage({ params }: Props) {
                 <div className="text-sm font-medium mt-0.5">
                   {pct}%
                   <span className="text-xs text-gray-600 ml-1">
-                    ${Math.round(totalPot * (pct / 100))}
+                    ${Math.round(playerPool * (pct / 100))}
                   </span>
                 </div>
               </div>

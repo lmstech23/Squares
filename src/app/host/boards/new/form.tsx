@@ -14,6 +14,7 @@ export default function NewBoardForm() {
   const [teamCol, setTeamCol] = useState("");
   const [teamRow, setTeamRow] = useState("");
   const [squarePrice, setSquarePrice] = useState("");
+  const [hostCut, setHostCut] = useState("20");
   const [payouts, setPayouts] = useState(DEFAULT_PAYOUTS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,12 +25,18 @@ export default function NewBoardForm() {
   );
   const payoutValid = Math.abs(payoutTotal - 100) <= 0.01;
   const priceNum = parseFloat(squarePrice);
+  const hostCutNum = parseInt(hostCut, 10) || 0;
+  const hostCutValid = hostCutNum >= 0 && hostCutNum <= 50;
   const formValid =
     gameName.trim().length > 0 &&
     teamCol.trim().length > 0 &&
     teamRow.trim().length > 0 &&
     priceNum >= 1 &&
-    payoutValid;
+    payoutValid &&
+    hostCutValid;
+
+  const totalPot = priceNum >= 1 ? priceNum * 100 : 0;
+  const playerPool = Math.round(totalPot * (1 - hostCutNum / 100));
 
   function updatePayout(label: string, value: string) {
     const num = parseFloat(value) || 0;
@@ -53,6 +60,7 @@ export default function NewBoardForm() {
           teamRow: teamRow.trim(),
           teamCol: teamCol.trim(),
           periodType: "halves",
+          hostCutPercent: hostCutNum,
           payoutStructure: payouts,
         }),
       });
@@ -146,9 +154,44 @@ export default function NewBoardForm() {
             className="w-full rounded-lg border border-gray-800 bg-gray-900 pl-7 pr-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors"
           />
         </div>
-        {priceNum >= 1 && (
+        {totalPot > 0 && (
           <p className="text-xs text-gray-600 mt-1.5">
-            100 squares × ${priceNum} = ${priceNum * 100} total pot
+            100 squares × ${priceNum} = ${totalPot} total pot
+          </p>
+        )}
+      </div>
+
+      {/* Host Cut */}
+      <div>
+        <label
+          htmlFor="hostCut"
+          className="block text-sm text-gray-400 mb-1.5"
+        >
+          Your cut
+        </label>
+        <div className="relative">
+          <input
+            id="hostCut"
+            type="number"
+            min="0"
+            max="50"
+            step="1"
+            value={hostCut}
+            onChange={(e) => setHostCut(e.target.value)}
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 text-xs">
+            %
+          </span>
+        </div>
+        {totalPot > 0 && hostCutValid && (
+          <p className="text-xs text-gray-600 mt-1.5">
+            You keep ${Math.round(totalPot * (hostCutNum / 100))} · Players split ${playerPool}
+          </p>
+        )}
+        {!hostCutValid && (
+          <p className="text-xs text-red-400 mt-1.5">
+            Must be 0–50%
           </p>
         )}
       </div>
@@ -156,7 +199,7 @@ export default function NewBoardForm() {
       {/* Payout Structure — dynamic from period labels */}
       <div>
         <label className="block text-sm text-gray-400 mb-1.5">
-          Payout split
+          Player payout split
         </label>
         <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${PERIOD_LABELS.length}, 1fr)` }}>
           {PERIOD_LABELS.map((label) => (
@@ -188,6 +231,14 @@ export default function NewBoardForm() {
         >
           Total: {payoutTotal}%{!payoutValid && " — must equal 100%"}
         </p>
+        {payoutValid && totalPot > 0 && hostCutValid && (
+          <p className="text-xs text-gray-600 mt-0.5">
+            {PERIOD_LABELS.map(
+              (label) =>
+                `${label}: $${Math.round(playerPool * ((payouts[label] ?? 0) / 100))}`
+            ).join(" · ")}
+          </p>
+        )}
       </div>
 
       {/* Error */}

@@ -15,6 +15,7 @@ interface CreateBoardBody {
   teamRow: string;
   teamCol: string;
   periodType?: "halves" | "quarters"; // defaults to halves for pilot
+  hostCutPercent?: number; // 0-50, default 0. Host keeps this %, players split the rest.
   payoutStructure: Record<string, number>; // keyed by period label, e.g. { "H1": 50, "Final": 50 }
 }
 
@@ -81,7 +82,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Validate payout structure — keys must match periodLabels, values sum to 100%
+    // 5. Validate host cut percentage
+    const hostCutPercent = body.hostCutPercent ?? 0;
+    if (!Number.isInteger(hostCutPercent) || hostCutPercent < 0 || hostCutPercent > 50) {
+      return NextResponse.json(
+        { error: "Host cut must be an integer between 0 and 50." },
+        { status: 400 }
+      );
+    }
+
+    // 6. Validate payout structure — keys must match periodLabels, values sum to 100%
     const payoutStructure = body.payoutStructure;
 
     if (!payoutStructure || typeof payoutStructure !== "object") {
@@ -145,6 +155,7 @@ export async function POST(request: Request) {
           periodType,
           periodLabels,
           payoutStructure,
+          hostCutPercent,
           maxSquaresPerPlayer: 10,
           currency: "USD",
           hostPayoutResponsible: true,
