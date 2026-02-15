@@ -42,7 +42,7 @@ export default function BoardGrid({
         </div>
       )}
 
-      <div className="flex items-start">
+      <div className="flex">
         {/* Team row label — rotated left of grid */}
           {teamRow && (
             <div className="flex flex-col mr-1">

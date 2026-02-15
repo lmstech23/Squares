@@ -141,7 +141,7 @@ export default function PlayerBoard({
           </div>
         )}
 
-        <div className="flex items-start">
+        <div className="flex">
           {/* Team row label — rotated left of grid */}
           {hasNumbers && teamRow && (
             <div className="flex flex-col mr-1">
