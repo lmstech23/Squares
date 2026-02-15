@@ -45,7 +45,7 @@ export default function BoardGrid({
       <div className="flex">
         {/* Team row label — rotated left of grid */}
           {teamRow && (
-          <div className="flex items-center justify-center mr-1">
+          <div className={`flex justify-center mr-1 ${hasNumbers ? "pt-[27px]" : ""}`}>
             <span
               className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
               style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
