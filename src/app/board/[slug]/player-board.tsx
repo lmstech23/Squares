@@ -138,9 +138,10 @@ export default function PlayerBoard({
         {teamCol && (
           <div
             className="inline-grid gap-[3px] mb-1"
-            style={{ gridTemplateColumns: hasNumbers ? '28px repeat(10, 1fr)' : teamRow ? '18px repeat(10, 1fr)' : 'repeat(10, 1fr)' }}
+            style={{ gridTemplateColumns: hasNumbers ? '28px repeat(10, 1fr)' : teamRow ? '14px 4px repeat(10, 1fr)' : 'repeat(10, 1fr)' }}
           >
-            <div />
+            {(hasNumbers || teamRow) && <div />}
+            {teamRow && !hasNumbers && <div />}
             <div className="col-span-10 text-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium">
               {teamCol}
             </div>
