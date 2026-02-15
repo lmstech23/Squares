@@ -37,7 +37,7 @@ export default async function HostBoardPage({ params }: Props) {
   ).length;
   const boardUrl = `${process.env.NEXT_PUBLIC_URL}/board/${board.slug}`;
   const isOpen = board.status === "open";
-  const hasNumbers = board.rowNumbers && board.colNumbers;
+  const hasNumbers = board.rowNumbers.length === 10 && board.colNumbers.length === 10;
 
   // Payout structure keyed by period labels: { "H1": 50, "Final": 50 }
   const payout = board.payoutStructure as Record<string, number> | null;

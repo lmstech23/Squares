@@ -31,7 +31,7 @@ export default function BoardGrid({
   teamRow,
   winnerPositions,
 }: BoardGridProps) {
-  const hasNumbers = rowNumbers && colNumbers;
+  const hasNumbers = (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
 
   return (
     <div className="overflow-x-auto">
