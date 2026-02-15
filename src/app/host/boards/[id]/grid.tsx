@@ -84,7 +84,7 @@ export default function BoardGrid({
               {/* Row header */}
               {hasNumbers && (
                 <div className="flex items-center justify-center text-xs font-bold text-gray-400 w-7">
-                  {rowNumbers[row]}
+                  {rowNumbers?.[row]}
                 </div>
               )}
 
