@@ -136,7 +136,7 @@ export default function PlayerBoard({
         <div className="overflow-x-auto pb-2">
         {/* Team col label */}
         {teamCol && (
-          <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-7" : ""}`}>
+          <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-7" : teamRow ? "ml-[18px]" : ""}`}>
             {teamCol}
           </div>
         )}
