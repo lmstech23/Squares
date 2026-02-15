@@ -67,7 +67,7 @@ export default function BoardGrid({
           {hasNumbers && (
             <>
               <div />
-              {colNumbers.map((num, i) => (
+              {colNumbers?.map((num, i) => (
                 <div
                   key={`col-${i}`}
                   className="flex items-center justify-center text-xs font-bold text-gray-400 h-7"
