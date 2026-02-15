@@ -135,7 +135,7 @@ export default function PlayerBoard({
       {/* Grid */}
         <div className="overflow-x-auto pb-2">
         {/* Team col label */}
-        {hasNumbers && teamCol && (
+        {teamCol && (
           <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ml-7">
             {teamCol}
           </div>
@@ -143,9 +143,9 @@ export default function PlayerBoard({
 
         <div className="flex">
           {/* Team row label — rotated left of grid */}
-          {hasNumbers && teamRow && (
+          {teamRow && (
             <div className="flex flex-col mr-1">
-              <div className="h-6 mb-[3px]" />
+              {hasNumbers && <div className="h-6 mb-[3px]" />}
               <div className="flex items-center justify-center flex-1">
                 <span
                   className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
