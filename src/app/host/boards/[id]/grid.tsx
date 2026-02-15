@@ -37,7 +37,7 @@ export default function BoardGrid({
     <div className="overflow-x-auto">
       {/* Team col label — above the grid */}
         {teamCol && (
-        <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ml-8">
+          <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-8" : ""}`}>
           {teamCol}
         </div>
       )}
