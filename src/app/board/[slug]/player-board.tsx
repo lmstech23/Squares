@@ -169,7 +169,7 @@ export default function PlayerBoard({
             {hasNumbers && (
               <>
                 <div />
-                {colNumbers.map((num, i) => (
+                {colNumbers?.map((num, i) => (
                   <div
                     key={`col-${i}`}
                     className="flex items-center justify-center text-[10px] font-bold text-gray-500 h-6"
@@ -186,7 +186,7 @@ export default function PlayerBoard({
                 {/* Row header */}
                 {hasNumbers && (
                   <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-7">
-                    {rowNumbers[row]}
+                    {rowNumbers?.[row]}
                   </div>
                 )}
 
