@@ -42,18 +42,21 @@ export default function BoardGrid({
         </div>
       )}
 
-      <div className="flex">
+      <div className="flex items-start">
         {/* Team row label — rotated left of grid */}
           {teamRow && (
-          <div className={`flex justify-center mr-1 ${hasNumbers ? "pt-[27px]" : ""}`}>
-            <span
-              className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
-              style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
-            >
-              {teamRow}
-            </span>
-          </div>
-        )}
+            <div className="flex flex-col mr-1">
+              {hasNumbers && <div className="h-6 mb-[3px]" />}
+              <div className="flex items-center justify-center flex-1">
+                <span
+                  className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
+                  style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
+                >
+                  {teamRow}
+                </span>
+              </div>
+            </div>
+          )}
 
         <div
           className="inline-grid gap-1"
