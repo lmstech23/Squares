@@ -133,20 +133,13 @@ export default function PlayerBoard({
       )}
 
       {/* Grid */}
-        <div className="overflow-x-auto pb-2">
-        {/* Team col label */}
-        {teamCol && (
-          <div
-            className="inline-grid gap-[3px] mb-1"
-            style={{ gridTemplateColumns: hasNumbers ? '28px repeat(10, 1fr)' : teamRow ? '14px 4px repeat(10, 1fr)' : 'repeat(10, 1fr)' }}
-          >
-            {(hasNumbers || teamRow) && <div />}
-            {teamRow && !hasNumbers && <div />}
-            <div className="col-span-10 text-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium">
+        <div className="overflow-x-auto pb-2 w-fit">
+          {/* Team col label */}
+          {teamCol && (
+            <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-8" : ""}`}>
               {teamCol}
             </div>
-          </div>
-        )}
+          )}
 
         <div className="flex">
           {/* Team row label — rotated left of grid */}
