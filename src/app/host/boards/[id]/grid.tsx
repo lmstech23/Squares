@@ -36,7 +36,7 @@ export default function BoardGrid({
   return (
     <div className="overflow-x-auto">
       {/* Team col label — above the grid */}
-      {teamCol {hasNumbers && teamCol && ({hasNumbers && teamCol && ( (
+        {teamCol && (
         <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ml-8">
           {teamCol}
         </div>
@@ -44,7 +44,7 @@ export default function BoardGrid({
 
       <div className="flex">
         {/* Team row label — rotated left of grid */}
-        {teamRow {hasNumbers && teamRow && ({hasNumbers && teamRow && ( (
+          {teamRow && (
           <div className="flex items-center justify-center mr-1">
             <span
               className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
