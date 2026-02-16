@@ -54,29 +54,24 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const supabase = createClient();
-    let result;
+    const body =
+        method === "phone"
+          ? { phone: formatPhone(phone), token, type: "sms" }
+          : { email, token, type: "email" };
 
-    if (method === "phone") {
-      const formatted = formatPhone(phone);
-      result = await supabase.auth.verifyOtp({
-        phone: formatted,
-        token,
-        type: "sms",
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
-    } else {
-      result = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: "email",
-      });
-    }
 
-    if (result.error) {
-      setError(result.error.message);
-      setLoading(false);
-      return;
-    }
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Verification failed");
+        setLoading(false);
+        return;
+      }
 
     // Session is set in cookies by createBrowserClient.
     // Full page load so middleware sees the fresh cookies.
