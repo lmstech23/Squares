@@ -54,7 +54,8 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const body =
+    try {
+      const body =
         method === "phone"
           ? { phone: formatPhone(phone), token, type: "sms" }
           : { email, token, type: "email" };
@@ -63,19 +64,28 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        redirect: "follow",
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Verification failed");
-        setLoading(false);
+      // If server redirected, follow it
+      if (res.redirected) {
+        window.location.href = res.url;
         return;
       }
 
-    // Session is set in cookies by createBrowserClient.
-    // Full page load so middleware sees the fresh cookies.
-    window.location.href = "/host/boards";
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError((data as any).error || "Verification failed");
+        return;
+      }
+
+      // Fallback
+      window.location.href = "/host/boards";
+    } catch {
+      setError("Verification failed. Try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const displayIdentity = method === "phone" ? phone : email;
@@ -151,7 +161,10 @@ export default function LoginPage() {
             <div className="flex rounded-lg border border-gray-800 bg-gray-900 mb-6 p-0.5">
               <button
                 type="button"
-                onClick={() => { setMethod("phone"); setError(null); }}
+                onClick={() => {
+                  setMethod("phone");
+                  setError(null);
+                }}
                 className={`flex-1 text-sm py-2 rounded-md transition-colors ${
                   method === "phone"
                     ? "bg-gray-800 text-white font-medium"
@@ -162,7 +175,10 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setMethod("email"); setError(null); }}
+                onClick={() => {
+                  setMethod("email");
+                  setError(null);
+                }}
                 className={`flex-1 text-sm py-2 rounded-md transition-colors ${
                   method === "email"
                     ? "bg-gray-800 text-white font-medium"
