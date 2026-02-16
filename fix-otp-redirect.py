@@ -1,4 +1,65 @@
-"use client";
+#!/usr/bin/env python3
+"""Fix: Server-side OTP verification so cookies get set properly.
+Run from your project root: python fix-otp-redirect.py
+"""
+
+import os
+import sys
+
+# 1. Create API route for server-side OTP verification
+API_DIR = "src/app/api/auth/verify-otp"
+os.makedirs(API_DIR, exist_ok=True)
+
+API_FILE = os.path.join(API_DIR, "route.ts")
+API_CONTENT = '''import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export async function POST(request: Request) {
+  try {
+    const { email, phone, token, type } = await request.json();
+
+    const supabase = await createClient();
+
+    let result;
+    if (type === "sms") {
+      result = await supabase.auth.verifyOtp({
+        phone,
+        token,
+        type: "sms",
+      });
+    } else {
+      result = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: "email",
+      });
+    }
+
+    if (result.error) {
+      return NextResponse.json(
+        { error: result.error.message },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json(
+      { error: "Verification failed" },
+      { status: 500 }
+    );
+  }
+}
+'''
+
+with open(API_FILE, "w", encoding="utf-8") as f:
+    f.write(API_CONTENT)
+print(f"\u2713 Created: {API_FILE}")
+
+# 2. Update login page to call the API route instead of client-side verifyOtp
+LOGIN_FILE = "src/app/login/page.tsx"
+
+LOGIN_CONTENT = '''"use client";
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -15,7 +76,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   function formatPhone(raw: string): string {
-    const digits = raw.replace(/\D/g, "");
+    const digits = raw.replace(/\\D/g, "");
     if (digits.startsWith("1") && digits.length === 11) return "+" + digits;
     if (digits.length === 10) return "+1" + digits;
     return "+" + digits;
@@ -121,7 +182,7 @@ export default function LoginPage() {
                   maxLength={6}
                   value={token}
                   onChange={(e) =>
-                    setToken(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    setToken(e.target.value.replace(/\\D/g, "").slice(0, 6))
                   }
                   placeholder="000000"
                   className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors tracking-[0.3em] text-center font-mono"
@@ -135,7 +196,7 @@ export default function LoginPage() {
                 disabled={loading || token.length !== 6}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Verifying…" : "Verify"}
+                {loading ? "Verifying\u2026" : "Verify"}
               </button>
             </form>
 
@@ -224,7 +285,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Sending…" : "Send sign-in code"}
+                {loading ? "Sending\u2026" : "Send sign-in code"}
               </button>
             </form>
           </div>
@@ -233,3 +294,16 @@ export default function LoginPage() {
     </div>
   );
 }
+'''
+
+with open(LOGIN_FILE, "w", encoding="utf-8") as f:
+    f.write(LOGIN_CONTENT)
+print(f"\u2713 Fixed: {LOGIN_FILE}")
+
+print()
+print("Changes:")
+print("  - Created /api/auth/verify-otp (server-side verification)")
+print("  - Login page now POSTs to the API route instead of client verifyOtp")
+print("  - Server sets cookies properly, then client does full page redirect")
+print()
+print('Next: git add -A && git commit -m "fix: server-side OTP verify for proper cookies" && git push origin main')
