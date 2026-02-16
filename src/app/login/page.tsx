@@ -81,7 +81,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/host/boards");
+    window.location.href = "/host/boards";
   }
 
   const displayIdentity = method === "phone" ? phone : email;
