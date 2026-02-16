@@ -54,7 +54,7 @@ export default function LoginPage() {
       return;
     }
 
-    // OTP verified � session is set. Redirect to dashboard.
+    // OTP verified � session is set. Redirect to dashboard.
     router.push("/host/boards");
   }
 
@@ -109,7 +109,7 @@ export default function LoginPage() {
                 disabled={loading || token.length !== 6}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Verifying\u2026" : "Verify"}
+                {loading ? "Verifying…" : "Verify"}
               </button>
             </form>
 
@@ -151,7 +151,7 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? "Sending\u2026" : "Send sign-in code"}
+              {loading ? "Sending…" : "Send sign-in code"}
             </button>
           </form>
         )}
