@@ -1,4 +1,5 @@
-import { createServerClient } from "@supabase/ssr";
+#!/usr/bin/env python3
+content = '''import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
@@ -37,3 +38,8 @@ export async function updateSession(request: NextRequest) {
 
   return response;
 }
+'''
+
+with open("src/lib/supabase/middleware.ts", "w", encoding="utf-8") as f:
+    f.write(content)
+print("fixed")
