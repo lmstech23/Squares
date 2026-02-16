@@ -44,7 +44,7 @@ export default function PlayerBoard({
   teamCol,
   teamRow,
   winnerPositions: winnerPositionsArr,
-slug, }: PlayerBoardProps) {
+}: PlayerBoardProps) {
   const [squares, setSquares] = useState(initialSquares);
   const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
   const [playerName, setPlayerName] = useState("");
