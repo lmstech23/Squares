@@ -1,4 +1,13 @@
-"use client";
+#!/usr/bin/env python3
+"""Fix #5b — Add phone number login option alongside email OTP.
+Run from your project root: python fix-phone-login.py
+"""
+
+import sys
+
+FILE = "src/app/login/page.tsx"
+
+NEW_CONTENT = '''"use client";
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -17,7 +26,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   function formatPhone(raw: string): string {
-    const digits = raw.replace(/\D/g, "");
+    const digits = raw.replace(/\\D/g, "");
     if (digits.startsWith("1") && digits.length === 11) return "+" + digits;
     if (digits.length === 10) return "+1" + digits;
     return "+" + digits;
@@ -123,7 +132,7 @@ export default function LoginPage() {
                   maxLength={6}
                   value={token}
                   onChange={(e) =>
-                    setToken(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    setToken(e.target.value.replace(/\\D/g, "").slice(0, 6))
                   }
                   placeholder="000000"
                   className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors tracking-[0.3em] text-center font-mono"
@@ -137,7 +146,7 @@ export default function LoginPage() {
                 disabled={loading || token.length !== 6}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Verifying…" : "Verify"}
+                {loading ? "Verifying\u2026" : "Verify"}
               </button>
             </form>
 
@@ -226,7 +235,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Sending…" : "Send sign-in code"}
+                {loading ? "Sending\u2026" : "Send sign-in code"}
               </button>
             </form>
           </div>
@@ -235,3 +244,17 @@ export default function LoginPage() {
     </div>
   );
 }
+'''
+
+with open(FILE, "w", encoding="utf-8") as f:
+    f.write(NEW_CONTENT)
+
+print(f"\u2713 Fixed: {FILE}")
+print()
+print("Changes:")
+print("  - Phone / Email toggle (phone is default)")
+print("  - Phone: sends SMS OTP via Twilio")
+print("  - Email: sends email OTP (same as before)")
+print("  - Auto-formats US phone numbers (+1)")
+print()
+print('Next: git add -A && git commit -m "feat: add phone login with SMS OTP" && git push origin main')
