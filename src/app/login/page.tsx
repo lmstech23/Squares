@@ -81,6 +81,8 @@ export default function LoginPage() {
       return;
     }
 
+    // Force cookies to be set before navigating
+    await supabase.auth.getSession();
     window.location.href = "/host/boards";
   }
 
