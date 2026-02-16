@@ -33,6 +33,8 @@ function getInitials(name: string): string {
 }
 
 export default function PlayerBoard({
+  boardId,
+  slug,
   squares: initialSquares,
   squarePrice,
   maxPerPlayer,
@@ -42,7 +44,7 @@ export default function PlayerBoard({
   teamCol,
   teamRow,
   winnerPositions: winnerPositionsArr,
-}: PlayerBoardProps) {
+slug, }: PlayerBoardProps) {
   const [squares, setSquares] = useState(initialSquares);
   const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
   const [playerName, setPlayerName] = useState("");
