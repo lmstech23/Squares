@@ -1,4 +1,20 @@
-"use client";
+#!/usr/bin/env python3
+"""Fix #5 — Switch host login from magic link to email OTP.
+Run from your project root: python fix-otp-auth.py
+"""
+
+import sys
+
+FILE = "src/app/login/page.tsx"
+
+try:
+    with open(FILE, "r") as f:
+        content = f.read()
+except FileNotFoundError:
+    print(f"✗ Not found: {FILE}")
+    sys.exit(1)
+
+NEW_CONTENT = '''"use client";
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -54,7 +70,7 @@ export default function LoginPage() {
       return;
     }
 
-    // OTP verified � session is set. Redirect to dashboard.
+    // OTP verified — session is set. Redirect to dashboard.
     router.push("/host/boards");
   }
 
@@ -95,7 +111,7 @@ export default function LoginPage() {
                   maxLength={6}
                   value={token}
                   onChange={(e) =>
-                    setToken(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    setToken(e.target.value.replace(/\\D/g, "").slice(0, 6))
                   }
                   placeholder="000000"
                   className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors tracking-[0.3em] text-center font-mono"
@@ -109,7 +125,7 @@ export default function LoginPage() {
                 disabled={loading || token.length !== 6}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Verifying\u2026" : "Verify"}
+                {loading ? "Verifying\\u2026" : "Verify"}
               </button>
             </form>
 
@@ -151,7 +167,7 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? "Sending\u2026" : "Send sign-in code"}
+              {loading ? "Sending\\u2026" : "Send sign-in code"}
             </button>
           </form>
         )}
@@ -159,3 +175,19 @@ export default function LoginPage() {
     </div>
   );
 }
+'''
+
+with open(FILE, "w") as f:
+    f.write(NEW_CONTENT)
+
+print(f"✓ Fixed: {FILE}")
+print()
+print("Changes:")
+print("  - Magic link → 6-digit OTP code")
+print("  - User enters code on same page (no redirect needed)")
+print("  - Removed emailRedirectTo (no callback dependency)")
+print("  - Added useRouter for client-side redirect after verify")
+print()
+print("The /auth/callback route still works for any existing magic links.")
+print()
+print('Next: git add -A && git commit -m "fix: switch login to email OTP" && git push origin main')

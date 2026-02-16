@@ -63,12 +63,19 @@ export async function POST(request: Request, { params }: Props) {
     const rowNumbers = shuffleArray();
     const colNumbers = shuffleArray();
 
+    // 50/50 coin flip: randomly swap which team is on which axis
+    const swapTeams = Math.random() < 0.5;
+    const finalTeamRow = swapTeams && board.teamRow && board.teamCol ? board.teamCol : board.teamRow;
+    const finalTeamCol = swapTeams && board.teamRow && board.teamCol ? board.teamRow : board.teamCol;
+
     const { count } = await prisma.board.updateMany({
       where: { boardId: id, status: "open" },
       data: {
         status: "closed",
         rowNumbers,
         colNumbers,
+        teamRow: finalTeamRow,
+        teamCol: finalTeamCol,
       },
     });
 
