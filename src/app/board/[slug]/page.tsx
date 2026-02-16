@@ -42,12 +42,77 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         },
       },
       host: {
-        select: { name: true },
+        select: { name: true, stripeAccountId: true },
       },
     },
   });
 
   if (!board) notFound();
+
+  // Confirm payment on redirect (webhook fallback)
+  if (sp.session_id && sp.success === "true") {
+    try {
+      const { stripe } = await import("@/lib/stripe");
+      const session = await stripe.checkout.sessions.retrieve(
+        sp.session_id,
+        { expand: [] },
+        { stripeAccount: board.host.stripeAccountId ?? undefined }
+      );
+
+      if (session.payment_status === "paid" && session.metadata?.squareId) {
+        const targetSquareId = session.metadata.squareId;
+        const existing = await prisma.paymentReference.findUnique({
+          where: { stripeSessionId: session.id },
+        });
+
+        if (!existing) {
+          try {
+            await prisma.$transaction(async (tx) => {
+              const { count } = await tx.square.updateMany({
+                where: {
+                  squareId: targetSquareId,
+                  paymentStatus: "pending",
+                  stripePaymentId: session.id,
+                },
+                data: {
+                  paymentStatus: "paid",
+                  checkoutExpiresAt: null,
+                  releaseReason: null,
+                },
+              });
+
+              if (count > 0) {
+                await tx.paymentReference.create({
+                  data: {
+                    squareId: targetSquareId,
+                    stripeSessionId: session.id,
+                    amount: session.amount_total ?? 0,
+                  },
+                });
+              }
+            });
+          } catch (e) {
+            console.error("Redirect payment confirmation failed:", e);
+          }
+        }
+
+        // Re-fetch squares after confirming
+        const refreshed = await prisma.square.findMany({
+          where: { boardId: board.boardId },
+          orderBy: { position: "asc" },
+          select: {
+            squareId: true,
+            position: true,
+            playerName: true,
+            paymentStatus: true,
+          },
+        });
+        board.squares = refreshed;
+      }
+    } catch (e) {
+      console.error("Stripe session retrieve failed:", e);
+    }
+  }
 
   const paidCount = board.squares.filter(
     (s) => s.paymentStatus === "paid"

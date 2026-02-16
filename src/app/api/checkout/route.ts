@@ -182,7 +182,7 @@ export async function POST(request: Request) {
             boardId: board.boardId,
             position: String(square.position),
           },
-          success_url: `${boardUrl}?success=true`,
+          success_url: `${boardUrl}?success=true&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${boardUrl}?cancelled=true`,
           expires_at: Math.floor(expiresAt.getTime() / 1000),
         },

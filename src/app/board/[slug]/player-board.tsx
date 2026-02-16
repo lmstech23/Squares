@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 type SquareData = {
   squareId: string;
@@ -43,7 +43,7 @@ export default function PlayerBoard({
   teamRow,
   winnerPositions: winnerPositionsArr,
 }: PlayerBoardProps) {
-  const [squares] = useState(initialSquares);
+  const [squares, setSquares] = useState(initialSquares);
   const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
@@ -54,6 +54,24 @@ export default function PlayerBoard({
   const hasNumbers = (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
+
+  // Poll for square updates when there are pending squares
+  useEffect(() => {
+    if (!squares.some((s) => s.paymentStatus === "pending")) return;
+
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/board/${slug}/squares`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        setSquares(data.squares);
+      } catch {
+        // ignore
+      }
+    }, 2000);
+
+    return () => clearInterval(id);
+  }, [slug, squares]);
 
   const handleSquareTap = useCallback(
     (sq: SquareData) => {
