@@ -1,49 +1,24 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
-const CHUNK_SIZE = 3500; // bytes, well under 4KB browser limit
+export async function POST(request: Request) {
+  try {
+    const { email, phone, token, type } = await request.json();
 
-export async function POST(request: NextRequest) {
-  const { email, phone, token, type } = await request.json();
+    const supabase = await createClient();
 
-  const response = NextResponse.json({ success: true });
+    const result =
+      type === "sms"
+        ? await supabase.auth.verifyOtp({ phone, token, type: "sms" })
+        : await supabase.auth.verifyOtp({ email, token, type: "email" });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            if (value.length > CHUNK_SIZE) {
-              // Split into chunks the browser will accept
-              const numChunks = Math.ceil(value.length / CHUNK_SIZE);
-              for (let i = 0; i < numChunks; i++) {
-                const chunk = value.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-                response.cookies.set(`${name}.${i}`, chunk, options);
-              }
-            } else {
-              response.cookies.set(name, value, options);
-            }
-          });
-        },
-      },
+    if (result.error) {
+      return NextResponse.json({ error: result.error.message }, { status: 400 });
     }
-  );
 
-  let result;
-  if (type === "sms") {
-    result = await supabase.auth.verifyOtp({ phone, token, type: "sms" });
-  } else {
-    result = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    // ✅ Redirect from the server so cookies are committed before navigation
+    return NextResponse.json({ ok: true, redirectTo: "/host/boards" });
+} catch {
+    return NextResponse.json({ error: "Verification failed" }, { status: 500 });
   }
-
-  if (result.error) {
-    return NextResponse.json({ error: result.error.message }, { status: 400 });
-  }
-
-  return response;
 }

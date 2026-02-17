@@ -50,43 +50,35 @@ export default function LoginPage() {
   }
 
   async function handleVerifyCode(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
+  e.preventDefault();
+  setError(null);
+  setLoading(true);
 
-    try {
-      const body =
-        method === "phone"
-          ? { phone: formatPhone(phone), token, type: "sms" }
-          : { email, token, type: "email" };
+  try {
+    const body =
+      method === "phone"
+        ? { phone: formatPhone(phone), token, type: "sms" }
+        : { email, token, type: "email" };
 
-      const res = await fetch("/api/auth/verify-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        redirect: "follow",
-      });
+    const res = await fetch("/api/auth/verify-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-      // If server redirected, follow it
-      if (res.redirected) {
-        window.location.href = res.url;
-        return;
-      }
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError((data as any).error || "Verification failed");
-        return;
-      }
-
-      // Fallback
-      window.location.href = "/host/boards";
-    } catch {
-      setError("Verification failed. Try again.");
-    } finally {
-      setLoading(false);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError((data as any).error || "Verification failed");
+      return;
     }
+
+    window.location.href = (data as any).redirectTo || "/host/boards";
+  } catch {
+    setError("Verification failed. Try again.");
+  } finally {
+    setLoading(false);
   }
+}
 
   const displayIdentity = method === "phone" ? phone : email;
 
