@@ -245,8 +245,8 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           status={board.status}
           rowNumbers={board.rowNumbers ?? undefined}
           colNumbers={board.colNumbers ?? undefined}
-          teamCol={board.teamCol ?? undefined}
-          teamRow={board.teamRow ?? undefined}
+          teamCol={board.status === "open" ? "Team A" : (board.teamCol ?? undefined)}
+          teamRow={board.status === "open" ? "Team B" : (board.teamRow ?? undefined)}
           winnerPositions={winnerPositions}
         />
       </div>

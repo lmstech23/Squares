@@ -69,7 +69,7 @@ export default async function HostBoardPage({ params }: Props) {
           </p>
           {(board.teamCol || board.teamRow) && (
             <p className="text-xs text-gray-600 mt-0.5">
-              {board.teamCol} vs {board.teamRow}
+              {isOpen ? "Teams hidden until board closes" : `${board.teamCol} vs ${board.teamRow}`}
             </p>
           )}
         </div>
@@ -204,8 +204,8 @@ export default async function HostBoardPage({ params }: Props) {
         squares={board.squares}
         rowNumbers={board.rowNumbers ?? undefined}
         colNumbers={board.colNumbers ?? undefined}
-        teamCol={board.teamCol ?? undefined}
-        teamRow={board.teamRow ?? undefined}
+        teamCol={isOpen ? "Team A" : (board.teamCol ?? undefined)}
+        teamRow={isOpen ? "Team B" : (board.teamRow ?? undefined)}
         winnerPositions={winnerPositions}
       />
     </div>
