@@ -28,8 +28,3 @@ export async function getHost() {
 
   return host;
 }
-```
-
-Save, then also remove the debug alerts from the login page — change the two alert lines back to just:
-```
-    console.log("verify ok");
