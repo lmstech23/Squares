@@ -72,7 +72,7 @@ export default function LoginPage() {
       });
     }
 
-    console.log("verify result:", JSON.stringify(result));
+    alert("verify result: " + JSON.stringify(result.data?.session ? "HAS SESSION" : "NO SESSION") + " error: " + JSON.stringify(result.error));
 
     if (result.error) {
       setError(result.error.message);
