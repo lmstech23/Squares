@@ -50,35 +50,39 @@ export default function LoginPage() {
   }
 
   async function handleVerifyCode(e: React.FormEvent) {
-  e.preventDefault();
-  setError(null);
-  setLoading(true);
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
 
-  try {
-    const body =
-      method === "phone"
-        ? { phone: formatPhone(phone), token, type: "sms" }
-        : { email, token, type: "email" };
+    const supabase = createClient();
+    let result;
 
-    const res = await fetch("/api/auth/verify-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    if (method === "phone") {
+      const formatted = formatPhone(phone);
+      result = await supabase.auth.verifyOtp({
+        phone: formatted,
+        token,
+        type: "sms",
+      });
+    } else {
+      result = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: "email",
+      });
+    }
 
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError((data as any).error || "Verification failed");
+    console.log("verify result:", JSON.stringify(result));
+
+    if (result.error) {
+      setError(result.error.message);
+      setLoading(false);
       return;
     }
 
-    window.location.href = (data as any).redirectTo || "/host/boards";
-  } catch {
-    setError("Verification failed. Try again.");
-  } finally {
-    setLoading(false);
+    await new Promise((r) => setTimeout(r, 500));
+    window.location.href = "/host/boards";
   }
-}
 
   const displayIdentity = method === "phone" ? phone : email;
 
@@ -133,7 +137,7 @@ export default function LoginPage() {
                 disabled={loading || token.length !== 6}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Verifying\u2026" : "Verify"}
+                {loading ? "Verifying…" : "Verify"}
               </button>
             </form>
 
@@ -153,10 +157,7 @@ export default function LoginPage() {
             <div className="flex rounded-lg border border-gray-800 bg-gray-900 mb-6 p-0.5">
               <button
                 type="button"
-                onClick={() => {
-                  setMethod("phone");
-                  setError(null);
-                }}
+                onClick={() => { setMethod("phone"); setError(null); }}
                 className={`flex-1 text-sm py-2 rounded-md transition-colors ${
                   method === "phone"
                     ? "bg-gray-800 text-white font-medium"
@@ -167,10 +168,7 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setMethod("email");
-                  setError(null);
-                }}
+                onClick={() => { setMethod("email"); setError(null); }}
                 className={`flex-1 text-sm py-2 rounded-md transition-colors ${
                   method === "email"
                     ? "bg-gray-800 text-white font-medium"
@@ -227,7 +225,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? "Sending\u2026" : "Send sign-in code"}
+                {loading ? "Sending…" : "Send sign-in code"}
               </button>
             </form>
           </div>
