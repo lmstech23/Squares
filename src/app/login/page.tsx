@@ -72,7 +72,6 @@ export default function LoginPage() {
       });
     }
 
-    alert("cookies after verify: " + document.cookie);
 
     if (result.error) {
       setError(result.error.message);
