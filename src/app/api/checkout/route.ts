@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 
 interface CheckoutBody {
-  squareId: string;
+  squareIds: string[];
   playerName: string;
   playerEmail: string;
 }
@@ -15,12 +15,27 @@ export async function POST(request: Request) {
   try {
     const body: CheckoutBody = await request.json();
 
-    // 1. Validate input
-    const { squareId, playerName, playerEmail } = body;
+    // 1. Validate input — support legacy single squareId too
+    let squareIds: string[] = body.squareIds;
+    if (!squareIds && (body as any).squareId) {
+      squareIds = [(body as any).squareId];
+    }
+    const { playerName, playerEmail } = body;
 
-    if (!squareId || !playerName?.trim() || !playerEmail?.trim()) {
+    if (
+      !squareIds?.length ||
+      !playerName?.trim() ||
+      !playerEmail?.trim()
+    ) {
       return NextResponse.json(
-        { error: "Square ID, name, and email are required." },
+        { error: "Square IDs, name, and email are required." },
+        { status: 400 }
+      );
+    }
+
+    if (squareIds.length > 10) {
+      return NextResponse.json(
+        { error: "You can purchase up to 10 squares at a time." },
         { status: 400 }
       );
     }
@@ -35,9 +50,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Load square + board + host in one query
-    const square = await prisma.square.findUnique({
-      where: { squareId },
+    // 2. Load all squares + board + host
+    const squares = await prisma.square.findMany({
+      where: { squareId: { in: squareIds } },
       include: {
         board: {
           include: {
@@ -49,14 +64,23 @@ export async function POST(request: Request) {
       },
     });
 
-    if (!square) {
+    if (squares.length !== squareIds.length) {
       return NextResponse.json(
-        { error: "Square not found." },
+        { error: "One or more squares not found." },
         { status: 404 }
       );
     }
 
-    const { board } = square;
+    // All squares must belong to the same board
+    const boardIds = new Set(squares.map((s) => s.boardId));
+    if (boardIds.size > 1) {
+      return NextResponse.json(
+        { error: "All squares must be on the same board." },
+        { status: 400 }
+      );
+    }
+
+    const board = squares[0].board;
 
     // 3. Board must be open
     if (board.status !== "open") {
@@ -83,45 +107,44 @@ export async function POST(request: Request) {
       },
     });
 
-    if (playerSquareCount >= board.maxSquaresPerPlayer) {
+    if (playerSquareCount + squareIds.length > board.maxSquaresPerPlayer) {
+      const remaining = board.maxSquaresPerPlayer - playerSquareCount;
       return NextResponse.json(
         {
-          error: `You've reached the limit of ${board.maxSquaresPerPlayer} squares on this board.`,
+          error:
+            remaining <= 0
+              ? `You've reached the limit of ${board.maxSquaresPerPlayer} squares on this board.`
+              : `You can only pick ${remaining} more square${remaining === 1 ? "" : "s"} on this board.`,
         },
         { status: 409 }
       );
     }
 
-    // 6. Lock square as pending — optimistic lock via updateMany + count.
-    //    paymentStatus is not part of a unique constraint, so update() can't
-    //    filter on it. updateMany returns { count } — if 0, square was taken.
+    // 6. Lock all squares as pending — atomic via transaction
     const expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
+    let totalLocked = 0;
 
-    const { count: lockCount } = await prisma.square.updateMany({
-      where: {
-        squareId,
-        paymentStatus: "open",
-      },
-      data: {
-        paymentStatus: "pending",
-        playerName: name,
-        playerEmail: email,
-        checkoutExpiresAt: expiresAt,
-        releaseReason: null,
-      },
+    await prisma.$transaction(async (tx) => {
+      for (const sid of squareIds) {
+        const { count } = await tx.square.updateMany({
+          where: { squareId: sid, paymentStatus: "open" },
+          data: {
+            paymentStatus: "pending",
+            playerName: name,
+            playerEmail: email,
+            checkoutExpiresAt: expiresAt,
+            releaseReason: null,
+          },
+        });
+        totalLocked += count;
+      }
+
+      if (totalLocked !== squareIds.length) {
+        throw new Error("SQUARE_TAKEN");
+      }
     });
 
-    if (lockCount === 0) {
-      return NextResponse.json(
-        { error: "This square is no longer available. Pick another one." },
-        { status: 409 }
-      );
-    }
-
-    // 6b. Post-lock re-check: max_squares_per_player race condition.
-    //     Two simultaneous requests by the same email can both pass step 5,
-    //     both lock different squares, exceeding the limit. Re-count now
-    //     that this square is pending and release if over.
+    // 6b. Post-lock re-check: max_squares_per_player race condition
     const postLockCount = await prisma.square.count({
       where: {
         boardId: board.boardId,
@@ -131,9 +154,9 @@ export async function POST(request: Request) {
     });
 
     if (postLockCount > board.maxSquaresPerPlayer) {
-      // Release the square we just locked
+      // Release all squares we just locked
       await prisma.square.updateMany({
-        where: { squareId, paymentStatus: "pending" },
+        where: { squareId: { in: squareIds }, paymentStatus: "pending" },
         data: {
           paymentStatus: "open",
           playerName: null,
@@ -151,12 +174,17 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Create Stripe Checkout session
+    // 7. Create Stripe Checkout session — one line item with quantity
     const baseUrl =
       process.env.NEXT_PUBLIC_URL ||
       request.headers.get("origin") ||
       "http://localhost:3000";
     const boardUrl = `${baseUrl}/board/${board.slug}`;
+
+    const positions = squares
+      .map((s) => s.position + 1)
+      .sort((a, b) => a - b)
+      .join(", ");
 
     let session;
     try {
@@ -168,19 +196,22 @@ export async function POST(request: Request) {
               price_data: {
                 currency: board.currency.toLowerCase(),
                 product_data: {
-                  name: `Square #${square.position + 1}`,
+                  name:
+                    squareIds.length === 1
+                      ? `Square #${squares[0].position + 1}`
+                      : `${squareIds.length} Squares (#${positions})`,
                   description: board.gameName,
                 },
                 unit_amount: board.squarePrice,
               },
-              quantity: 1,
+              quantity: squareIds.length,
             },
           ],
           customer_email: email,
           metadata: {
-            squareId: square.squareId,
+            squareIds: squareIds.join(","),
             boardId: board.boardId,
-            position: String(square.position),
+            positions,
           },
           success_url: `${boardUrl}?success=true&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${boardUrl}?cancelled=true`,
@@ -191,10 +222,10 @@ export async function POST(request: Request) {
         }
       );
     } catch (stripeError) {
-      // Roll back the pending lock if Stripe fails
+      // Roll back all pending locks if Stripe fails
       console.error("Stripe Checkout creation failed:", stripeError);
       await prisma.square.updateMany({
-        where: { squareId, paymentStatus: "pending" },
+        where: { squareId: { in: squareIds }, paymentStatus: "pending" },
         data: {
           paymentStatus: "open",
           playerName: null,
@@ -211,25 +242,28 @@ export async function POST(request: Request) {
       );
     }
 
-    // 8. Store session ID on square (guarded — only if still pending and no session yet)
-    const { count: writeCount } = await prisma.square.updateMany({
-      where: { squareId, paymentStatus: "pending", stripePaymentId: null },
-      data: {
-        stripePaymentId: session.id,
+    // 8. Store session ID on all squares
+    await prisma.square.updateMany({
+      where: {
+        squareId: { in: squareIds },
+        paymentStatus: "pending",
+        stripePaymentId: null,
       },
+      data: { stripePaymentId: session.id },
     });
-
-    if (writeCount === 0) {
-      // Square state changed between step 6 and step 8. The Stripe session
-      // exists but the square doesn't know about it. Webhook will still work
-      // via metadata, but log for visibility.
-      console.warn(
-        `Checkout step 8: failed to write session ${session.id} to square ${squareId} (state changed)`
-      );
-    }
 
     return NextResponse.json({ checkoutUrl: session.url });
   } catch (error) {
+    if (error instanceof Error && error.message === "SQUARE_TAKEN") {
+      return NextResponse.json(
+        {
+          error:
+            "One or more selected squares were just taken. Please pick again.",
+        },
+        { status: 409 }
+      );
+    }
+
     console.error("Checkout error:", error);
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },

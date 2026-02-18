@@ -43,16 +43,20 @@ export default function PlayerBoard({
   winnerPositions: winnerPositionsArr,
 }: PlayerBoardProps) {
   const [squares, setSquares] = useState(initialSquares);
-  const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showCheckout, setShowCheckout] = useState(false);
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const isOpen = status === "open";
-  const hasNumbers = (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
+  const hasNumbers =
+    (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
+  const selectedCount = selectedIds.size;
+  const totalPrice = (squarePrice / 100) * selectedCount;
 
   // Poll for square updates when there are pending squares
   useEffect(() => {
@@ -60,7 +64,9 @@ export default function PlayerBoard({
 
     const id = setInterval(async () => {
       try {
-        const res = await fetch(`/api/board/${slug}/squares`, { cache: "no-store" });
+        const res = await fetch(`/api/board/${slug}/squares`, {
+          cache: "no-store",
+        });
         if (!res.ok) return;
         const data = await res.json();
         setSquares(data.squares);
@@ -72,24 +78,54 @@ export default function PlayerBoard({
     return () => clearInterval(id);
   }, [slug, squares]);
 
+  // Clear selections if squares get taken by someone else
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) {
+        const sq = squares.find((s) => s.squareId === id);
+        if (sq && sq.paymentStatus === "open") next.add(id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [squares]);
+
   const handleSquareTap = useCallback(
     (sq: SquareData) => {
       if (!isOpen) return;
       if (sq.paymentStatus !== "open") return;
-      setSelectedSquare(sq);
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(sq.squareId)) {
+          next.delete(sq.squareId);
+        } else {
+          if (next.size >= maxPerPlayer) {
+            return prev; // at limit
+          }
+          next.add(sq.squareId);
+        }
+        return next;
+      });
       setError("");
     },
-    [isOpen]
+    [isOpen, maxPerPlayer]
   );
 
-  const handleClose = useCallback(() => {
-    setSelectedSquare(null);
+  const handleClearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setShowCheckout(false);
+    setError("");
+  }, []);
+
+  const handleCloseCheckout = useCallback(() => {
+    setShowCheckout(false);
     setError("");
   }, []);
 
   async function handleCheckout(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedSquare) return;
+    if (selectedIds.size === 0) return;
 
     const trimmedName = playerName.trim();
     const trimmedEmail = playerEmail.trim().toLowerCase();
@@ -112,7 +148,7 @@ export default function PlayerBoard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareId: selectedSquare.squareId,
+          squareIds: Array.from(selectedIds),
           playerName: trimmedName,
           playerEmail: trimmedEmail,
         }),
@@ -134,29 +170,43 @@ export default function PlayerBoard({
     }
   }
 
+  // Get selected square positions for display
+  const selectedPositions = Array.from(selectedIds)
+    .map((id) => {
+      const sq = squares.find((s) => s.squareId === id);
+      return sq ? sq.position + 1 : 0;
+    })
+    .sort((a, b) => a - b);
+
   return (
     <div>
       {/* Instruction line */}
       {isOpen && (
         <p className="text-xs text-gray-500 mb-3">
-          Pick a square. Numbers randomize when the board closes.
+          Tap squares to select, then pay for all at once. Numbers randomize
+          when the board closes.
         </p>
       )}
 
       {!isOpen && (
         <p className="text-xs text-gray-500 mb-3">
-          This board is {status}. {hasNumbers ? "Numbers have been assigned." : "No longer accepting squares."}
+          This board is {status}.{" "}
+          {hasNumbers
+            ? "Numbers have been assigned."
+            : "No longer accepting squares."}
         </p>
       )}
 
       {/* Grid */}
-        <div className="overflow-x-auto pb-2 w-fit">
-          {/* Team col label */}
-          {teamCol && (
-            <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-8" : ""}`}>
-              {teamCol}
-            </div>
-          )}
+      <div className="overflow-x-auto pb-2 w-fit">
+        {/* Team col label */}
+        {teamCol && (
+          <div
+            className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-8" : ""}`}
+          >
+            {teamCol}
+          </div>
+        )}
 
         <div className="flex">
           {/* Team row label — rotated left of grid */}
@@ -166,7 +216,10 @@ export default function PlayerBoard({
               <div className="flex items-center justify-center flex-1">
                 <span
                   className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
-                  style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
+                  style={{
+                    writingMode: "vertical-lr",
+                    transform: "rotate(180deg)",
+                  }}
                 >
                   {teamRow}
                 </span>
@@ -215,16 +268,14 @@ export default function PlayerBoard({
 
                   const isPaid = sq.paymentStatus === "paid";
                   const isPending = sq.paymentStatus === "pending";
-                  const isAvailable =
-                    sq.paymentStatus === "open" && isOpen;
-                  const isSelected =
-                    selectedSquare?.squareId === sq.squareId;
+                  const isAvailable = sq.paymentStatus === "open" && isOpen;
+                  const isSelected = selectedIds.has(sq.squareId);
                   const isWinner = winnerSet.has(position) && isPaid;
 
                   return (
                     <button
                       key={sq.squareId}
-                      disabled={!isAvailable}
+                      disabled={!isAvailable && !isSelected}
                       onClick={() => handleSquareTap(sq)}
                       className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all min-w-[28px] ${
                         isSelected
@@ -240,24 +291,28 @@ export default function PlayerBoard({
                                   : "bg-gray-900 border border-gray-800 text-gray-700"
                       }`}
                       title={
-                        isWinner
-                          ? `★ WINNER — ${sq.playerName ?? "Paid"}`
-                          : isPaid
-                            ? sq.playerName ?? "Paid"
-                            : isPending
-                              ? "Pending payment"
-                              : isAvailable
-                                ? `Square ${position + 1} — ${priceDisplay}`
-                                : "Unavailable"
+                        isSelected
+                          ? `Selected — Square #${position + 1}`
+                          : isWinner
+                            ? `★ WINNER — ${sq.playerName ?? "Paid"}`
+                            : isPaid
+                              ? sq.playerName ?? "Paid"
+                              : isPending
+                                ? "Pending payment"
+                                : isAvailable
+                                  ? `Square ${position + 1} — ${priceDisplay}`
+                                  : "Unavailable"
                       }
                     >
-                      {isWinner
-                        ? "★"
-                        : isPaid && sq.playerName
-                          ? getInitials(sq.playerName)
-                          : isPending
-                            ? "…"
-                            : ""}
+                      {isSelected
+                        ? position + 1
+                        : isWinner
+                          ? "★"
+                          : isPaid && sq.playerName
+                            ? getInitials(sq.playerName)
+                            : isPending
+                              ? "…"
+                              : ""}
                     </button>
                   );
                 })}
@@ -283,6 +338,12 @@ export default function PlayerBoard({
             Pending
           </span>
         )}
+        {selectedCount > 0 && (
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-indigo-600 border-2 border-indigo-400" />
+            Selected
+          </span>
+        )}
         {winnerSet.size > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-yellow-500/20 border-2 border-yellow-400" />
@@ -291,13 +352,34 @@ export default function PlayerBoard({
         )}
       </div>
 
-      {/* Claim Modal — slides up when square is selected */}
-      {selectedSquare && isOpen && (
+      {/* Floating action bar — appears when squares are selected */}
+      {selectedCount > 0 && isOpen && !showCheckout && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-4 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent pt-10">
+          <div className="max-w-lg mx-auto flex items-center gap-3">
+            <button
+              onClick={handleClearSelection}
+              className="rounded-lg border border-gray-700 bg-gray-800 px-3 py-3 text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setShowCheckout(true)}
+              className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-colors"
+            >
+              Pay ${totalPrice} for {selectedCount} square
+              {selectedCount > 1 ? "s" : ""}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Checkout Modal — name/email form */}
+      {showCheckout && selectedCount > 0 && isOpen && (
         <>
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/60 z-40"
-            onClick={handleClose}
+            onClick={handleCloseCheckout}
           />
 
           {/* Sheet */}
@@ -309,14 +391,15 @@ export default function PlayerBoard({
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-medium">
-                    Square #{selectedSquare.position + 1}
+                    {selectedCount} Square{selectedCount > 1 ? "s" : ""}{" "}
+                    Selected
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {priceDisplay} — pay to lock it in
+                    #{selectedPositions.join(", #")} — ${totalPrice} total
                   </p>
                 </div>
                 <button
-                  onClick={handleClose}
+                  onClick={handleCloseCheckout}
                   className="text-gray-500 hover:text-white p-1 transition-colors"
                   aria-label="Close"
                 >
@@ -389,14 +472,15 @@ export default function PlayerBoard({
                   disabled={loading}
                   className="w-full mt-4 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {loading ? "Redirecting to payment…" : `Pay ${priceDisplay}`}
+                  {loading
+                    ? "Redirecting to payment…"
+                    : `Pay $${totalPrice}`}
                 </button>
               </form>
             </div>
           </div>
         </>
       )}
-
     </div>
   );
 }

@@ -59,7 +59,69 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         { stripeAccount: board.host.stripeAccountId ?? undefined }
       );
 
-      if (session.payment_status === "paid" && session.metadata?.squareId) {
+      if (session.payment_status === "paid" && session.metadata?.squareIds) {
+        // Multi-square checkout
+        const targetSquareIds = session.metadata.squareIds.split(",");
+
+        for (const targetSquareId of targetSquareIds) {
+          const existing = await prisma.paymentReference.findUnique({
+            where: { stripeSessionId: `${session.id}:${targetSquareId}` },
+          });
+
+          if (!existing) {
+            try {
+              await prisma.$transaction(async (tx) => {
+                const { count } = await tx.square.updateMany({
+                  where: {
+                    squareId: targetSquareId,
+                    paymentStatus: "pending",
+                    stripePaymentId: session.id,
+                  },
+                  data: {
+                    paymentStatus: "paid",
+                    checkoutExpiresAt: null,
+                    releaseReason: null,
+                  },
+                });
+
+                if (count > 0) {
+                  await tx.paymentReference.create({
+                    data: {
+                      squareId: targetSquareId,
+                      stripeSessionId: `${session.id}:${targetSquareId}`,
+                      amount: Math.round(
+                        (session.amount_total ?? 0) / targetSquareIds.length
+                      ),
+                    },
+                  });
+                }
+              });
+            } catch (e) {
+              console.error(
+                `Redirect payment confirmation failed for square ${targetSquareId}:`,
+                e
+              );
+            }
+          }
+        }
+
+        // Re-fetch squares after confirming
+        const refreshed = await prisma.square.findMany({
+          where: { boardId: board.boardId },
+          orderBy: { position: "asc" },
+          select: {
+            squareId: true,
+            position: true,
+            playerName: true,
+            paymentStatus: true,
+          },
+        });
+        board.squares = refreshed;
+      } else if (
+        session.payment_status === "paid" &&
+        session.metadata?.squareId
+      ) {
+        // Legacy single-square checkout
         const targetSquareId = session.metadata.squareId;
         const existing = await prisma.paymentReference.findUnique({
           where: { stripeSessionId: session.id },
@@ -135,6 +197,13 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
 
   const clientSquares = board.squares;
 
+  // Count how many squares were just purchased in this session
+  const justPurchased = sp.session_id
+    ? board.squares.filter(
+        (s) => s.paymentStatus === "paid"
+      ).length
+    : 0;
+
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-lg mx-auto px-4 py-6">
@@ -142,7 +211,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         {sp.success === "true" && (
           <div className="rounded-lg border border-green-900 bg-green-950/60 p-4 mb-6">
             <p className="text-sm text-green-300 font-medium">
-              Payment confirmed — your square is locked in!
+              Payment confirmed — your {justPurchased === 1 ? "square is" : "squares are"} locked in!
             </p>
           </div>
         )}
@@ -151,7 +220,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         {sp.cancelled === "true" && (
           <div className="rounded-lg border border-yellow-900 bg-yellow-950/60 p-4 mb-6">
             <p className="text-sm text-yellow-300 font-medium">
-              Payment not completed. The square will be released automatically
+              Payment not completed. The squares will be released automatically
               in a few minutes.
             </p>
           </div>
