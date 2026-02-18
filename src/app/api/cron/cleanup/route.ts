@@ -1,39 +1,48 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-/**
- * Cron: Release expired pending squares.
- *
- * Safety net for cases where Stripe's checkout.session.expired
- * webhook is delayed or lost. Idempotent — only touches squares
- * still marked "pending" past their TTL. Never touches "paid"
- * or "expired".
- *
- * Call via Vercel Cron or external scheduler every 2–5 minutes.
- * Secured by CRON_SECRET env var.
- */
-export async function GET(request: Request) {
-  // Simple auth — Vercel cron or manual trigger
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
+// ============================================================
+// CRON: Release expired squares (Stripe + Cash)
+//
+// Handles TWO expiration scenarios:
+// 1. Stripe checkouts: pending squares where checkout_expires_at has passed
+// 2. Cash reservations: reserved_cash squares where checkout_expires_at has passed
+//
+// Both use the same checkout_expires_at field. The TTL is set at
+// reservation time based on the board's cashReservationTtlMins.
+//
+// Runs every 5 minutes via Vercel Cron.
+//
+// vercel.json:
+// { "crons": [{ "path": "/api/cron/release-expired", "schedule": "*/5 * * * *" }] }
+// ============================================================
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+export const runtime = "nodejs";
+
+function isAuthorized(request: Request): boolean {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader) return false;
+  const token = authHeader.replace("Bearer ", "");
+  return token === process.env.CRON_SECRET;
+}
+
+export async function GET(request: Request) {
+  if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const now = new Date();
 
-    // Find and release all expired pending squares
-    const result = await prisma.square.updateMany({
+    // 1. Release expired Stripe checkouts (pending → open)
+    const { count: stripeReleased } = await prisma.square.updateMany({
       where: {
         paymentStatus: "pending",
-        checkoutExpiresAt: {
-          lt: now,
-        },
+        checkoutExpiresAt: { lt: now },
       },
       data: {
         paymentStatus: "open",
+        paymentMethod: "stripe",
         playerName: null,
         playerEmail: null,
         stripePaymentId: null,
@@ -42,14 +51,39 @@ export async function GET(request: Request) {
       },
     });
 
+    // 2. Release expired cash reservations (reserved_cash → open)
+    //    "Earl said he'd bring the cash... 20 minutes ago."
+    const { count: cashReleased } = await prisma.square.updateMany({
+      where: {
+        paymentStatus: "reserved_cash",
+        checkoutExpiresAt: { lt: now },
+      },
+      data: {
+        paymentStatus: "open",
+        paymentMethod: "stripe", // reset to default
+        playerName: null,
+        playerEmail: null,
+        stripePaymentId: null,
+        checkoutExpiresAt: null,
+        releaseReason: "expired",
+      },
+    });
+
+    if (stripeReleased > 0 || cashReleased > 0) {
+      console.log(
+        `Cron: released ${stripeReleased} expired Stripe checkout(s), ${cashReleased} expired cash reservation(s)`
+      );
+    }
+
     return NextResponse.json({
-      released: result.count,
-      at: now.toISOString(),
+      stripeReleased,
+      cashReleased,
+      timestamp: now.toISOString(),
     });
   } catch (error) {
-    console.error("Cron cleanup error:", error);
+    console.error("Cron release-expired failed:", error);
     return NextResponse.json(
-      { error: "Cleanup failed" },
+      { error: "Cron job failed" },
       { status: 500 }
     );
   }

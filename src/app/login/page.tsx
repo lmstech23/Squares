@@ -72,7 +72,6 @@ export default function LoginPage() {
       });
     }
 
-    alert("verify result: " + JSON.stringify(result.data?.session ? "HAS SESSION" : "NO SESSION") + " error: " + JSON.stringify(result.error));
     alert("cookies after verify: " + document.cookie);
 
     if (result.error) {
