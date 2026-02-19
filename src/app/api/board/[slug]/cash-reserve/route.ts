@@ -20,7 +20,7 @@ interface CashReserveBody {
 
 export async function POST(
   request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     const body: CashReserveBody = await request.json();
@@ -34,7 +34,7 @@ export async function POST(
     }
 
     const name = playerName.trim();
-    const slug = params.slug;
+    const { slug } = await params;
 
     const board = await prisma.board.findUnique({
       where: { slug },
