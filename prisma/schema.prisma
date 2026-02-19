@@ -38,6 +38,11 @@ enum ReleaseReason {
   manual  // Host or admin manually released the square
 }
 
+enum PaymentMethod {
+  stripe
+  cash
+}
+
 /// Determines scoring period structure for the board.
 enum PeriodType {
   halves   // College basketball, college football -> H1, Final
@@ -134,7 +139,7 @@ model Square {
 
   checkoutExpiresAt DateTime?      @map("checkout_expires_at")
   releaseReason     ReleaseReason? @map("release_reason")
-  paymentMethod     String?        @map("payment_method")
+  paymentMethod     PaymentMethod  @default(stripe) @map("payment_method")
 
   board   Board             @relation(fields: [boardId], references: [boardId])
   payment PaymentReference?
