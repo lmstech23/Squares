@@ -77,6 +77,8 @@ model Board {
   // Null until board closes, then arrays of [0-9] shuffled
   rowNumbers   Int[]       @default([]) @map("row_numbers")
   colNumbers   Int[]       @default([]) @map("col_numbers")
+  teamRow      String?     @map("team_row")
+  teamCol      String?     @map("team_col")
 
   // --- Smart fields ---
   payoutStructure        Json?     @map("payout_structure")
