@@ -27,6 +27,7 @@ enum PaymentStatus {
   paid     // checkout completed
   failed   // Stripe reported failure
   expired  // checkout session expired / TTL cleanup
+  reserved_cash // cash claimed, host has not confirmed yet
 }
 
 /// Internal debugging only. Tracks WHY a square was released.
