@@ -1,206 +1,99 @@
 import { NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
-import Stripe from "stripe";
-
-// Disable body parsing — we need the raw body for signature verification
-export const runtime = "nodejs";
+import { getHostFromSession } from "@/lib/auth";
 
 // ============================================================
-// STRIPE v2 THIN EVENTS WEBHOOK HANDLER
+// HOST: Confirm cash received — "Mark Cash Received"
 //
-// Stripe API version 2026-01-28.clover generates v2 "thin" events.
-// Thin events contain only the event type + related_object reference.
-// We must fetch the full object from the Stripe API to process it.
+// POST /api/host/boards/[id]/confirm-cash
+// Body: { squareId: string }
 //
-// Event types are prefixed with "v1." (e.g., v1.checkout.session.completed)
+// Transitions: reserved_cash → paid
+// Creates PaymentReference for revenue tracking.
+// Clears the auto-expire TTL (cash is confirmed, no expiry needed).
+//
+// This is the second tap in the two-step cash flow:
+// 1. Reserve (reserved_cash) — "Earl says he'll pay"
+// 2. Confirm (paid) — "Earl handed me the cash"
 // ============================================================
 
-interface ThinEventNotification {
-  id: string;
-  object: "v2.core.event";
-  type: string;
-  livemode: boolean;
-  created: string;
-  context?: string; // Connected account ID for Connect events
-  related_object: {
-    id: string;
-    type: string;
-    url: string;
-  };
-  snapshot_event?: string;
+interface ConfirmCashBody {
+  squareId: string;
 }
 
-export async function POST(request: Request) {
-  const body = await request.text();
-  const signature = request.headers.get("stripe-signature");
-
-  if (!signature) {
-    return NextResponse.json(
-      { error: "Missing stripe-signature header" },
-      { status: 400 }
-    );
-  }
-
-  let thinEvent: ThinEventNotification;
-
+export async function POST(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    // constructEvent still works for v2 thin events — same signature verification
-    thinEvent = stripe.webhooks.constructEvent(
-      body,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    ) as unknown as ThinEventNotification;
-  } catch (err) {
-    console.error("Webhook signature verification failed:", err);
-    return NextResponse.json(
-      { error: "Invalid signature" },
-      { status: 400 }
-    );
-  }
-
-  const connectedAccountId = thinEvent.context || undefined;
-
-  try {
-    switch (thinEvent.type) {
-      // ========================================
-      // STRIPE CONNECT: Account status changes
-      // ========================================
-      case "v1.account.updated": {
-        const account = await stripe.accounts.retrieve(
-          thinEvent.related_object.id
-        );
-        await handleAccountUpdated(account);
-        break;
-      }
-
-      // ========================================
-      // CHECKOUT: Payment completed
-      // ========================================
-      case "v1.checkout.session.completed": {
-        const session = await stripe.checkout.sessions.retrieve(
-          thinEvent.related_object.id,
-          { expand: ["metadata"] },
-          connectedAccountId
-            ? { stripeAccount: connectedAccountId }
-            : undefined
-        );
-        await handleCheckoutCompleted(session);
-        break;
-      }
-
-      // ========================================
-      // CHECKOUT: Session expired
-      // ========================================
-      case "v1.checkout.session.expired": {
-        const session = await stripe.checkout.sessions.retrieve(
-          thinEvent.related_object.id,
-          {},
-          connectedAccountId
-            ? { stripeAccount: connectedAccountId }
-            : undefined
-        );
-        await handleCheckoutExpired(session);
-        break;
-      }
-
-      default:
-        console.log(`Unhandled thin event type: ${thinEvent.type}`);
-        break;
+    const host = await getHostFromSession(request);
+    if (!host) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-  } catch (err) {
-    console.error(`Error handling ${thinEvent.type}:`, err);
+
+    const boardId = params.id;
+    const body: ConfirmCashBody = await request.json();
+    const { squareId } = body;
+
+    if (!squareId) {
+      return NextResponse.json(
+        { error: "Square ID is required." },
+        { status: 400 }
+      );
+    }
+
+    const board = await prisma.board.findUnique({
+      where: { boardId },
+      select: { hostId: true, squarePrice: true },
+    });
+
+    if (!board || board.hostId !== host.id) {
+      return NextResponse.json({ error: "Board not found." }, { status: 404 });
+    }
+
+    // Atomic: only confirm if still reserved_cash
+    // If cron already expired it, count = 0.
+    // If already confirmed, count = 0.
+    const { count } = await prisma.square.updateMany({
+      where: {
+        squareId,
+        boardId,
+        paymentStatus: "reserved_cash",
+        paymentMethod: "cash",
+      },
+      data: {
+        paymentStatus: "paid",
+        checkoutExpiresAt: null, // clear TTL — confirmed, no expiry
+        releaseReason: null,
+      },
+    });
+
+    if (count === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "Square is not in a cash-reserved state. It may have expired or already been confirmed.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Create PaymentReference for revenue tracking
+    await prisma.paymentReference.create({
+      data: {
+        squareId,
+        stripeSessionId: null,
+        amount: board.squarePrice,
+        method: "cash",
+      },
+    });
+
+    return NextResponse.json({ success: true, squareId });
+  } catch (error) {
+    console.error("Confirm cash error:", error);
     return NextResponse.json(
-      { error: "Webhook handler failed" },
+      { error: "Something went wrong. Please try again." },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({ received: true });
-}
-
-// ============================================================
-// HANDLERS
-// ============================================================
-
-async function handleAccountUpdated(account: Stripe.Account) {
-  if (!account.id) return;
-
-  const { count } = await prisma.host.updateMany({
-    where: { stripeAccountId: account.id },
-    data: {
-      stripeChargesEnabled: !!account.charges_enabled,
-      stripePayoutsEnabled: !!account.payouts_enabled,
-    },
-  });
-
-  if (count === 0) {
-    console.warn(`No host found for Stripe account ${account.id}`);
-  }
-}
-
-async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  const squareId = session.metadata?.squareId;
-  if (!squareId) return;
-
-  const existing = await prisma.paymentReference.findUnique({
-    where: { stripeSessionId: session.id },
-  });
-  if (existing) return;
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      const { count } = await tx.square.updateMany({
-        where: {
-          squareId,
-          paymentStatus: "pending",
-          stripePaymentId: session.id,
-        },
-        data: {
-          paymentStatus: "paid",
-          paymentMethod: "stripe",
-          checkoutExpiresAt: null,
-          releaseReason: null,
-        },
-      });
-
-      if (count === 0) {
-        throw new Error("STATE_MISMATCH");
-      }
-
-      await tx.paymentReference.create({
-        data: {
-          squareId,
-          stripeSessionId: session.id,
-          amount: session.amount_total ?? 0,
-          method: "stripe",
-        },
-      });
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message === "STATE_MISMATCH") {
-      console.warn(
-        `checkout.session.completed: square ${squareId} not in expected state for session ${session.id}. May need manual refund.`
-      );
-      return;
-    }
-    throw error;
-  }
-}
-
-async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
-  const squareId = session.metadata?.squareId;
-  if (!squareId) return;
-
-  await prisma.square.updateMany({
-    where: { squareId, paymentStatus: "pending" },
-    data: {
-      paymentStatus: "open",
-      playerName: null,
-      playerEmail: null,
-      stripePaymentId: null,
-      checkoutExpiresAt: null,
-      releaseReason: "expired",
-    },
-  });
 }
