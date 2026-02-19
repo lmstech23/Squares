@@ -158,7 +158,7 @@ model PaymentReference {
   squareId        String   @unique @map("square_id")
   stripeSessionId String?  @unique @map("stripe_session_id")
   amount          Int
-  method          String?  @map("method")
+  method          PaymentMethod  @default(stripe) @map("method")
   timestamp       DateTime @default(now())
 
   square Square @relation(fields: [squareId], references: [squareId])
