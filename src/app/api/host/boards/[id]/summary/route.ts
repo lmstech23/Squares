@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getHostFromSession } from "@/lib/auth";
+import { getHost } from "@/lib/auth";
 
 // ============================================================
 // HOST: Board revenue summary with card/cash breakdown
@@ -23,7 +23,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const host = await getHostFromSession(request);
+    const host = await getHost();
     if (!host) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
