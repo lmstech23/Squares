@@ -51,6 +51,7 @@ model Host {
   id              String   @id @default(uuid())
   name            String?  // allow null during magic-link-first flow
   email           String   @unique
+  supabaseUserId   String?  @unique @map("supabase_user_id")
   stripeAccountId String?  @map("stripe_account_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
