@@ -28,7 +28,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const boardId = params.id;
+    const { id: boardId } = await params;
 
     const board = await prisma.board.findUnique({
       where: { boardId },

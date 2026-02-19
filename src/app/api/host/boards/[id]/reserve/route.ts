@@ -28,7 +28,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const boardId = params.id;
+    const { id: boardId } = await params;
     const body: ReserveBody = await request.json();
     const { squareId, playerName } = body;
 

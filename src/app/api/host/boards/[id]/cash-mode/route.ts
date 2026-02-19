@@ -35,7 +35,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const boardId = params.id;
+    const { id: boardId } = await params;
     const body: CashModeBody = await request.json();
     const { enabled, pin, ttlMinutes, liabilityAccepted } = body;
 
