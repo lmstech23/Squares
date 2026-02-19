@@ -1,6 +1,6 @@
 // ============================================================
 // SQUARES — Prisma Schema
-// 4 objects. No more. Locked before writing code.
+// 4 objects + cash reservation support. Locked before writing code.
 // ============================================================
 
 generator client {
@@ -22,11 +22,17 @@ enum BoardStatus {
 }
 
 enum PaymentStatus {
-  open     // available square (no checkout started)
-  pending  // checkout created, TTL running
-  paid     // checkout completed
-  failed   // Stripe reported failure
-  expired  // checkout session expired / TTL cleanup
+  open           // available square (no checkout started)
+  pending        // Stripe checkout created, TTL running
+  reserved_cash  // cash reservation — claimed but cash not yet confirmed by host
+  paid           // Stripe checkout completed OR cash confirmed received by host
+  failed         // Stripe reported failure
+  expired        // checkout session expired / TTL cleanup
+}
+
+enum PaymentMethod {
+  stripe  // paid via Stripe Checkout
+  cash    // reserved/paid via cash mode
 }
 
 /// Internal debugging only. Tracks WHY a square was released.
@@ -37,28 +43,17 @@ enum ReleaseReason {
   manual  // Host or admin manually released the square
 }
 
-/// Determines scoring period structure for the board.
-enum PeriodType {
-  halves   // College basketball, college football -> H1, Final
-  quarters // NFL, NBA, etc. -> Q1, Q2, Q3, Q4
-}
-
 // ============================================================
 // OBJECT 1: HOST
 // ============================================================
 
 model Host {
-  id             String  @id @default(uuid())
-  supabaseUserId String  @unique @map("supabase_user_id")
-  name           String?
-  email          String?
-
-  // Stripe Connect
-  stripeAccountId      String?  @map("stripe_account_id")
-  stripeChargesEnabled Boolean  @default(false) @map("stripe_charges_enabled")
-  stripePayoutsEnabled Boolean  @default(false) @map("stripe_payouts_enabled")
-
-  createdAt DateTime @default(now()) @map("created_at")
+  id              String   @id @default(uuid())
+  name            String?  // allow null during magic-link-first flow
+  email           String   @unique
+  supabaseUserId   String?  @unique @map("supabase_user_id")
+  stripeAccountId String?  @map("stripe_account_id")
+  createdAt       DateTime @default(now()) @map("created_at")
 
   boards Board[]
 
@@ -82,25 +77,11 @@ model Board {
   // Null until board closes, then arrays of [0-9] shuffled
   rowNumbers   Int[]       @default([]) @map("row_numbers")
   colNumbers   Int[]       @default([]) @map("col_numbers")
-
-  // Team names
-  teamRow String? @map("team_row")
-  teamCol String? @map("team_col")
-
-  // --- Scoring period config ---
-  periodType   PeriodType @default(halves) @map("period_type")
-  periodLabels String[]   @map("period_labels")
-
-  // Scores entered by host. Parallel arrays indexed to periodLabels.
-  scoresTeamA  Int[]     @map("scores_team_a")
-  scoresTeamB  Int[]     @map("scores_team_b")
-
-  // Scores JSON (used by player board for winner calc)
-  scores       Json?
+  teamRow      String?     @map("team_row")
+  teamCol      String?     @map("team_col")
 
   // --- Smart fields ---
   payoutStructure        Json?     @map("payout_structure")
-  hostCutPercent         Int       @default(0) @map("host_cut_percent")
   maxSquaresPerPlayer    Int       @default(10) @map("max_squares_per_player")
   boardCloseTime         DateTime? @map("board_close_time")
   hostPayoutResponsible  Boolean   @default(true) @map("host_payout_responsible")
@@ -108,9 +89,9 @@ model Board {
 
   // --- Cash mode ---
   cashModeEnabled        Boolean   @default(false) @map("cash_mode_enabled")
-  cashPin                String?   @map("cash_pin")
-  cashReservationTtlMins Int       @default(20) @map("cash_reservation_ttl_mins")
-  cashLiabilityAccepted  Boolean   @default(false) @map("cash_liability_accepted")
+  cashPin                String?   @map("cash_pin")             // 4-digit PIN, null when cash mode off
+  cashReservationTtlMins Int       @default(20) @map("cash_reservation_ttl_mins") // auto-expire unconfirmed cash reservations
+  cashLiabilityAccepted  Boolean   @default(false) @map("cash_liability_accepted") // host acknowledged cash responsibility
 
   host    Host     @relation(fields: [hostId], references: [id])
   squares Square[]
@@ -129,11 +110,11 @@ model Square {
   playerName      String?       @map("player_name")
   playerEmail     String?       @map("player_email")
   paymentStatus   PaymentStatus @default(open) @map("payment_status")
+  paymentMethod   PaymentMethod @default(stripe) @map("payment_method")
   stripePaymentId String?       @map("stripe_payment_id")
 
-  checkoutExpiresAt DateTime?      @map("checkout_expires_at")
+  checkoutExpiresAt DateTime?     @map("checkout_expires_at") // used for BOTH Stripe pending and cash reservations
   releaseReason     ReleaseReason? @map("release_reason")
-  paymentMethod     String?        @map("payment_method")
 
   board   Board             @relation(fields: [boardId], references: [boardId])
   payment PaymentReference?
@@ -150,9 +131,9 @@ model Square {
 model PaymentReference {
   paymentId       String   @id @default(uuid()) @map("payment_id")
   squareId        String   @unique @map("square_id")
-  stripeSessionId String?  @unique @map("stripe_session_id")
+  stripeSessionId String?  @unique @map("stripe_session_id") // nullable for cash payments
   amount          Int
-  method          String?  @map("method")
+  method          PaymentMethod @default(stripe)
   timestamp       DateTime @default(now())
 
   square Square @relation(fields: [squareId], references: [squareId])
