@@ -317,6 +317,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           teamCol={board.status === "open" ? "Team A" : (board.teamCol ?? undefined)}
           teamRow={board.status === "open" ? "Team B" : (board.teamRow ?? undefined)}
           winnerPositions={winnerPositions}
+          cashModeEnabled={board.cashModeEnabled}
         />
       </div>
     </div>

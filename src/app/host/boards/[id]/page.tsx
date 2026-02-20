@@ -5,6 +5,8 @@ import CopyLinkButton from "./copy-link";
 import BoardGrid from "./grid";
 import CloseBoardButton from "./close-button";
 import ScoreEntry from "./score-entry";
+import CashModeToggle from "./cash-mode-toggle";
+import CashReservePanel from "./cash-reserve-panel";
 import { calculateWinnersFromArrays } from "@/lib/winners";
 
 interface Props {
@@ -21,6 +23,17 @@ export default async function HostBoardPage({ params }: Props) {
     include: {
       squares: {
         orderBy: { position: "asc" },
+        select: {
+          squareId: true,
+          position: true,
+          playerName: true,
+          playerEmail: true,
+          paymentStatus: true,
+          paymentMethod: true,
+          stripePaymentId: true,
+          checkoutExpiresAt: true,
+          releaseReason: true,
+        },
       },
     },
   });
@@ -122,6 +135,30 @@ export default async function HostBoardPage({ params }: Props) {
           </div>
           <CloseBoardButton boardId={board.boardId} />
         </div>
+      )}
+
+      {/* Cash Mode */}
+      {isOpen && (
+        <CashModeToggle
+          boardId={board.boardId}
+          initialEnabled={board.cashModeEnabled}
+          initialPin={board.cashPin}
+          liabilityAccepted={board.cashLiabilityAccepted}
+        />
+      )}
+
+      {/* Cash Reserve Panel */}
+      {isOpen && board.cashModeEnabled && (
+        <CashReservePanel
+          boardId={board.boardId}
+          squares={board.squares.map((s) => ({
+            squareId: s.squareId,
+            position: s.position,
+            playerName: s.playerName,
+            paymentStatus: s.paymentStatus,
+            paymentMethod: s.paymentMethod,
+          }))}
+        />
       )}
 
       {/* Randomized confirmation */}
