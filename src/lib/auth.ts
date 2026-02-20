@@ -17,10 +17,11 @@ export async function getHost() {
   });
 
   if (!host) {
+    const identifier = user.email ?? user.phone ?? user.id;
     host = await prisma.host.create({
       data: {
         supabaseUserId: user.id,
-        email: user.email ?? null,
+        email: identifier,
         name: user.user_metadata?.full_name ?? null,
       },
     });

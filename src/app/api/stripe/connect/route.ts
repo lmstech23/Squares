@@ -5,7 +5,6 @@ import { stripe } from "@/lib/stripe";
 
 export async function POST(request: Request) {
   try {
-    // 1. Authenticate
     const supabase = await createClient();
     const {
       data: { user },
@@ -25,13 +24,12 @@ export async function POST(request: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_URL!;
 
-    // 2. Create or retrieve Connect Express account
     let stripeAccountId = host.stripeAccountId;
 
     if (!stripeAccountId) {
       const account = await stripe.accounts.create({
         type: "express",
-        email: host.email ?? undefined,
+        ...(host.email?.includes("@") ? { email: host.email } : {}),
         metadata: {
           hostId: host.id,
         },
@@ -44,7 +42,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // 3. Generate Account Link for onboarding
     const accountLink = await stripe.accountLinks.create({
       account: stripeAccountId,
       refresh_url: `${baseUrl}/host/stripe?refresh=true`,

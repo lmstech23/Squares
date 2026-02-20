@@ -12,15 +12,16 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user) {
-      // Upsert Host record keyed by Supabase auth user ID
+      const identifier = data.user.email ?? data.user.phone ?? data.user.id;
+
       await prisma.host.upsert({
         where: { supabaseUserId: data.user.id },
         update: {
-          email: data.user.email!,
+          email: identifier,
         },
         create: {
           supabaseUserId: data.user.id,
-          email: data.user.email!,
+          email: identifier,
           name: data.user.user_metadata?.full_name ?? null,
         },
       });
@@ -29,6 +30,5 @@ export async function GET(request: Request) {
     }
   }
 
-  // Auth failed — redirect to login with error hint
   return NextResponse.redirect(`${origin}/login?error=auth`);
 }
