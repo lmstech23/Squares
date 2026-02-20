@@ -14,17 +14,32 @@ export async function GET(request: Request) {
     if (!error && data.user) {
       const identifier = data.user.email ?? data.user.phone ?? data.user.id;
 
-      await prisma.host.upsert({
-        where: { supabaseUserId: data.user.id },
-        update: {
-          email: identifier,
-        },
-        create: {
-          supabaseUserId: data.user.id,
-          email: identifier,
-          name: data.user.user_metadata?.full_name ?? null,
-        },
-      });
+      try {
+        await prisma.host.upsert({
+          where: { supabaseUserId: data.user.id },
+          update: {
+            email: identifier,
+          },
+          create: {
+            supabaseUserId: data.user.id,
+            email: identifier,
+            name: data.user.user_metadata?.full_name ?? null,
+          },
+        });
+      } catch (err: unknown) {
+        // P2002 = unique constraint violation — another request already
+        // created this host (magic link double-fire). Safe to ignore.
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "code" in err &&
+          (err as { code: string }).code === "P2002"
+        ) {
+          // continue — host exists
+        } else {
+          throw err;
+        }
+      }
 
       return NextResponse.redirect(`${origin}${next}`);
     }
