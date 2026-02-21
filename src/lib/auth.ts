@@ -18,13 +18,28 @@ export async function getHost() {
 
   if (!host) {
     const identifier = user.email ?? user.phone ?? user.id;
-    host = await prisma.host.create({
-      data: {
-        supabaseUserId: user.id,
-        email: identifier,
-        name: user.user_metadata?.full_name ?? null,
-      },
-    });
+    try {
+      host = await prisma.host.upsert({
+        where: { supabaseUserId: user.id },
+        update: {
+          email: identifier,
+        },
+        create: {
+          supabaseUserId: user.id,
+          email: identifier,
+          name: user.user_metadata?.full_name ?? null,
+        },
+      });
+    } catch (e: any) {
+      // P2002 = unique constraint race — another request already created it
+      if (e?.code === "P2002") {
+        host = await prisma.host.findUniqueOrThrow({
+          where: { supabaseUserId: user.id },
+        });
+      } else {
+        throw e;
+      }
+    }
   }
 
   return host;

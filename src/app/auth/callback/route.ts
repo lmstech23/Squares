@@ -12,7 +12,8 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user) {
-      const identifier = data.user.email ?? data.user.phone ?? data.user.id;
+      const identifier =
+        data.user.email ?? data.user.phone ?? data.user.id;
 
       try {
         await prisma.host.upsert({
@@ -26,24 +27,15 @@ export async function GET(request: Request) {
             name: data.user.user_metadata?.full_name ?? null,
           },
         });
-      } catch (err: unknown) {
-        // P2002 = unique constraint violation — another request already
-        // created this host (magic link double-fire). Safe to ignore.
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === "P2002"
-        ) {
-          // continue — host exists
-        } else {
-          throw err;
-        }
+      } catch (e: any) {
+        // P2002 = unique constraint race — record already exists, safe to proceed
+        if (e?.code !== "P2002") throw e;
       }
 
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
 
+  // Auth failed — redirect to login with error hint
   return NextResponse.redirect(`${origin}/login?error=auth`);
 }
