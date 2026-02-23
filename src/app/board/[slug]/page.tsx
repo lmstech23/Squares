@@ -53,12 +53,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
     (s) => s.paymentStatus === "paid"
   ).length;
 
-  const payout = board.payoutStructure as {
-    q1: number;
-    q2: number;
-    q3: number;
-    final: number;
-  } | null;
+  const payout = board.payoutStructure as Record<string, number> | null;
 
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
 
@@ -134,16 +129,10 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         {/* Payout structure — show as dollars for players */}
         {payout && (
           <div className="flex gap-2 mb-5">
-            {(
-              [
-                ["Q1", payout.q1],
-                ["Q2", payout.q2],
-                ["Q3", payout.q3],
-                ["Final", payout.final],
-              ] as const
-            ).map(([label, pct]) => (
-              <div
-                key={label}
+          {board.periodLabels.map((label) => {
+            const pct = payout?.[label] ?? 0;
+            return (
+                <div key={label}
                 className="flex-1 rounded-lg border border-gray-800 bg-gray-900 p-2 text-center"
               >
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider">
@@ -153,7 +142,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
                   ${Math.round(totalPot * (pct / 100))}
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
 
