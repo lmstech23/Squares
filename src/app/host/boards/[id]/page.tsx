@@ -52,12 +52,7 @@ export default async function HostBoardPage({ params }: Props) {
   const isOpen = board.status === "open";
   const hasNumbers = board.rowNumbers && board.colNumbers;
 
-  const payout = board.payoutStructure as {
-    q1: number;
-    q2: number;
-    q3: number;
-    final: number;
-  } | null;
+  const payout = board.payoutStructure as Record<string, number> | null;
 
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
 
@@ -224,14 +219,9 @@ export default async function HostBoardPage({ params }: Props) {
       {/* Payout structure */}
       {payout && (
         <div className="flex gap-3 mb-6">
-          {(
-            [
-              ["Q1", payout.q1],
-              ["Q2", payout.q2],
-              ["Q3", payout.q3],
-              ["Final", payout.final],
-            ] as const
-          ).map(([label, pct]) => (
+          {board.periodLabels.map((label) => {
+            const pct = payout?.[label] ?? 0;
+            return (
             <div
               key={label}
               className="flex-1 rounded-lg border border-gray-800 bg-gray-900 p-2.5 text-center"
@@ -244,7 +234,8 @@ export default async function HostBoardPage({ params }: Props) {
                 </span>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
