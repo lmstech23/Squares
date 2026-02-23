@@ -186,7 +186,7 @@ export default function PlayerBoard({
       )}
 
       {/* Grid */}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto w-fit mx-auto">
         {/* Team col label */}
         {hasNumbers && teamCol && (
           <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ml-7">
