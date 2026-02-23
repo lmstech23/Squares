@@ -62,13 +62,21 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
 
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
 
-  // Calculate winners from scores
-  const scores = (board.scores as Record<string, { teamA: number; teamB: number }>) ?? null;
+  // Calculate winners from typed arrays
   const winners = calculateWinnersFromArrays(
-    scores,
-    board.rowNumbers ?? null,
-    board.colNumbers ?? null
+    board.periodLabels,
+    board.scoresTeamA,
+    board.scoresTeamB,
+    board.rowNumbers,
+    board.colNumbers
   );
+
+
+
+
+
+
+
   const winnerPositions = winners.map((w) => w.position);
 
   // Squares are already client-safe (email not selected)
@@ -155,12 +163,12 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
             {winners.map((w) => {
               const sq = clientSquares[w.position];
               const quarterPct =
-                payout?.[w.quarter as keyof typeof payout] ?? 0;
+                payout?.[w.label as keyof typeof payout] ?? 0;
               const prize = Math.round(totalPot * (quarterPct / 100));
 
               return (
                 <div
-                  key={w.quarter}
+                  key={w.label}
                   className="rounded-lg border border-yellow-900/50 bg-yellow-950/30 p-3"
                 >
                   <div className="text-[10px] text-yellow-500 uppercase tracking-wider font-medium">

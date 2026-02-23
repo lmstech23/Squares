@@ -61,13 +61,21 @@ export default async function HostBoardPage({ params }: Props) {
 
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
 
-  // Calculate winners from scores
-  const scores = (board.scores as Record<string, { teamA: number; teamB: number }>) ?? null;
+  // Calculate winners from typed arrays
   const winners = calculateWinnersFromArrays(
-    scores,
-    board.rowNumbers ?? null,
-    board.colNumbers ?? null
+    board.periodLabels,
+    board.scoresTeamA,
+    board.scoresTeamB,
+    board.rowNumbers,
+    board.colNumbers
   );
+
+
+
+
+
+
+
   const winnerPositions = new Set(winners.map((w) => w.position));
 
   return (
@@ -176,7 +184,9 @@ export default async function HostBoardPage({ params }: Props) {
             boardId={board.boardId}
             teamCol={board.teamCol}
             teamRow={board.teamRow}
-            existingScores={scores}
+            periodLabels={board.periodLabels}
+            existingScoresA={board.scoresTeamA ?? []}
+            existingScoresB={board.scoresTeamB ?? []}
           />
         </div>
       )}
@@ -187,12 +197,12 @@ export default async function HostBoardPage({ params }: Props) {
           {winners.map((w) => {
             const sq = board.squares[w.position];
             const quarterPct =
-              payout?.[w.quarter as keyof typeof payout] ?? 0;
+              payout?.[w.label as keyof typeof payout] ?? 0;
             const prize = Math.round(totalPot * (quarterPct / 100));
 
             return (
               <div
-                key={w.quarter}
+                key={w.label}
                 className="rounded-lg border border-yellow-900/50 bg-yellow-950/30 p-3"
               >
                 <div className="text-[10px] text-yellow-500 uppercase tracking-wider font-medium">
