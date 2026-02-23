@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { SIGNUP_GRANT_CREDITS, MAX_HOSTS } from "@/lib/constants";
+import { SIGNUP_CREDITS, MAX_HOSTS } from "@/lib/constants";
 
 /**
  * POST /api/auth/claim-invite
@@ -59,14 +59,14 @@ export async function POST(request: Request) {
             supabaseUserId: user.id,
             email: identifier,
             name: user.user_metadata?.full_name ?? null,
-            boardCredits: SIGNUP_GRANT_CREDITS,
+            boardCredits: SIGNUP_CREDITS,
           },
         });
       } else if (host.boardCredits === 0) {
         // Existing host that hasn't claimed an invite yet
         host = await tx.host.update({
           where: { id: host.id },
-          data: { boardCredits: host.boardCredits + SIGNUP_GRANT_CREDITS },
+          data: { boardCredits: host.boardCredits + SIGNUP_CREDITS },
         });
       } else {
         // Host already has credits — code already claimed or duplicate attempt
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
         data: {
           hostId: host.id,
           type: "signup_grant",
-          amount: SIGNUP_GRANT_CREDITS,
+          amount: SIGNUP_CREDITS,
           balanceAfter: host.boardCredits,
         },
       });
