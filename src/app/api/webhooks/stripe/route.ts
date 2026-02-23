@@ -1,3 +1,15 @@
+// ============================================================
+// src/app/api/webhooks/stripe/route.ts
+//
+// COMPLETE REPLACEMENT — includes:
+//   - Existing: account.updated, checkout.session.completed (player squares),
+//     checkout.session.expired
+//   - NEW: checkout.session.completed for credit purchases
+//
+// The metadata.type field distinguishes credit purchases from
+// player square payments. Credit purchases check FIRST.
+// ============================================================
+
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
@@ -6,17 +18,6 @@ import Stripe from "stripe";
 // Disable body parsing — we need the raw body for signature verification
 export const runtime = "nodejs";
 
-/**
- * Stripe Webhook Handler — v2 Thin Events
- *
- * Stripe API version 2026-01-28.clover sends "thin" events:
- * - event.type is prefixed: "v1.checkout.session.completed"
- * - event.data is empty — no snapshot payload
- * - event.related_object.id has the object ID
- * - We must fetch the full object from Stripe API ourselves
- *
- * Business logic (idempotency, state guards, transactions) is unchanged.
- */
 export async function POST(request: Request) {
   const body = await request.text();
   const signature = request.headers.get("stripe-signature");
@@ -28,8 +29,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // constructEvent still works the same for thin events
-  let event: any;
+  let event: Stripe.Event;
 
   try {
     event = stripe.webhooks.constructEvent(
@@ -46,45 +46,47 @@ export async function POST(request: Request) {
   }
 
   try {
-    const eventType: string = event.type;
-    const relatedObject = event.related_object ?? event.data?.object;
-
-    console.log(`Webhook received: ${eventType}`, {
-      id: event.id,
-      relatedObjectId: relatedObject?.id,
-    });
-
-    switch (eventType) {
+    switch (event.type) {
       // ========================================
-      // v2 thin event types (prefixed with v1.)
+      // STRIPE CONNECT: Account status changes
       // ========================================
-      case "v1.checkout.session.completed":
-      case "checkout.session.completed": {
-        const session = await fetchCheckoutSession(event);
-        if (session) await handleCheckoutCompleted(session);
-        break;
-      }
-
-      case "v1.checkout.session.expired":
-      case "checkout.session.expired": {
-        const session = await fetchCheckoutSession(event);
-        if (session) await handleCheckoutExpired(session);
-        break;
-      }
-
-      case "v1.account.updated":
       case "account.updated": {
-        const account = await fetchAccount(event);
-        if (account) await handleAccountUpdated(account);
+        await handleAccountUpdated(event.data.object as Stripe.Account);
+        break;
+      }
+
+      // ========================================
+      // CHECKOUT: Payment completed
+      // Routes to credit purchase OR square payment
+      // ========================================
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+
+        if (session.metadata?.type === "credit_purchase") {
+          await handleCreditPurchase(session);
+        } else {
+          await handleCheckoutCompleted(session);
+        }
+        break;
+      }
+
+      // ========================================
+      // CHECKOUT: Session expired (Track 6)
+      // ========================================
+      case "checkout.session.expired": {
+        await handleCheckoutExpired(
+          event.data.object as Stripe.Checkout.Session
+        );
         break;
       }
 
       default:
-        console.log(`Unhandled event type: ${eventType}`);
+        // Unhandled event type — acknowledge and move on
         break;
     }
   } catch (err) {
     console.error(`Error handling ${event.type}:`, err);
+    // Return 500 so Stripe retries
     return NextResponse.json(
       { error: "Webhook handler failed" },
       { status: 500 }
@@ -95,109 +97,12 @@ export async function POST(request: Request) {
 }
 
 // ============================================================
-// FETCH HELPERS — hydrate thin events into full objects
-// ============================================================
-
-/**
- * Fetch the full Checkout Session from Stripe.
- * For connected account sessions, we need to pass stripeAccount.
- *
- * Strategy: try with account context from event first,
- * fall back to looking up from square metadata if needed.
- */
-async function fetchCheckoutSession(
-  event: any
-): Promise<Stripe.Checkout.Session | null> {
-  // v2 thin event: full object is NOT in data.object
-  // v1 classic event: full object IS in data.object
-  if (event.data?.object?.id && event.data?.object?.metadata) {
-    // Classic v1 format — already has the full object
-    return event.data.object as Stripe.Checkout.Session;
-  }
-
-  const objectId =
-    event.related_object?.id ?? event.data?.object?.id;
-  if (!objectId) {
-    console.error("No object ID found in event:", event.id);
-    return null;
-  }
-
-  // Connected account ID from event context
-  const connectedAccountId =
-    event.account ?? event.context?.account_id ?? null;
-
-  try {
-    const session = await stripe.checkout.sessions.retrieve(
-      objectId,
-      { expand: ["metadata"] },
-      connectedAccountId ? { stripeAccount: connectedAccountId } : undefined
-    );
-    return session;
-  } catch (err) {
-    // If retrieve fails without account context, try finding the account
-    // from our database using the session ID on a square
-    if (!connectedAccountId) {
-      try {
-        const square = await prisma.square.findFirst({
-          where: { stripePaymentId: objectId },
-          include: {
-            board: {
-              include: {
-                host: { select: { stripeAccountId: true } },
-              },
-            },
-          },
-        });
-
-        if (square?.board.host.stripeAccountId) {
-          const session = await stripe.checkout.sessions.retrieve(
-            objectId,
-            {},
-            { stripeAccount: square.board.host.stripeAccountId }
-          );
-          return session;
-        }
-      } catch (fallbackErr) {
-        console.error("Fallback session fetch also failed:", fallbackErr);
-      }
-    }
-
-    console.error(`Failed to fetch checkout session ${objectId}:`, err);
-    return null;
-  }
-}
-
-/**
- * Fetch the full Account object from Stripe.
- */
-async function fetchAccount(event: any): Promise<Stripe.Account | null> {
-  // Classic v1 format
-  if (event.data?.object?.id && event.data?.object?.charges_enabled !== undefined) {
-    return event.data.object as Stripe.Account;
-  }
-
-  const objectId =
-    event.related_object?.id ?? event.data?.object?.id;
-  if (!objectId) {
-    console.error("No account ID found in event:", event.id);
-    return null;
-  }
-
-  try {
-    const account = await stripe.accounts.retrieve(objectId);
-    return account;
-  } catch (err) {
-    console.error(`Failed to fetch account ${objectId}:`, err);
-    return null;
-  }
-}
-
-// ============================================================
-// HANDLERS (business logic unchanged)
+// HANDLERS
 // ============================================================
 
 /**
  * Sync Stripe account readiness to Host record.
+ * Single updateMany — no read+write, no race if host row disappears.
  */
 async function handleAccountUpdated(account: Stripe.Account) {
   if (!account.id) return;
@@ -216,122 +121,135 @@ async function handleAccountUpdated(account: Stripe.Account) {
 }
 
 /**
- * Payment succeeded — lock squares as paid, create PaymentReferences.
- * Supports both single-square (legacy) and multi-square checkout.
+ * NEW: Credit purchase completed — add 1 board credit to host.
+ *
+ * Guards:
+ * 1. Idempotency via CreditTransaction.stripeSessionId check
+ * 2. Atomic: increment + log in one transaction
+ *
+ * This handles payments on the PLATFORM Stripe account.
+ * Player square payments go through Stripe Connect (different path).
+ */
+async function handleCreditPurchase(session: Stripe.Checkout.Session) {
+  const hostId = session.metadata?.hostId;
+  if (!hostId) {
+    console.error("Credit purchase webhook missing hostId in metadata");
+    return;
+  }
+
+  // Idempotency: check if we already processed this session
+  const existing = await prisma.creditTransaction.findFirst({
+    where: { stripeSessionId: session.id },
+  });
+
+  if (existing) {
+    console.log(`Credit purchase already processed: ${session.id}`);
+    return;
+  }
+
+  // Add credit + log in one transaction
+  await prisma.$transaction(async (tx) => {
+    const updatedHost = await tx.host.update({
+      where: { id: hostId },
+      data: { boardCredits: { increment: 1 } },
+    });
+
+    await tx.creditTransaction.create({
+      data: {
+        hostId,
+        type: "purchase",
+        amount: 1,
+        balanceAfter: updatedHost.boardCredits,
+        stripeSessionId: session.id,
+      },
+    });
+  });
+
+  console.log(`Credit purchased: host=${hostId}, session=${session.id}`);
+}
+
+/**
+ * Payment succeeded — lock the square as paid, create PaymentReference.
  *
  * Guards:
  * 1. Idempotency via PaymentReference.stripeSessionId unique constraint
  * 2. State guard: only transitions pending → paid
  * 3. Session identity: stripePaymentId on Square must match this session
- * 4. Atomic: updateMany + PaymentReference create in one transaction
+ *    (prevents a stale completed event from claiming a re-released square)
+ * 4. Atomic: updateMany + PaymentReference create in one transaction.
+ *    Both succeed or neither does — no orphaned paid squares without records.
  */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  // Multi-square: squareIds is comma-separated
-  // Legacy: single squareId
-  const squareIds = session.metadata?.squareIds
-    ? session.metadata.squareIds.split(",")
-    : session.metadata?.squareId
-      ? [session.metadata.squareId]
-      : [];
+  const squareId = session.metadata?.squareId;
+  if (!squareId) return;
 
-  if (squareIds.length === 0) {
-    console.warn(
-      `checkout.session.completed: no squareIds in metadata for session ${session.id}`
-    );
-    return;
-  }
+  // Idempotency: if PaymentReference already exists for this session, skip
+  const existing = await prisma.paymentReference.findUnique({
+    where: { stripeSessionId: session.id },
+  });
+  if (existing) return;
 
-  const perSquareAmount = Math.round(
-    (session.amount_total ?? 0) / squareIds.length
-  );
-
-  for (const squareId of squareIds) {
-    // Unique key per square within a multi-square session
-    const sessionKey =
-      squareIds.length > 1 ? `${session.id}:${squareId}` : session.id;
-
-    // Idempotency: skip if PaymentReference already exists
-    const existing = await prisma.paymentReference.findUnique({
-      where: { stripeSessionId: sessionKey },
-    });
-    if (existing) continue;
-
-    try {
-      await prisma.$transaction(async (tx) => {
-        // State guard + session identity check
-        const { count } = await tx.square.updateMany({
-          where: {
-            squareId,
-            paymentStatus: "pending",
-            stripePaymentId: session.id,
-          },
-          data: {
-            paymentStatus: "paid",
-            checkoutExpiresAt: null,
-            releaseReason: null,
-          },
-        });
-
-        if (count === 0) {
-          throw new Error("STATE_MISMATCH");
-        }
-
-        await tx.paymentReference.create({
-          data: {
-            squareId,
-            stripeSessionId: sessionKey,
-            amount: perSquareAmount,
-          },
-        });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // State guard + session identity check
+      const { count } = await tx.square.updateMany({
+        where: {
+          squareId,
+          paymentStatus: "pending",
+          stripePaymentId: session.id,
+        },
+        data: {
+          paymentStatus: "paid",
+          checkoutExpiresAt: null,
+          releaseReason: null,
+        },
       });
 
-      console.log(
-        `checkout.session.completed: square ${squareId} marked paid (session ${session.id})`
-      );
-    } catch (error) {
-      if (error instanceof Error && error.message === "STATE_MISMATCH") {
-        console.warn(
-          `checkout.session.completed: square ${squareId} not in expected state for session ${session.id}. May need manual refund.`
-        );
-        continue;
+      if (count === 0) {
+        throw new Error("STATE_MISMATCH");
       }
-      throw error;
+
+      await tx.paymentReference.create({
+        data: {
+          squareId,
+          stripeSessionId: session.id,
+          amount: session.amount_total ?? 0,
+        },
+      });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "STATE_MISMATCH") {
+      // Square was released (expired/cron) or session mismatch.
+      // Money moved in Stripe. Log for manual investigation / refund.
+      console.warn(
+        `checkout.session.completed: square ${squareId} not in expected state for session ${session.id}. May need manual refund.`
+      );
+      return;
     }
+    // Other errors (DB failure) — re-throw so outer handler returns 500 and Stripe retries
+    throw error;
   }
 }
 
 /**
- * Checkout session expired — release all squares.
- * Supports both single-square and multi-square checkout.
+ * Checkout session expired — release the square.
+ * Wired up in Track 6 (pay-to-lock).
  */
 async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
-  const squareIds = session.metadata?.squareIds
-    ? session.metadata.squareIds.split(",")
-    : session.metadata?.squareId
-      ? [session.metadata.squareId]
-      : [];
+  const squareId = session.metadata?.squareId;
+  if (!squareId) return;
 
-  if (squareIds.length === 0) return;
-
-  for (const squareId of squareIds) {
-    await prisma.square.updateMany({
-      where: {
-        squareId,
-        paymentStatus: "pending",
-        stripePaymentId: session.id,
-      },
-      data: {
-        paymentStatus: "open",
-        playerName: null,
-        playerEmail: null,
-        stripePaymentId: null,
-        checkoutExpiresAt: null,
-        releaseReason: "expired",
-      },
-    });
-  }
-
-  console.log(
-    `checkout.session.expired: released ${squareIds.length} square(s) for session ${session.id}`
-  );
+  // Atomic: only release if still pending — no read-then-write race.
+  // If completed webhook already set this to "paid", count = 0, no-op.
+  await prisma.square.updateMany({
+    where: { squareId, paymentStatus: "pending" },
+    data: {
+      paymentStatus: "open",
+      playerName: null,
+      playerEmail: null,
+      stripePaymentId: null,
+      checkoutExpiresAt: null,
+      releaseReason: "expired",
+    },
+  });
 }

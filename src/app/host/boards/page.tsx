@@ -2,6 +2,8 @@ import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Suspense } from "react";
+import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
@@ -31,6 +33,24 @@ export default async function HostBoardsPage() {
 
   return (
     <div>
+      {/* Credit badge */}
+      <div className="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Board Credits:</span>
+          <span className={`text-sm font-bold ${host.boardCredits > 0 ? "text-green-400" : "text-red-400"}`}>
+            {host.boardCredits}
+          </span>
+        </div>
+        {host.boardCredits === 0 && (
+          <CreditBuyButton />
+        )}
+      </div>
+
+      {/* Credit purchased banner */}
+      <Suspense>
+        <CreditPurchasedBanner />
+      </Suspense>
+
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-bold">Your Boards</h1>
         <Link

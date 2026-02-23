@@ -42,167 +42,37 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         },
       },
       host: {
-        select: { name: true, stripeAccountId: true },
+        select: { name: true },
       },
     },
   });
 
   if (!board) notFound();
 
-  // Confirm payment on redirect (webhook fallback)
-  if (sp.session_id && sp.success === "true") {
-    try {
-      const { stripe } = await import("@/lib/stripe");
-      const session = await stripe.checkout.sessions.retrieve(
-        sp.session_id,
-        { expand: [] },
-        { stripeAccount: board.host.stripeAccountId ?? undefined }
-      );
-
-      if (session.payment_status === "paid" && session.metadata?.squareIds) {
-        // Multi-square checkout
-        const targetSquareIds = session.metadata.squareIds.split(",");
-
-        for (const targetSquareId of targetSquareIds) {
-          const existing = await prisma.paymentReference.findUnique({
-            where: { stripeSessionId: `${session.id}:${targetSquareId}` },
-          });
-
-          if (!existing) {
-            try {
-              await prisma.$transaction(async (tx) => {
-                const { count } = await tx.square.updateMany({
-                  where: {
-                    squareId: targetSquareId,
-                    paymentStatus: "pending",
-                    stripePaymentId: session.id,
-                  },
-                  data: {
-                    paymentStatus: "paid",
-                    checkoutExpiresAt: null,
-                    releaseReason: null,
-                  },
-                });
-
-                if (count > 0) {
-                  await tx.paymentReference.create({
-                    data: {
-                      squareId: targetSquareId,
-                      stripeSessionId: `${session.id}:${targetSquareId}`,
-                      amount: Math.round(
-                        (session.amount_total ?? 0) / targetSquareIds.length
-                      ),
-                    },
-                  });
-                }
-              });
-            } catch (e) {
-              console.error(
-                `Redirect payment confirmation failed for square ${targetSquareId}:`,
-                e
-              );
-            }
-          }
-        }
-
-        // Re-fetch squares after confirming
-        const refreshed = await prisma.square.findMany({
-          where: { boardId: board.boardId },
-          orderBy: { position: "asc" },
-          select: {
-            squareId: true,
-            position: true,
-            playerName: true,
-            paymentStatus: true,
-          },
-        });
-        board.squares = refreshed;
-      } else if (
-        session.payment_status === "paid" &&
-        session.metadata?.squareId
-      ) {
-        // Legacy single-square checkout
-        const targetSquareId = session.metadata.squareId;
-        const existing = await prisma.paymentReference.findUnique({
-          where: { stripeSessionId: session.id },
-        });
-
-        if (!existing) {
-          try {
-            await prisma.$transaction(async (tx) => {
-              const { count } = await tx.square.updateMany({
-                where: {
-                  squareId: targetSquareId,
-                  paymentStatus: "pending",
-                  stripePaymentId: session.id,
-                },
-                data: {
-                  paymentStatus: "paid",
-                  checkoutExpiresAt: null,
-                  releaseReason: null,
-                },
-              });
-
-              if (count > 0) {
-                await tx.paymentReference.create({
-                  data: {
-                    squareId: targetSquareId,
-                    stripeSessionId: session.id,
-                    amount: session.amount_total ?? 0,
-                  },
-                });
-              }
-            });
-          } catch (e) {
-            console.error("Redirect payment confirmation failed:", e);
-          }
-        }
-
-        // Re-fetch squares after confirming
-        const refreshed = await prisma.square.findMany({
-          where: { boardId: board.boardId },
-          orderBy: { position: "asc" },
-          select: {
-            squareId: true,
-            position: true,
-            playerName: true,
-            paymentStatus: true,
-          },
-        });
-        board.squares = refreshed;
-      }
-    } catch (e) {
-      console.error("Stripe session retrieve failed:", e);
-    }
-  }
-
   const paidCount = board.squares.filter(
     (s) => s.paymentStatus === "paid"
   ).length;
 
-  // Payout structure keyed by period labels: { "H1": 50, "Final": 50 }
-  const payout = board.payoutStructure as Record<string, number> | null;
-  const totalPot = (board.squarePrice / 100) * board.totalSquares;
-  const playerPool = Math.round(totalPot * (1 - board.hostCutPercent / 100));
+  const payout = board.payoutStructure as {
+    q1: number;
+    q2: number;
+    q3: number;
+    final: number;
+  } | null;
 
-  // Calculate winners from typed arrays
+  const totalPot = (board.squarePrice / 100) * board.totalSquares;
+
+  // Calculate winners from scores
+  const scores = (board.scores as Record<string, { teamA: number; teamB: number }>) ?? null;
   const winners = calculateWinnersFromArrays(
-    board.periodLabels,
-    board.scoresTeamA,
-    board.scoresTeamB,
-    board.rowNumbers,
-    board.colNumbers
+    scores,
+    board.rowNumbers ?? null,
+    board.colNumbers ?? null
   );
   const winnerPositions = winners.map((w) => w.position);
 
+  // Squares are already client-safe (email not selected)
   const clientSquares = board.squares;
-
-  // Count how many squares were just purchased in this session
-  const justPurchased = sp.session_id
-    ? board.squares.filter(
-        (s) => s.paymentStatus === "paid"
-      ).length
-    : 0;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -211,7 +81,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         {sp.success === "true" && (
           <div className="rounded-lg border border-green-900 bg-green-950/60 p-4 mb-6">
             <p className="text-sm text-green-300 font-medium">
-              Payment confirmed — your {justPurchased === 1 ? "square is" : "squares are"} locked in!
+              Payment confirmed — your square is locked in!
             </p>
           </div>
         )}
@@ -220,7 +90,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         {sp.cancelled === "true" && (
           <div className="rounded-lg border border-yellow-900 bg-yellow-950/60 p-4 mb-6">
             <p className="text-sm text-yellow-300 font-medium">
-              Payment not completed. The squares will be released automatically
+              Payment not completed. The square will be released automatically
               in a few minutes.
             </p>
           </div>
@@ -253,39 +123,44 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           </span>
         </div>
 
-        {/* Payout structure — dynamic from periodLabels, show as dollars for players */}
+        {/* Payout structure — show as dollars for players */}
         {payout && (
           <div className="flex gap-2 mb-5">
-            {board.periodLabels.map((label) => {
-              const pct = payout[label] ?? 0;
-              return (
-                <div
-                  key={label}
-                  className="flex-1 rounded-lg border border-gray-800 bg-gray-900 p-2 text-center"
-                >
-                  <div className="text-[10px] text-gray-500 uppercase tracking-wider">
-                    {label}
-                  </div>
-                  <div className="text-xs font-medium mt-0.5">
-                    ${Math.round(playerPool * (pct / 100))}
-                  </div>
+            {(
+              [
+                ["Q1", payout.q1],
+                ["Q2", payout.q2],
+                ["Q3", payout.q3],
+                ["Final", payout.final],
+              ] as const
+            ).map(([label, pct]) => (
+              <div
+                key={label}
+                className="flex-1 rounded-lg border border-gray-800 bg-gray-900 p-2 text-center"
+              >
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">
+                  {label}
                 </div>
-              );
-            })}
+                <div className="text-xs font-medium mt-0.5">
+                  ${Math.round(totalPot * (pct / 100))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-        {/* Winner summary cards — dynamic from periodLabels */}
+        {/* Winner summary cards — shown during/after game */}
         {winners.length > 0 && (
           <div className="grid grid-cols-2 gap-2 mb-5">
             {winners.map((w) => {
               const sq = clientSquares[w.position];
-              const periodPct = payout?.[w.label] ?? 0;
-              const prize = Math.round(playerPool * (periodPct / 100));
+              const quarterPct =
+                payout?.[w.quarter as keyof typeof payout] ?? 0;
+              const prize = Math.round(totalPot * (quarterPct / 100));
 
               return (
                 <div
-                  key={w.label}
+                  key={w.quarter}
                   className="rounded-lg border border-yellow-900/50 bg-yellow-950/30 p-3"
                 >
                   <div className="text-[10px] text-yellow-500 uppercase tracking-wider font-medium">

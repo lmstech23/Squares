@@ -47,6 +47,18 @@ export async function POST(request: Request) {
       );
     }
 
+    // 2b. Credit gate — host must have at least 1 board credit
+    if (host.boardCredits < 1) {
+      return NextResponse.json(
+        {
+          error: "No board credits remaining.",
+          needsCredits: true,
+          pricePerBoard: 900,
+        },
+        { status: 402 }
+      );
+    }
+
     // 3. Parse + validate body
     const body: CreateBoardBody = await request.json();
 
@@ -142,6 +154,22 @@ export async function POST(request: Request) {
     const squarePriceCents = Math.round(body.squarePrice * 100);
 
     const board = await prisma.$transaction(async (tx) => {
+      // Deduct 1 credit atomically
+      const updatedHost = await tx.host.update({
+        where: { id: host.id, boardCredits: { gte: 1 } },
+        data: { boardCredits: { decrement: 1 } },
+      });
+
+      // Log the credit transaction
+      await tx.creditTransaction.create({
+        data: {
+          hostId: host.id,
+          type: "board_created",
+          amount: -1,
+          balanceAfter: updatedHost.boardCredits,
+        },
+      });
+
       const newBoard = await tx.board.create({
         data: {
           hostId: host.id,
