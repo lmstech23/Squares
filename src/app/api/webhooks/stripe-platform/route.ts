@@ -152,10 +152,10 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
       await tx.creditTransaction.create({
         data: {
           hostId,
-          type: "board_creation",
+          type: "board_created",
           amount: -1,
           balanceAfter: host.boardCredits,
-          boardId: pendingBoard.id,
+          boardId: pendingBoard.boardId,
         },
       });
     });
