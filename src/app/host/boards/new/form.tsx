@@ -66,15 +66,9 @@ export default function NewBoardForm() {
 
       const data = await res.json();
 
-      // Pending board created — redirect to dashboard to complete payment
-      if (res.status === 402 && data.boardId) {
-        router.push("/host/boards");
-        return;
-      }
-
-      // Already have a pending board — redirect to dashboard
-      if (res.status === 409 && data.pendingBoardId) {
-        router.push("/host/boards");
+      // Payment required — follow server's redirect
+      if (data.redirectTo) {
+        router.push(data.redirectTo);
         return;
       }
 

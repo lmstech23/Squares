@@ -11,6 +11,9 @@ export const SIGNUP_CREDITS = 2;
 export const CREDIT_PRICE_CENTS = 900;   // $9 during tournament → 1900 after
 export const CREDIT_PRICE_DISPLAY = "$9"; // "$9" during tournament → "$19" after
 
+export const TRIPLE_PRICE_CENTS = 2400;     // $24 during tournament → $45 after
+export const TRIPLE_PRICE_DISPLAY = "$24";   // "$24" during tournament → "$45" after
+
 
 // --- Platform owner (skip credit gates) ---
 export const PLATFORM_OWNER_ID = process.env.PLATFORM_OWNER_ID!;
