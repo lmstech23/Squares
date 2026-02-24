@@ -169,7 +169,7 @@ export async function POST(request: Request) {
         {
           error: 'You have a pending board awaiting payment. Complete or cancel it first.',
           pendingBoardId: existingPending.boardId,
-          redirectTo: \`/host/checkout?boardId=\${existingPending.boardId}\`,
+          redirectTo: `/host/checkout?boardId=${existingPending.boardId}`,
         },
         { status: 409 }
       );
@@ -262,7 +262,7 @@ export async function POST(request: Request) {
         slug: board.slug,
         status: "pending_payment",
         pendingExpiresAt: board.pendingExpiresAt,
-        redirectTo: \`/host/checkout?boardId=\${board.boardId}\`,
+        redirectTo: `/host/checkout?boardId=${board.boardId}`,
       },
       { status: 402 }
     );
