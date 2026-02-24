@@ -1,3 +1,45 @@
+#!/bin/bash
+set -e
+echo "Fixing duplicate pending boards (3 files)..."
+echo ""
+
+# --- 1. Add "Back to Boards" link to new board page ---
+cat > 'src/app/host/boards/new/page.tsx' << 'EOF'
+import { getHost } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import NewBoardForm from "./form";
+import Link from "next/link";
+
+export default async function NewBoardPage() {
+  const host = await getHost();
+  if (!host) redirect("/login");
+
+  if (!host.stripeChargesEnabled) {
+    redirect("/host/stripe");
+  }
+
+  return (
+    <div className="max-w-lg mx-auto">
+      <Link
+        href="/host/boards"
+        className="text-sm text-gray-400 hover:text-white mb-6 inline-block"
+      >
+        ← Back to Boards
+      </Link>
+      <h1 className="text-xl font-bold mb-1">New Board</h1>
+      <p className="text-sm text-gray-500 mb-8">
+        Set the game, price, and payout split. You can share the link
+        immediately after.
+      </p>
+      <NewBoardForm />
+    </div>
+  );
+}
+EOF
+echo "  ✓ src/app/host/boards/new/page.tsx (added Back to Boards link)"
+
+# --- 2. Add double-submit guard to form ---
+cat > 'src/app/host/boards/new/form.tsx' << 'EOF'
 "use client";
 
 import { useState } from "react";
@@ -253,3 +295,51 @@ export default function NewBoardForm() {
     </form>
   );
 }
+EOF
+echo "  ✓ src/app/host/boards/new/form.tsx (added submitted guard + 409 handling)"
+
+# --- 3. Patch API route: add pending board duplicate guard ---
+# Insert the check right after the credit gate (after the 402 block)
+node -e "
+const fs = require('fs');
+const file = 'src/app/api/boards/route.ts';
+let s = fs.readFileSync(file, 'utf8');
+
+// Find the credit gate block — insert pending check right before it
+const creditGate = '// 2b. Credit gate — platform owner bypasses';
+const idx = s.indexOf(creditGate);
+if (idx === -1) {
+  console.error('Could not find credit gate marker in', file);
+  process.exit(1);
+}
+
+const pendingCheck = \`// 2b. Pending board duplicate guard — one pending board per host
+    const existingPending = await prisma.board.findFirst({
+      where: { hostId: host.id, status: 'pending_payment' },
+    });
+    if (existingPending) {
+      return NextResponse.json(
+        {
+          error: 'You have a pending board awaiting payment. Complete or cancel it first.',
+          pendingBoardId: existingPending.boardId,
+        },
+        { status: 409 }
+      );
+    }
+
+    \`;
+
+s = s.slice(0, idx) + pendingCheck + s.slice(idx);
+fs.writeFileSync(file, s, 'utf8');
+console.log('  ✓', file, '(added pending board duplicate guard)');
+"
+
+echo ""
+echo "Done. 3 files patched."
+echo ""
+echo "Next:"
+echo "  1. Clean up duplicate pending boards in Supabase SQL editor:"
+echo "     DELETE FROM squares WHERE board_id IN (SELECT board_id FROM boards WHERE status = 'pending_payment' AND host_id = (SELECT id FROM hosts WHERE email = 'dtate@lmstechs.net'));"
+echo "     DELETE FROM boards WHERE status = 'pending_payment' AND host_id = (SELECT id FROM hosts WHERE email = 'dtate@lmstechs.net');"
+echo ""
+echo "  2. git add -A && git commit -m 'fix: prevent duplicate pending boards + add navigation guards' && git push origin main"

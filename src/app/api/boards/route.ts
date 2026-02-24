@@ -160,6 +160,20 @@ export async function POST(request: Request) {
       hostPayoutResponsible: true,
     };
 
+    // --- Guard: one pending board per host at a time ---
+    const existingPending = await prisma.board.findFirst({
+      where: { hostId: host.id, status: 'pending_payment' },
+    });
+    if (existingPending) {
+      return NextResponse.json(
+        {
+          error: 'You have a pending board awaiting payment. Complete or cancel it first.',
+          pendingBoardId: existingPending.boardId,
+        },
+        { status: 409 }
+      );
+    }
+
     // --- Path 1: Platform owner — skip credits entirely ---
     if (isPlatformOwner) {
       const board = await prisma.$transaction(async (tx) => {
