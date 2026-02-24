@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 
 type SquareData = {
   squareId: string;
@@ -185,123 +185,140 @@ export default function PlayerBoard({
         </p>
       )}
 
-      {/* Grid */}
-      <div className="overflow-x-auto w-fit mx-auto">
-        <div className="grid grid-cols-[28px_auto] grid-rows-[auto_1fr]" style={{columnGap:0,rowGap:"4px"}}>
+        {/* Grid */}
+        <div className="overflow-x-auto pb-4">
+          <div className="mx-auto w-fit">
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: hasNumbers
+                  ? '24px 28px repeat(10, 28px)'
+                  : 'repeat(10, 28px)',
+                gridTemplateRows: hasNumbers
+                  ? 'auto 20px repeat(10, 28px)'
+                  : 'repeat(10, 28px)',
+                gap: '2px',
+              }}
+            >
+              {/* Team A label */}
+              {hasNumbers && teamCol && (
+                <div
+                  style={{ gridColumn: '3 / 13', gridRow: 1 }}
+                  className="flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium h-6"
+                >
+                  {teamCol}
+                </div>
+              )}
 
-          {/* top-left corner spacer */}
-          <div />
+              {/* Column numbers */}
+              {hasNumbers && colNumbers.map((num, i) => (
+                <div
+                  key={`col-${i}`}
+                  style={{ gridColumn: i + 3, gridRow: 2 }}
+                  className="flex items-center justify-center text-[10px] font-bold text-gray-500"
+                >
+                  {num}
+                </div>
+              ))}
 
-          {/* Team col label (attached to grid) */}
-          {hasNumbers && teamCol ? (
-            <div className="h-7 flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium">
-              {teamCol}
-            </div>
-          ) : (
-            <div />
-          )}
-
-          {/* Team row label (attached + centered to square area) */}
-          {hasNumbers && teamRow ? (
-            <div className="w-7 flex items-center justify-center">
-              <span
-                className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
-                style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
-              >
-                {teamRow}
-              </span>
-            </div>
-          ) : (
-            <div />
-          )}
-
-          {/* Board grid */}
-          <div
-            className="inline-grid"
-            style={{
-              gridTemplateColumns: hasNumbers ? `28px repeat(10, 28px)` : `repeat(10, 28px)`,
-            }}
-          >
-            {/* Column headers */}
-            {hasNumbers && (
-              <>
-                <div />
-                {colNumbers.map((num, i) => (
-                  <div
-                    key={`col-${i}`}
-                    className="flex items-center justify-center text-[10px] font-bold text-gray-500 h-7"
+              {/* Team B label */}
+              {hasNumbers && teamRow && (
+                <div
+                  style={{ gridColumn: 1, gridRow: '3 / 13' }}
+                  className="flex items-center justify-center"
+                >
+                  <span
+                    className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium whitespace-nowrap"
+                    style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
                   >
-                    {num}
-                  </div>
-                ))}
-              </>
-            )}
+                    {teamRow}
+                  </span>
+                </div>
+              )}
 
-            {/* Grid rows */}
-            {Array.from({ length: 10 }, (_, row) => (
-              <div key={`row-${row}`} className="contents">
-                {hasNumbers && (
-                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-7">
-                    {rowNumbers[row]}
-                  </div>
-                )}
+              {/* Row numbers + squares */}
+              {Array.from({ length: 10 }, (_, row) => {
+                const gridRow = hasNumbers ? row + 3 : row + 1;
+                const colOffset = hasNumbers ? 3 : 1;
 
-                {Array.from({ length: 10 }, (_, col) => {
-                  const position = row * 10 + col;
-                  const sq = squares[position];
-                  if (!sq) return null;
+                return (
+                  <React.Fragment key={`row-group-${row}`}>
+                    {/* Row number */}
+                    {hasNumbers && (
+                      <div
+                        style={{ gridColumn: 2, gridRow }}
+                        className="flex items-center justify-center text-[10px] font-bold text-gray-500"
+                      >
+                        {rowNumbers[row]}
+                      </div>
+                    )}
 
-                  const isPaid = sq.paymentStatus === "paid";
-                  const isPending = sq.paymentStatus === "pending";
-                  const isAvailable = sq.paymentStatus === "open" && isOpen;
-                  const isSelected = selectedSquare?.squareId === sq.squareId;
-                  const isWinner = winnerSet.has(position) && isPaid;
+                    {/* Squares */}
+                    {Array.from({ length: 10 }, (_, col) => {
+                      const position = row * 10 + col;
+                      const sq = squares[position];
+                      if (!sq) return <div key={`empty-${position}`} style={{ gridColumn: col + colOffset, gridRow }} />;
 
-                  return (
-                    <button
-                      key={sq.squareId}
-                      disabled={!isAvailable}
-                      onClick={() => handleSquareTap(sq)}
-                      className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all min-w-[28px] m-[2px] ${
-                        isSelected
-                          ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
-                          : isWinner
-                            ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
-                            : isPaid
-                              ? "bg-green-950 border border-green-900 text-green-400"
-                              : isPending
-                                ? "bg-yellow-950 border border-yellow-900 text-yellow-500"
-                                : isAvailable
-                                  ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
-                                  : "bg-gray-900 border border-gray-800 text-gray-700"
-                      }`}
-                      title={
-                        isWinner
-                          ? `★ WINNER — ${sq.playerName ?? "Paid"}`
-                          : isPaid
-                            ? sq.playerName ?? "Paid"
-                            : isPending
-                              ? "Pending payment"
-                              : isAvailable
-                                ? `Square ${position + 1} — ${priceDisplay}`
-                                : "Unavailable"
-                      }
-                    >
-                      {isWinner
-                        ? "★"
-                        : isPaid && sq.playerName
-                          ? getInitials(sq.playerName)
-                          : isPending
-                            ? "…"
-                            : <span className="text-gray-700">{position + 1}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+                      const isPaid = sq.paymentStatus === "paid";
+                      const isPending = sq.paymentStatus === "pending";
+                      const isReservedCash = sq.paymentStatus === "reserved_cash";
+                      const isAvailable = sq.paymentStatus === "open" && isOpen;
+                      const isSelected = selectedSquare?.squareId === sq.squareId;
+                      const isWinner = winnerSet.has(position) && isPaid;
+
+                      return (
+                        <button
+                          key={sq.squareId}
+                          disabled={!isAvailable}
+                          onClick={() => handleSquareTap(sq)}
+                          style={{ gridColumn: col + colOffset, gridRow }}
+                          className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all ${
+                            isSelected
+                              ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
+                              : isWinner
+                                ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
+                                : isPaid
+                                  ? "bg-green-950 border border-green-900 text-green-400"
+                                  : isReservedCash
+                                    ? "bg-amber-950 border border-amber-800 text-amber-500"
+                                    : isPending
+                                      ? "bg-yellow-950 border border-yellow-900 text-yellow-500"
+                                      : isAvailable
+                                        ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
+                                        : "bg-gray-900 border border-gray-800 text-gray-700"
+                          }`}
+                          title={
+                            isWinner
+                              ? `★ WINNER — ${sq.playerName ?? "Paid"}`
+                              : isPaid
+                                ? sq.playerName ?? "Paid"
+                                : isReservedCash
+                                  ? `Reserved (cash) — ${sq.playerName ?? ""}`
+                                  : isPending
+                                    ? "Pending payment"
+                                    : isAvailable
+                                      ? `Square ${position + 1} — ${priceDisplay}`
+                                      : "Unavailable"
+                          }
+                        >
+                          {isWinner
+                            ? "★"
+                            : isPaid && sq.playerName
+                              ? getInitials(sq.playerName)
+                              : isReservedCash
+                                ? "💵"
+                                : isPending
+                                  ? "…"
+                                  : <span className="text-gray-700">{position + 1}</span>}
+                        </button>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
 
       {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
