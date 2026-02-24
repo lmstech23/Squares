@@ -53,9 +53,18 @@ model Board {
   cashReservationTtlMins    Int         @default(20) @map("cash_reservation_ttl_mins")
   cashLiabilityAccepted     Boolean     @default(false) @map("cash_liability_accepted")
   scores                    Json?
+
+  // Monetization lifecycle
+  pendingExpiresAt          DateTime?   @map("pending_expires_at") @db.Timestamptz(6)
+  expiredAt                 DateTime?   @map("expired_at") @db.Timestamptz(6)
+  activatedAt               DateTime?   @map("activated_at") @db.Timestamptz(6)
+
   host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
   squares                   Square[]
+  creditTransactions        CreditTransaction[]
 
+  @@index([pendingExpiresAt], map: "idx_boards_pending_expiry")
+  @@index([expiredAt], map: "idx_boards_expired_cleanup")
   @@map("boards")
 }
 
@@ -108,10 +117,12 @@ model CreditTransaction {
   type            credit_tx_type
   amount          Int
   balanceAfter    Int            @map("balance_after")
-  stripeSessionId String?        @map("stripe_session_id")
+  stripeSessionId String?        @unique @map("stripe_session_id")
+  boardId         String?        @map("board_id") @db.Uuid
   note            String?
   createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   host            Host           @relation(fields: [hostId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  board           Board?         @relation(fields: [boardId], references: [boardId], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([hostId, createdAt], map: "idx_credit_tx_host_created")
   @@map("credit_transactions")
@@ -120,6 +131,8 @@ model CreditTransaction {
 enum BoardStatus {
   open
   closed
+  pending_payment
+  expired
 }
 
 enum PaymentStatus {
@@ -131,8 +144,6 @@ enum PaymentStatus {
   expired
 }
 
-/// Internal debugging only. Tracks WHY a square was released.
-/// Null when square is open or paid.
 enum ReleaseReason {
   expired
   failed
