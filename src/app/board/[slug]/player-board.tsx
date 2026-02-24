@@ -187,35 +187,39 @@ export default function PlayerBoard({
 
       {/* Grid */}
       <div className="overflow-x-auto w-fit mx-auto">
-        {/* Team col label */}
-        {hasNumbers && teamCol && (
-          <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ml-7">
-            {teamCol}
-          </div>
-        )}
+        <div className="grid grid-cols-[28px_1fr] grid-rows-[auto_1fr] gap-1">
 
-        <div className="flex">
-          {/* Team row label */}
-          {hasNumbers && teamRow && (
-            <div className="flex items-center justify-center mr-1">
+          {/* top-left corner spacer */}
+          <div />
+
+          {/* Team col label (attached to grid) */}
+          {hasNumbers && teamCol ? (
+            <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center">
+              {teamCol}
+            </div>
+          ) : (
+            <div />
+          )}
+
+          {/* Team row label (attached + centered to square area) */}
+          {hasNumbers && teamRow ? (
+            <div className="flex items-center justify-center">
               <span
                 className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
-                style={{
-                  writingMode: "vertical-lr",
-                  transform: "rotate(180deg)",
-                }}
+                style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
               >
                 {teamRow}
               </span>
             </div>
+          ) : (
+            <div />
           )}
 
+          {/* Board grid */}
           <div
             className="inline-grid gap-1"
             style={{
-              gridTemplateColumns: hasNumbers
-                ? `28px repeat(10, 1fr)`
-                : `repeat(10, 1fr)`,
+              gridTemplateColumns: hasNumbers ? `28px repeat(10, 1fr)` : `repeat(10, 1fr)`,
             }}
           >
             {/* Column headers */}
@@ -236,14 +240,12 @@ export default function PlayerBoard({
             {/* Grid rows */}
             {Array.from({ length: 10 }, (_, row) => (
               <div key={`row-${row}`} className="contents">
-                {/* Row header */}
                 {hasNumbers && (
                   <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-7">
                     {rowNumbers[row]}
                   </div>
                 )}
 
-                {/* Squares in this row */}
                 {Array.from({ length: 10 }, (_, col) => {
                   const position = row * 10 + col;
                   const sq = squares[position];
@@ -251,10 +253,8 @@ export default function PlayerBoard({
 
                   const isPaid = sq.paymentStatus === "paid";
                   const isPending = sq.paymentStatus === "pending";
-                  const isAvailable =
-                    sq.paymentStatus === "open" && isOpen;
-                  const isSelected =
-                    selectedSquare?.squareId === sq.squareId;
+                  const isAvailable = sq.paymentStatus === "open" && isOpen;
+                  const isSelected = selectedSquare?.squareId === sq.squareId;
                   const isWinner = winnerSet.has(position) && isPaid;
 
                   return (
@@ -293,7 +293,7 @@ export default function PlayerBoard({
                           ? getInitials(sq.playerName)
                           : isPending
                             ? "…"
-                          : <span className="text-gray-700">{position + 1}</span>}
+                            : <span className="text-gray-700">{position + 1}</span>}
                     </button>
                   );
                 })}
@@ -301,6 +301,7 @@ export default function PlayerBoard({
             ))}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Legend */}
