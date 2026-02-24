@@ -161,7 +161,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
     });
 
     console.log(
-      `Credit purchased + board activated: host=${hostId}, board=${pendingBoard.id}, session=${session.id}`
+      `Credit purchased + board activated: host=${hostId}, board=${pendingBoard.boardId}, session=${session.id}`
     );
   } else {
     console.log(`Credit purchased (no pending board): host=${hostId}, session=${session.id}`);
