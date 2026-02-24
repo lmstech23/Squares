@@ -187,7 +187,7 @@ export default function PlayerBoard({
 
       {/* Grid */}
       <div className="overflow-x-auto w-fit mx-auto">
-        <div className="grid grid-cols-[28px_auto] grid-rows-[auto_1fr] gap-y-1 gap-x-0">
+        <div className="grid grid-cols-[28px_auto] grid-rows-[auto_1fr]" style={{columnGap:0,rowGap:"4px"}}>
 
           {/* top-left corner spacer */}
           <div />
