@@ -12,12 +12,12 @@ const PERIOD_LABELS: Record<string, string[]> = {
 
 interface CreateBoardBody {
   gameName: string;
-  squarePrice: number; // dollars (converted to cents)
+  squarePrice: number;
   teamRow: string;
   teamCol: string;
-  periodType?: "halves" | "quarters"; // defaults to halves for pilot
-  hostCutPercent?: number; // 0-50, default 0. Host keeps this %, players split the rest.
-  payoutStructure: Record<string, number>; // keyed by period label, e.g. { "H1": 50, "Final": 50 }
+  periodType?: "halves" | "quarters";
+  hostCutPercent?: number;
+  payoutStructure: Record<string, number>;
 }
 
 export async function POST(request: Request) {
@@ -48,18 +48,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2b. Credit gate — platform owner bypasses
-    if (host.id !== PLATFORM_OWNER_ID && host.boardCredits < 1) {
-      return NextResponse.json(
-        {
-          error: "No board credits remaining.",
-          needsCredits: true,
-          pricePerBoard: 900,
-        },
-        { status: 402 }
-      );
-    }
-
     // 3. Parse + validate body
     const body: CreateBoardBody = await request.json();
 
@@ -85,7 +73,7 @@ export async function POST(request: Request) {
     }
 
     // 4. Determine period type and labels
-    const periodType = body.periodType ?? "halves"; // default for March Madness pilot
+    const periodType = body.periodType ?? "halves";
     const periodLabels = PERIOD_LABELS[periodType];
 
     if (!periodLabels) {
@@ -104,7 +92,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. Validate payout structure — keys must match periodLabels, values sum to 100%
+    // 6. Validate payout structure
     const payoutStructure = body.payoutStructure;
 
     if (!payoutStructure || typeof payoutStructure !== "object") {
@@ -114,7 +102,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check that every period label has a payout entry
     for (const label of periodLabels) {
       if (payoutStructure[label] == null) {
         return NextResponse.json(
@@ -141,7 +128,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. Generate unique slug (retry on collision)
+    // 7. Generate unique slug
     let slug = generateSlug();
     let attempts = 0;
     while (attempts < 5) {
@@ -151,62 +138,118 @@ export async function POST(request: Request) {
       attempts++;
     }
 
-    // 7. Create Board + 100 Squares in one transaction
+    // 8. Determine creation path
+    const isPlatformOwner = host.id === PLATFORM_OWNER_ID;
+    const hasCredits = host.boardCredits >= 1;
     const squarePriceCents = Math.round(body.squarePrice * 100);
 
+    const boardData = {
+      hostId: host.id,
+      gameName: body.gameName.trim(),
+      squarePrice: squarePriceCents,
+      totalSquares: 100,
+      slug,
+      teamRow: body.teamRow.trim(),
+      teamCol: body.teamCol.trim(),
+      periodType,
+      periodLabels,
+      payoutStructure,
+      hostCutPercent,
+      maxSquaresPerPlayer: 10,
+      currency: "USD",
+      hostPayoutResponsible: true,
+    };
+
+    // --- Path 1: Platform owner — skip credits entirely ---
+    if (isPlatformOwner) {
+      const board = await prisma.$transaction(async (tx) => {
+        const newBoard = await tx.board.create({
+          data: {
+            ...boardData,
+            status: "open",
+            activatedAt: new Date(),
+          },
+        });
+
+        await tx.square.createMany({
+          data: Array.from({ length: 100 }, (_, i) => ({
+            boardId: newBoard.boardId,
+            position: i,
+            paymentStatus: "open" as const,
+          })),
+        });
+
+        return newBoard;
+      });
+
+      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
+    }
+
+    // --- Path 2: Host has credits — deduct and activate ---
+    if (hasCredits) {
+      const board = await prisma.$transaction(async (tx) => {
+        const updatedHost = await tx.host.update({
+          where: { id: host.id, boardCredits: { gte: 1 } },
+          data: { boardCredits: { decrement: 1 } },
+        });
+
+        const newBoard = await tx.board.create({
+          data: {
+            ...boardData,
+            status: "open",
+            activatedAt: new Date(),
+          },
+        });
+
+        await tx.creditTransaction.create({
+          data: {
+            hostId: host.id,
+            type: "board_created",
+            amount: -1,
+            balanceAfter: updatedHost.boardCredits,
+            boardId: newBoard.boardId,
+          },
+        });
+
+        await tx.square.createMany({
+          data: Array.from({ length: 100 }, (_, i) => ({
+            boardId: newBoard.boardId,
+            position: i,
+            paymentStatus: "open" as const,
+          })),
+        });
+
+        return newBoard;
+      });
+
+      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
+    }
+
+    // --- Path 3: No credits — create pending_payment board ---
+    const pendingExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
     const board = await prisma.$transaction(async (tx) => {
-      // Deduct 1 credit atomically
-      const updatedHost = await tx.host.update({
-        where: { id: host.id, boardCredits: { gte: 1 } },
-        data: { boardCredits: { decrement: 1 } },
-      });
-
-      // Log the credit transaction
-      await tx.creditTransaction.create({
-        data: {
-          hostId: host.id,
-          type: "board_created",
-          amount: -1,
-          balanceAfter: updatedHost.boardCredits,
-        },
-      });
-
       const newBoard = await tx.board.create({
         data: {
-          hostId: host.id,
-          gameName: body.gameName.trim(),
-          squarePrice: squarePriceCents,
-          totalSquares: 100,
-          status: "open",
-          slug,
-          teamRow: body.teamRow.trim(),
-          teamCol: body.teamCol.trim(),
-          periodType,
-          periodLabels,
-          payoutStructure,
-          hostCutPercent,
-          maxSquaresPerPlayer: 10,
-          currency: "USD",
-          hostPayoutResponsible: true,
+          ...boardData,
+          status: "pending_payment",
+          pendingExpiresAt,
         },
       });
 
-      // Create 100 squares (positions 0-99)
-      await tx.square.createMany({
-        data: Array.from({ length: 100 }, (_, i) => ({
-          boardId: newBoard.boardId,
-          position: i,
-          paymentStatus: "open" as const,
-        })),
-      });
-
+      // No squares created — board is not shareable until paid
       return newBoard;
     });
 
-    return NextResponse.json({
-      boardId: board.boardId,
-      slug: board.slug,
-    });
+    return NextResponse.json(
+      {
+        boardId: board.boardId,
+        slug: board.slug,
+        status: "pending_payment",
+        pendingExpiresAt: board.pendingExpiresAt,
+      },
+      { status: 402 }
+    );
   } catch (error) {
     console.error("Board creation error:", error);
     return NextResponse.json(

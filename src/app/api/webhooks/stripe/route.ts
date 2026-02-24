@@ -132,8 +132,11 @@ async function handleAccountUpdated(account: Stripe.Account) {
  */
 async function handleCreditPurchase(session: Stripe.Checkout.Session) {
   const hostId = session.metadata?.hostId;
-  if (!hostId) {
-    console.error("Credit purchase webhook missing hostId in metadata");
+  const creditsToAdd = parseInt(session.metadata?.credits ?? "0", 10);
+  const boardId = session.metadata?.boardId; // may be undefined
+
+  if (!hostId || creditsToAdd < 1) {
+    console.error("Credit purchase webhook missing hostId or credits in metadata");
     return;
   }
 
@@ -147,38 +150,72 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
     return;
   }
 
-  // Add credit + log in one transaction
   await prisma.$transaction(async (tx) => {
-    const updatedHost = await tx.host.update({
+    // 1. Add purchased credits
+    const afterAdd = await tx.host.update({
       where: { id: hostId },
-      data: { boardCredits: { increment: 1 } },
+      data: { boardCredits: { increment: creditsToAdd } },
     });
 
+    // 2. Log the purchase
     await tx.creditTransaction.create({
       data: {
         hostId,
         type: "purchase",
-        amount: 1,
-        balanceAfter: updatedHost.boardCredits,
+        amount: creditsToAdd,
+        balanceAfter: afterAdd.boardCredits,
         stripeSessionId: session.id,
       },
     });
+
+    // 3. If a pending_payment board triggered this checkout, activate it
+    if (boardId) {
+      const board = await tx.board.findUnique({ where: { boardId } });
+
+      if (board && board.hostId === hostId && board.status === "pending_payment") {
+        // Deduct 1 credit for this board
+        const afterDeduct = await tx.host.update({
+          where: { id: hostId },
+          data: { boardCredits: { decrement: 1 } },
+        });
+
+        // Log the board creation deduction
+        await tx.creditTransaction.create({
+          data: {
+            hostId,
+            type: "board_created",
+            amount: -1,
+            balanceAfter: afterDeduct.boardCredits,
+            boardId,
+          },
+        });
+
+        // Flip board to open
+        await tx.board.update({
+          where: { boardId },
+          data: {
+            status: "open",
+            pendingExpiresAt: null,
+            activatedAt: new Date(),
+          },
+        });
+
+        // Create 100 squares (weren't created for pending_payment boards)
+        await tx.square.createMany({
+          data: Array.from({ length: 100 }, (_, i) => ({
+            boardId,
+            position: i,
+            paymentStatus: "open" as const,
+          })),
+        });
+      }
+    }
   });
 
-  console.log(`Credit purchased: host=${hostId}, session=${session.id}`);
+  console.log(
+    `Credit purchased: host=${hostId}, credits=${creditsToAdd}, board=${boardId ?? "none"}, session=${session.id}`
+  );
 }
-
-/**
- * Payment succeeded — lock the square as paid, create PaymentReference.
- *
- * Guards:
- * 1. Idempotency via PaymentReference.stripeSessionId unique constraint
- * 2. State guard: only transitions pending → paid
- * 3. Session identity: stripePaymentId on Square must match this session
- *    (prevents a stale completed event from claiming a re-released square)
- * 4. Atomic: updateMany + PaymentReference create in one transaction.
- *    Both succeed or neither does — no orphaned paid squares without records.
- */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const squareId = session.metadata?.squareId;
   if (!squareId) return;

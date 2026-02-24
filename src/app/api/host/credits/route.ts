@@ -1,49 +1,32 @@
-import { getHost } from "@/lib/auth";
-// ============================================================
-// src/app/api/host/credits/route.ts
-//
-// Returns current credit balance + recent transaction history.
-// Used by the dashboard to display the CreditBadge and
-// optionally a transaction log.
-// ============================================================
-
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { CREDIT_PRICE_CENTS, CREDIT_PRICE_DISPLAY } from "@/lib/constants";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const host = await getHost();
-    if (!host) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const transactions = await prisma.creditTransaction.findMany({
-      where: { hostId: host.id },
-      orderBy: { createdAt: "desc" },
-      take: 20,
+    const host = await prisma.host.findUnique({
+      where: { supabaseUserId: user.id },
+      select: { boardCredits: true },
     });
 
-    return NextResponse.json({
-      boardCredits: host.boardCredits,
-      pricePerBoard: CREDIT_PRICE_CENTS,
-      priceDisplay: CREDIT_PRICE_DISPLAY,
-      transactions: transactions.map((tx) => ({
-        id: tx.id,
-        type: tx.type,
-        amount: tx.amount,
-        balanceAfter: tx.balanceAfter,
-        note: tx.note,
-        createdAt: tx.createdAt,
-      })),
-    });
+    if (!host) {
+      return NextResponse.json({ error: "Host not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ credits: host.boardCredits });
   } catch (error) {
-    console.error("Credits fetch error:", error);
+    console.error("Credit balance error:", error);
     return NextResponse.json(
-      { error: "Failed to fetch credits." },
+      { error: "Failed to fetch credit balance." },
       { status: 500 }
     );
   }

@@ -13,4 +13,4 @@ export const CREDIT_PRICE_DISPLAY = "$9"; // "$9" during tournament → "$19" af
 
 
 // --- Platform owner (skip credit gates) ---
-export const PLATFORM_OWNER_ID = "28f775a2-16f3-43c1-a65a-88e7e860df71";
+export const PLATFORM_OWNER_ID = process.env.PLATFORM_OWNER_ID!;
