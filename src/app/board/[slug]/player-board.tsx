@@ -187,7 +187,7 @@ export default function PlayerBoard({
 
       {/* Grid */}
       <div className="overflow-x-auto w-fit mx-auto">
-        <div className="grid grid-cols-[28px_1fr] grid-rows-[auto_1fr] gap-1">
+        <div className="grid grid-cols-[28px_auto] grid-rows-[auto_1fr] gap-1">
 
           {/* top-left corner spacer */}
           <div />
@@ -219,7 +219,7 @@ export default function PlayerBoard({
           <div
             className="inline-grid gap-1"
             style={{
-              gridTemplateColumns: hasNumbers ? `28px repeat(10, 1fr)` : `repeat(10, 1fr)`,
+              gridTemplateColumns: hasNumbers ? `28px repeat(10, 28px)` : `repeat(10, 28px)`,
             }}
           >
             {/* Column headers */}
@@ -229,7 +229,7 @@ export default function PlayerBoard({
                 {colNumbers.map((num, i) => (
                   <div
                     key={`col-${i}`}
-                    className="flex items-center justify-center text-[10px] font-bold text-gray-500 h-6"
+                    className="flex items-center justify-center text-[10px] font-bold text-gray-500 h-7"
                   >
                     {num}
                   </div>
