@@ -1,3 +1,4 @@
+import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
@@ -54,7 +55,7 @@ export default async function HostBoardsPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-bold">Your Boards</h1>
         <Link
-          href="/host/boards/new"
+          href={host.id !== PLATFORM_OWNER_ID && host.boardCredits < 1 ? "/host/credits" : "/host/boards/new"}
           className="rounded-lg bg-white text-gray-950 px-4 py-2 text-sm font-medium hover:bg-gray-200 transition-colors"
         >
           New Board

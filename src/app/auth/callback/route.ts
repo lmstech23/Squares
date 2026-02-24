@@ -25,6 +25,7 @@ export async function GET(request: Request) {
             supabaseUserId: data.user.id,
             email: identifier,
             name: data.user.user_metadata?.full_name ?? null,
+            boardCredits: 2,
           },
         });
       } catch (e: any) {

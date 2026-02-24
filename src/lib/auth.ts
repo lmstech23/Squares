@@ -28,6 +28,7 @@ export async function getHost() {
           supabaseUserId: user.id,
           email: identifier,
           name: user.user_metadata?.full_name ?? null,
+          boardCredits: 2,
         },
       });
     } catch (e: any) {

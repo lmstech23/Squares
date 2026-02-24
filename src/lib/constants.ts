@@ -3,8 +3,6 @@
 // Single source of truth. When the tournament ends, update here.
 // ============================================================
 
-// --- Host cap ---
-export const MAX_HOSTS = 10;
 
 // --- Board credits ---
 export const SIGNUP_CREDITS = 2;
@@ -13,5 +11,6 @@ export const SIGNUP_CREDITS = 2;
 export const CREDIT_PRICE_CENTS = 900;   // $9 during tournament → 1900 after
 export const CREDIT_PRICE_DISPLAY = "$9"; // "$9" during tournament → "$19" after
 
-// --- Invite codes ---
-export const TOURNAMENT_END = new Date("2026-04-08T00:00:00Z"); // day after championship
+
+// --- Platform owner (skip credit gates) ---
+export const PLATFORM_OWNER_ID = "28f775a2-16f3-43c1-a65a-88e7e860df71";

@@ -1,3 +1,4 @@
+import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -47,8 +48,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2b. Credit gate — host must have at least 1 board credit
-    if (host.boardCredits < 1) {
+    // 2b. Credit gate — platform owner bypasses
+    if (host.id !== PLATFORM_OWNER_ID && host.boardCredits < 1) {
       return NextResponse.json(
         {
           error: "No board credits remaining.",
