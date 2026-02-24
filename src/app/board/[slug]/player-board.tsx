@@ -194,7 +194,7 @@ export default function PlayerBoard({
 
           {/* Team col label (attached to grid) */}
           {hasNumbers && teamCol ? (
-            <div className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center">
+            <div className="h-7 flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium">
               {teamCol}
             </div>
           ) : (
@@ -203,7 +203,7 @@ export default function PlayerBoard({
 
           {/* Team row label (attached + centered to square area) */}
           {hasNumbers && teamRow ? (
-            <div className="flex items-center justify-center">
+            <div className="w-7 flex items-center justify-center">
               <span
                 className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
                 style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
@@ -217,7 +217,7 @@ export default function PlayerBoard({
 
           {/* Board grid */}
           <div
-            className="inline-grid gap-1"
+            className="inline-grid"
             style={{
               gridTemplateColumns: hasNumbers ? `28px repeat(10, 28px)` : `repeat(10, 28px)`,
             }}
@@ -262,7 +262,7 @@ export default function PlayerBoard({
                       key={sq.squareId}
                       disabled={!isAvailable}
                       onClick={() => handleSquareTap(sq)}
-                      className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all min-w-[28px] ${
+                      className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all min-w-[28px] m-[2px] ${
                         isSelected
                           ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
                           : isWinner
