@@ -302,7 +302,6 @@ export default function PlayerBoard({
           </div>
         </div>
       </div>
-      </div>
 
       {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
