@@ -293,7 +293,7 @@ export default function PlayerBoard({
                           ? getInitials(sq.playerName)
                           : isPending
                             ? "…"
-                            : ""}
+                          : <span className="text-gray-700">{position + 1}</span>}
                     </button>
                   );
                 })}

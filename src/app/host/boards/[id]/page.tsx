@@ -1,4 +1,5 @@
 import { getHost } from "@/lib/auth";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
 import CopyLinkButton from "./copy-link";
@@ -78,7 +79,13 @@ export default async function HostBoardPage({ params }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold">{board.gameName}</h1>
+          <Link
+        href="/host/boards"
+        className="text-sm text-gray-400 hover:text-white mb-4 inline-block"
+      >
+        ← Back to Boards
+      </Link>
+      <h1 className="text-xl font-bold">{board.gameName}</h1>
           <p className="text-sm text-gray-500 mt-0.5">
             ${board.squarePrice / 100} per square · ${totalPot} total pot
           </p>

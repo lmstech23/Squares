@@ -124,7 +124,7 @@ export default function BoardGrid({
                         ? getInitials(sq.playerName)
                         : isPending
                           ? "…"
-                          : ""}
+                          : <span className="text-gray-700">{position + 1}</span>}
                   </div>
                 );
               })}
