@@ -141,7 +141,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
       });
 
       await tx.board.update({
-        where: { id: pendingBoard.id },
+        where: { boardId: pendingBoard.boardId },
         data: {
           status: "open",
           pendingExpiresAt: null,
