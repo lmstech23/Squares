@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 
-type PaymentStatus = "open" | "pending" | "paid" | "failed" | "expired";
+type PaymentStatus = "open" | "pending" | "paid" | "failed" | "expired" | "reserved_cash";
 
 type SquareData = {
   squareId: string;
@@ -32,6 +32,7 @@ export default function SquareList({ squares }: { squares: SquareData[] }) {
     let open = 0;
     let failed = 0;
     let expired = 0;
+    let reservedCash = 0;
     for (const sq of squares) {
       switch (sq.paymentStatus) {
         case "paid":
@@ -46,6 +47,9 @@ export default function SquareList({ squares }: { squares: SquareData[] }) {
         case "expired":
           expired++;
           break;
+        case "reserved_cash":
+          reservedCash++;
+          break;
         default:
           open++;
       }
@@ -56,7 +60,7 @@ export default function SquareList({ squares }: { squares: SquareData[] }) {
       open,
       failed,
       expired,
-      filled: paid + pending,
+      filled: paid + pending + reservedCash,
       empty: open,
     };
   }, [squares]);
@@ -67,7 +71,7 @@ export default function SquareList({ squares }: { squares: SquareData[] }) {
 
     return sorted.filter((sq) => {
       const s = sq.paymentStatus;
-      const isFilled = s === "paid" || s === "pending";
+      const isFilled = s === "paid" || s === "pending" || s === "reserved_cash";
       const isEmpty = s === "open";
 
       // "filled" = paid + pending (taken squares)
