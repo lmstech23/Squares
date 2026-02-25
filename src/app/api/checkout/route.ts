@@ -50,8 +50,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Load all squares + board + host
-    const squares = await prisma.square.findMany({
+    // 2. Load all requested squares + board + host
+    let squares = await prisma.square.findMany({
       where: { squareId: { in: squareIds } },
       include: {
         board: {
@@ -98,66 +98,96 @@ export async function POST(request: Request) {
       );
     }
 
-    // ✅ 4b. Resume gate: if player already has an active pending checkout
-    //    on this board, return the existing Stripe session URL
+    // ✅ 4b. Smart resume/merge for returning players
+    //    - Same squares, no new picks → resume existing Stripe session
+    //    - New squares added → cancel old session, merge, create new combined one
     const now = new Date();
 
-    const activePending = await prisma.square.findFirst({
+    const myPendingSquares = await prisma.square.findMany({
       where: {
         boardId: board.boardId,
         playerEmail: email,
         paymentStatus: "pending",
-        checkoutExpiresAt: { gt: now },
-        stripePaymentId: { not: null },
       },
-      select: {
-        squareId: true,
-        stripePaymentId: true,
-        checkoutExpiresAt: true,
-      },
+      select: { squareId: true, stripePaymentId: true, checkoutExpiresAt: true },
     });
 
-    if (activePending?.stripePaymentId) {
-      try {
-        const existing = await stripe.checkout.sessions.retrieve(
-          activePending.stripePaymentId,
-          { stripeAccount: board.host.stripeAccountId! }
-        );
+    if (myPendingSquares.length > 0) {
+      const pendingIds = new Set(myPendingSquares.map((s) => s.squareId));
+      const requestedIds = new Set(squareIds);
 
-        // If Stripe session is still usable, return it
-        if (existing?.url && existing.status === "open") {
-          return NextResponse.json({
-            checkoutUrl: existing.url,
-            resumed: true,
-            squareId: activePending.squareId,
-            expiresAt: activePending.checkoutExpiresAt,
-          });
+      // Check if player is just resuming (exact same squares, no additions)
+      const isExactResume =
+        pendingIds.size === requestedIds.size &&
+        [...pendingIds].every((id) => requestedIds.has(id));
+
+      if (isExactResume) {
+        // Try to return existing Stripe session
+        const sessionId = myPendingSquares.find(
+          (s) => s.stripePaymentId
+        )?.stripePaymentId;
+
+        if (sessionId) {
+          try {
+            const existing = await stripe.checkout.sessions.retrieve(
+              sessionId,
+              { stripeAccount: board.host.stripeAccountId! }
+            );
+
+            if (existing?.url && existing.status === "open") {
+              return NextResponse.json({
+                checkoutUrl: existing.url,
+                resumed: true,
+              });
+            }
+          } catch {
+            // Session retrieval failed — fall through to create new one
+          }
         }
-      } catch {
-        // Session retrieval failed — treat as expired
       }
 
-      // Stripe session isn't open anymore — release the stale holds
-      await prisma.square.updateMany({
-        where: {
-          boardId: board.boardId,
-          playerEmail: email,
-          paymentStatus: "pending",
-          stripePaymentId: activePending.stripePaymentId,
-        },
-        data: {
-          paymentStatus: "open",
-          playerName: null,
-          playerEmail: null,
-          checkoutExpiresAt: null,
-          stripePaymentId: null,
-          releaseReason: "expired",
-        },
-      });
+      // Either new squares added or old session expired — cancel old session(s)
+      const staleSessionIds = new Set(
+        myPendingSquares
+          .filter((s) => s.stripePaymentId)
+          .map((s) => s.stripePaymentId!)
+      );
+      for (const sid of staleSessionIds) {
+        try {
+          await stripe.checkout.sessions.expire(sid, {
+            stripeAccount: board.host.stripeAccountId!,
+          });
+        } catch {
+          // Already expired — safe to ignore
+        }
+      }
+
+      // Merge: add any pending squares not already in the request
+      for (const id of pendingIds) {
+        if (!requestedIds.has(id)) {
+          squareIds.push(id);
+        }
+      }
+
+      // Re-load full square set if we merged in extras
+      if (squareIds.length !== requestedIds.size) {
+        squares = await prisma.square.findMany({
+          where: { squareId: { in: squareIds } },
+          include: {
+            board: {
+              include: {
+                host: {
+                  select: { stripeAccountId: true, stripeChargesEnabled: true },
+                },
+              },
+            },
+          },
+        });
+      }
     }
 
     // 5. Check max_squares_per_player (count paid + pending by email)
-    //    Exclude squares being re-claimed (no double-counting)
+    //    Exclude squares being re-claimed/merged (no double-counting)
     const playerSquareCount = await prisma.square.count({
       where: {
         boardId: board.boardId,
@@ -180,34 +210,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5b. Cancel stale Stripe sessions for squares this player is re-claiming
-    const existingPendingSquares = await prisma.square.findMany({
-      where: {
-        squareId: { in: squareIds },
-        paymentStatus: "pending",
-        playerEmail: email,
-        stripePaymentId: { not: null },
-      },
-      select: { stripePaymentId: true },
-    });
-
-    if (existingPendingSquares.length > 0) {
-      const sessionIds = new Set(
-        existingPendingSquares.map((s) => s.stripePaymentId!)
-      );
-      for (const sessionId of sessionIds) {
-        try {
-          await stripe.checkout.sessions.expire(sessionId, {
-            stripeAccount: board.host.stripeAccountId!,
-          });
-        } catch {
-          // Session may already be expired — safe to ignore
-        }
-      }
-    }
-
     // 6. Lock all squares as pending — single atomic updateMany
-    //    OR clause: allows re-claiming own pending squares
+    //    OR clause: allows re-claiming own pending squares + locking new open ones
     const expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
 
     const { count: totalLocked } = await prisma.$transaction(async (tx) => {
