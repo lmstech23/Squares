@@ -8,6 +8,7 @@ import CloseBoardButton from "./close-button";
 import ScoreEntry from "./score-entry";
 import CashModeToggle from "./cash-mode-toggle";
 import CashReservePanel from "./cash-reserve-panel";
+import SquareList from "./square-list";
 import { calculateWinnersFromArrays } from "@/lib/winners";
 
 interface Props {
@@ -255,6 +256,9 @@ export default async function HostBoardPage({ params }: Props) {
         teamRow={board.teamRow ?? undefined}
         winnerPositions={winnerPositions}
       />
+
+      {/* Player list — flat by square number */}
+      <SquareList squares={board.squares} />
     </div>
   );
 }
