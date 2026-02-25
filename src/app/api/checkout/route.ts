@@ -9,7 +9,7 @@ interface CheckoutBody {
 }
 
 // 30-minute checkout TTL (Stripe minimum for checkout sessions)
-const CHECKOUT_TTL_MS = 30 * 60 * 1000;
+const CHECKOUT_TTL_MS = 10 * 60 * 1000; // 10-min DB hold (Stripe session stays 30 min)
 
 export async function POST(request: Request) {
   try {
