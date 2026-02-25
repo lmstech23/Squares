@@ -10,6 +10,12 @@ export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
 
+  // New hosts who haven't chosen payment method yet
+  if (!host.paymentPreference) {
+    redirect("/host/payment-setup");
+  }
+
+
   if (!host.stripeAccountId) {
     redirect("/host/stripe");
   }
