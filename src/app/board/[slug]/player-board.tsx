@@ -50,7 +50,7 @@ export default function PlayerBoard({
   cashModeEnabled = false,
 }: PlayerBoardProps) {
   const [squares] = useState(initialSquares);
-  const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
+  const [selectedSquares, setSelectedSquares] = useState<Map<string, SquareData>>(new Map());
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const [cashPin, setCashPin] = useState("");
@@ -58,33 +58,54 @@ export default function PlayerBoard({
   const [error, setError] = useState("");
   const [cashSuccess, setCashSuccess] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"card" | "cash">("card");
+  const [showModal, setShowModal] = useState(false);
 
   const isOpen = status === "open";
   const hasNumbers = rowNumbers && colNumbers;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
 
+  const selectedCount = selectedSquares.size;
+  const totalPrice = `$${(selectedCount * squarePrice) / 100}`;
+
   const handleSquareTap = useCallback(
     (sq: SquareData) => {
       if (!isOpen) return;
-      if (sq.paymentStatus !== "open") return;
-      setSelectedSquare(sq);
+      // Allow tapping open squares and pending squares (for resume flow)
+      if (sq.paymentStatus !== "open" && sq.paymentStatus !== "pending") return;
+
+      setSelectedSquares((prev) => {
+        const next = new Map(prev);
+        if (next.has(sq.squareId)) {
+          next.delete(sq.squareId);
+        } else {
+          // Enforce max per player at selection time
+          if (next.size >= maxPerPlayer) {
+            return prev;
+          }
+          next.set(sq.squareId, sq);
+        }
+        return next;
+      });
+
       setError("");
       setCashSuccess(false);
-      setPaymentMode("card");
+      setShowModal(true);
     },
-    [isOpen]
+    [isOpen, maxPerPlayer]
   );
 
   const handleClose = useCallback(() => {
-    setSelectedSquare(null);
+    setSelectedSquares(new Map());
+    setShowModal(false);
     setError("");
     setCashSuccess(false);
+    setPaymentMode("card");
   }, []);
 
   async function handleCheckout(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedSquare) return;
+    if (selectedSquares.size === 0) return;
 
     const trimmedName = playerName.trim();
     const trimmedEmail = playerEmail.trim().toLowerCase();
@@ -107,7 +128,7 @@ export default function PlayerBoard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareId: selectedSquare.squareId,
+          squareIds: Array.from(selectedSquares.keys()),
           playerName: trimmedName,
           playerEmail: trimmedEmail,
         }),
@@ -131,7 +152,9 @@ export default function PlayerBoard({
 
   async function handleCashReserve(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedSquare) return;
+    // Cash reserve: use first selected square only
+    const firstSquare = Array.from(selectedSquares.values())[0];
+    if (!firstSquare) return;
 
     const trimmedName = playerName.trim();
     const trimmedPin = cashPin.trim();
@@ -154,7 +177,7 @@ export default function PlayerBoard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareId: selectedSquare.squareId,
+          squareId: firstSquare.squareId,
           playerName: trimmedName,
           pin: trimmedPin,
         }),
@@ -181,127 +204,132 @@ export default function PlayerBoard({
       {/* Instruction line */}
       {isOpen && (
         <p className="text-xs text-gray-500 mb-3">
-          Pick a square. {priceDisplay} each.
+          Pick a square. {priceDisplay} each. {maxPerPlayer > 1 ? `Up to ${maxPerPlayer} per person.` : ""}
         </p>
       )}
 
-        {/* Grid */}
-        <div className="overflow-x-auto pb-4">
-          <div className="mx-auto w-fit">
-            <div
-              className="grid"
-              style={{
-                gridTemplateColumns: hasNumbers
-                  ? '24px 28px repeat(10, 28px)'
-                  : 'repeat(10, 28px)',
-                gridTemplateRows: hasNumbers
-                  ? 'auto 20px repeat(10, 28px)'
-                  : 'repeat(10, 28px)',
-                gap: '2px',
-              }}
-            >
-              {/* Team A label */}
-              {hasNumbers && teamCol && (
-                <div
-                  style={{ gridColumn: '3 / 13', gridRow: 1 }}
-                  className="flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium h-6"
+      {/* Grid */}
+      <div className="overflow-x-auto pb-4">
+        <div className="mx-auto w-fit">
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: hasNumbers
+                ? '24px 28px repeat(10, 28px)'
+                : 'repeat(10, 28px)',
+              gridTemplateRows: hasNumbers
+                ? 'auto 20px repeat(10, 28px)'
+                : 'repeat(10, 28px)',
+              gap: '2px',
+            }}
+          >
+            {/* Team A label */}
+            {hasNumbers && teamCol && (
+              <div
+                style={{ gridColumn: '3 / 13', gridRow: 1 }}
+                className="flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium h-6"
+              >
+                {teamCol}
+              </div>
+            )}
+
+            {/* Column numbers */}
+            {hasNumbers && colNumbers.map((num, i) => (
+              <div
+                key={`col-${i}`}
+                style={{ gridColumn: i + 3, gridRow: 2 }}
+                className="flex items-center justify-center text-[10px] font-bold text-gray-500"
+              >
+                {num}
+              </div>
+            ))}
+
+            {/* Team B label */}
+            {hasNumbers && teamRow && (
+              <div
+                style={{ gridColumn: 1, gridRow: '3 / 13' }}
+                className="flex items-center justify-center"
+              >
+                <span
+                  className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium whitespace-nowrap"
+                  style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
                 >
-                  {teamCol}
-                </div>
-              )}
+                  {teamRow}
+                </span>
+              </div>
+            )}
 
-              {/* Column numbers */}
-              {hasNumbers && colNumbers.map((num, i) => (
-                <div
-                  key={`col-${i}`}
-                  style={{ gridColumn: i + 3, gridRow: 2 }}
-                  className="flex items-center justify-center text-[10px] font-bold text-gray-500"
-                >
-                  {num}
-                </div>
-              ))}
+            {/* Row numbers + squares */}
+            {Array.from({ length: 10 }, (_, row) => {
+              const gridRow = hasNumbers ? row + 3 : row + 1;
+              const colOffset = hasNumbers ? 3 : 1;
 
-              {/* Team B label */}
-              {hasNumbers && teamRow && (
-                <div
-                  style={{ gridColumn: 1, gridRow: '3 / 13' }}
-                  className="flex items-center justify-center"
-                >
-                  <span
-                    className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium whitespace-nowrap"
-                    style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
-                  >
-                    {teamRow}
-                  </span>
-                </div>
-              )}
+              return (
+                <React.Fragment key={`row-group-${row}`}>
+                  {/* Row number */}
+                  {hasNumbers && (
+                    <div
+                      style={{ gridColumn: 2, gridRow }}
+                      className="flex items-center justify-center text-[10px] font-bold text-gray-500"
+                    >
+                      {rowNumbers[row]}
+                    </div>
+                  )}
 
-              {/* Row numbers + squares */}
-              {Array.from({ length: 10 }, (_, row) => {
-                const gridRow = hasNumbers ? row + 3 : row + 1;
-                const colOffset = hasNumbers ? 3 : 1;
+                  {/* Squares */}
+                  {Array.from({ length: 10 }, (_, col) => {
+                    const position = row * 10 + col;
+                    const sq = squares[position];
+                    if (!sq) return <div key={`empty-${position}`} style={{ gridColumn: col + colOffset, gridRow }} />;
 
-                return (
-                  <React.Fragment key={`row-group-${row}`}>
-                    {/* Row number */}
-                    {hasNumbers && (
-                      <div
-                        style={{ gridColumn: 2, gridRow }}
-                        className="flex items-center justify-center text-[10px] font-bold text-gray-500"
-                      >
-                        {rowNumbers[row]}
-                      </div>
-                    )}
+                    const isPaid = sq.paymentStatus === "paid";
+                    const isPending = sq.paymentStatus === "pending";
+                    const isReservedCash = sq.paymentStatus === "reserved_cash";
+                    const isAvailable = sq.paymentStatus === "open" && isOpen;
+                    const isTappable = isAvailable || (isPending && isOpen);
+                    const isSelected = selectedSquares.has(sq.squareId);
+                    const isWinner = winnerSet.has(position) && isPaid;
 
-                    {/* Squares */}
-                    {Array.from({ length: 10 }, (_, col) => {
-                      const position = row * 10 + col;
-                      const sq = squares[position];
-                      if (!sq) return <div key={`empty-${position}`} style={{ gridColumn: col + colOffset, gridRow }} />;
-
-                      const isPaid = sq.paymentStatus === "paid";
-                      const isPending = sq.paymentStatus === "pending";
-                      const isReservedCash = sq.paymentStatus === "reserved_cash";
-                      const isAvailable = sq.paymentStatus === "open" && isOpen;
-                      const isSelected = selectedSquare?.squareId === sq.squareId;
-                      const isWinner = winnerSet.has(position) && isPaid;
-
-                      return (
-                        <button
-                          key={sq.squareId}
-                          disabled={!isAvailable}
-                          onClick={() => handleSquareTap(sq)}
-                          style={{ gridColumn: col + colOffset, gridRow }}
-                          className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all ${
-                            isSelected
-                              ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
-                              : isWinner
-                                ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
-                                : isPaid
-                                  ? "bg-green-950 border border-green-900 text-green-400"
-                                  : isReservedCash
-                                    ? "bg-amber-950 border border-amber-800 text-amber-500"
-                                    : isPending
-                                      ? "bg-yellow-950 border border-yellow-900 text-yellow-500"
-                                      : isAvailable
-                                        ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
-                                        : "bg-gray-900 border border-gray-800 text-gray-700"
-                          }`}
-                          title={
-                            isWinner
+                    return (
+                      <button
+                        key={sq.squareId}
+                        disabled={!isTappable}
+                        onClick={() => handleSquareTap(sq)}
+                        style={{ gridColumn: col + colOffset, gridRow }}
+                        className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all ${
+                          isSelected
+                            ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
+                            : isWinner
+                              ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
+                              : isPaid
+                                ? "bg-green-950 border border-green-900 text-green-400"
+                                : isReservedCash
+                                  ? "bg-amber-950 border border-amber-800 text-amber-500"
+                                  : isPending
+                                    ? "bg-yellow-950 border border-yellow-900 text-yellow-500 hover:border-yellow-600 cursor-pointer"
+                                    : isAvailable
+                                      ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
+                                      : "bg-gray-900 border border-gray-800 text-gray-700"
+                        }`}
+                        title={
+                          isSelected
+                            ? `Selected — Square ${position + 1}`
+                            : isWinner
                               ? `★ WINNER — ${sq.playerName ?? "Paid"}`
                               : isPaid
                                 ? sq.playerName ?? "Paid"
                                 : isReservedCash
                                   ? `Reserved (cash) — ${sq.playerName ?? ""}`
                                   : isPending
-                                    ? "Pending payment"
+                                    ? `Pending — tap to resume if this is yours`
                                     : isAvailable
                                       ? `Square ${position + 1} — ${priceDisplay}`
                                       : "Unavailable"
-                          }
-                        >
-                          {isWinner
+                        }
+                      >
+                        {isSelected
+                          ? "✓"
+                          : isWinner
                             ? "★"
                             : isPaid && sq.playerName
                               ? getInitials(sq.playerName)
@@ -310,15 +338,15 @@ export default function PlayerBoard({
                                 : isPending
                                   ? "…"
                                   : <span className="text-gray-700">{position + 1}</span>}
-                        </button>
-                      );
-                    })}
-                  </React.Fragment>
-                );
-              })}
-            </div>
+                      </button>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
+      </div>
 
       {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
@@ -344,8 +372,25 @@ export default function PlayerBoard({
         )}
       </div>
 
-      {/* Claim Modal — slides up when square is selected */}
-      {selectedSquare && isOpen && (
+      {/* Selection summary bar — appears when squares are selected */}
+      {selectedCount > 0 && isOpen && !showModal && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 border-t border-gray-800 p-3">
+          <div className="max-w-lg mx-auto flex items-center justify-between">
+            <span className="text-sm text-gray-300">
+              {selectedCount} square{selectedCount > 1 ? "s" : ""} · {totalPrice}
+            </span>
+            <button
+              onClick={() => setShowModal(true)}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+            >
+              Checkout
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Claim Modal — slides up */}
+      {showModal && selectedCount > 0 && isOpen && (
         <>
           {/* Backdrop */}
           <div
@@ -381,11 +426,21 @@ export default function PlayerBoard({
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm font-medium">
-                        Square #{selectedSquare.position + 1}
+                        {selectedCount === 1
+                          ? `Square #${Array.from(selectedSquares.values())[0].position + 1}`
+                          : `${selectedCount} Squares`}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {priceDisplay} — {paymentMode === "card" ? "pay to lock it in" : "reserve with cash"}
+                        {totalPrice} total — {paymentMode === "card" ? "pay to lock" : "reserve with cash"}
                       </p>
+                      {selectedCount > 1 && (
+                        <p className="text-[10px] text-gray-600 mt-1">
+                          #{Array.from(selectedSquares.values())
+                            .map((s) => s.position + 1)
+                            .sort((a, b) => a - b)
+                            .join(", ")}
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={handleClose}
@@ -404,6 +459,17 @@ export default function PlayerBoard({
                       </svg>
                     </button>
                   </div>
+
+                  {/* Pending resume hint */}
+                  {Array.from(selectedSquares.values()).some(
+                    (s) => s.paymentStatus === "pending"
+                  ) && (
+                    <div className="mb-3 p-2 rounded-lg bg-yellow-950/50 border border-yellow-900/50">
+                      <p className="text-[10px] text-yellow-400">
+                        Some selected squares are pending. Enter the same email you used before to resume your purchase.
+                      </p>
+                    </div>
+                  )}
 
                   {/* Payment mode tabs — only show if cash mode is enabled */}
                   {cashModeEnabled && (
@@ -486,10 +552,6 @@ export default function PlayerBoard({
                         <p className="text-xs text-red-400 mt-3">{error}</p>
                       )}
 
-                      <p className="text-[10px] text-gray-600 mt-3">
-                        Max {maxPerPlayer} squares per person.
-                      </p>
-
                       <button
                         type="submit"
                         disabled={loading}
@@ -497,7 +559,7 @@ export default function PlayerBoard({
                       >
                         {loading
                           ? "Redirecting to payment…"
-                          : `Pay ${priceDisplay}`}
+                          : `Pay ${totalPrice}${selectedCount > 1 ? ` (${selectedCount} squares)` : ""}`}
                       </button>
                     </form>
                   )}
@@ -505,6 +567,14 @@ export default function PlayerBoard({
                   {/* Cash reserve form */}
                   {paymentMode === "cash" && (
                     <form onSubmit={handleCashReserve}>
+                      {selectedCount > 1 && (
+                        <div className="mb-3 p-2 rounded-lg bg-gray-800">
+                          <p className="text-[10px] text-gray-400">
+                            Cash reserves one square at a time. Reserving square #{Array.from(selectedSquares.values())[0].position + 1}.
+                          </p>
+                        </div>
+                      )}
+
                       <div className="space-y-3">
                         <div>
                           <label

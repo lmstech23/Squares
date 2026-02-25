@@ -98,12 +98,72 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Check max_squares_per_player (count paid + pending by email on this board)
+    // ✅ 4b. Resume gate: if player already has an active pending checkout
+    //    on this board, return the existing Stripe session URL
+    const now = new Date();
+
+    const activePending = await prisma.square.findFirst({
+      where: {
+        boardId: board.boardId,
+        playerEmail: email,
+        paymentStatus: "pending",
+        checkoutExpiresAt: { gt: now },
+        stripePaymentId: { not: null },
+      },
+      select: {
+        squareId: true,
+        stripePaymentId: true,
+        checkoutExpiresAt: true,
+      },
+    });
+
+    if (activePending?.stripePaymentId) {
+      try {
+        const existing = await stripe.checkout.sessions.retrieve(
+          activePending.stripePaymentId,
+          { stripeAccount: board.host.stripeAccountId! }
+        );
+
+        // If Stripe session is still usable, return it
+        if (existing?.url && existing.status === "open") {
+          return NextResponse.json({
+            checkoutUrl: existing.url,
+            resumed: true,
+            squareId: activePending.squareId,
+            expiresAt: activePending.checkoutExpiresAt,
+          });
+        }
+      } catch {
+        // Session retrieval failed — treat as expired
+      }
+
+      // Stripe session isn't open anymore — release the stale holds
+      await prisma.square.updateMany({
+        where: {
+          boardId: board.boardId,
+          playerEmail: email,
+          paymentStatus: "pending",
+          stripePaymentId: activePending.stripePaymentId,
+        },
+        data: {
+          paymentStatus: "open",
+          playerName: null,
+          playerEmail: null,
+          checkoutExpiresAt: null,
+          stripePaymentId: null,
+          releaseReason: "expired",
+        },
+      });
+    }
+
+    // 5. Check max_squares_per_player (count paid + pending by email)
+    //    Exclude squares being re-claimed (no double-counting)
     const playerSquareCount = await prisma.square.count({
       where: {
         boardId: board.boardId,
         playerEmail: email,
         paymentStatus: { in: ["paid", "pending"] },
+        squareId: { notIn: squareIds },
       },
     });
 
@@ -120,28 +180,62 @@ export async function POST(request: Request) {
       );
     }
 
-    // 6. Lock all squares as pending — atomic via transaction
-    const expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
-    let totalLocked = 0;
+    // 5b. Cancel stale Stripe sessions for squares this player is re-claiming
+    const existingPendingSquares = await prisma.square.findMany({
+      where: {
+        squareId: { in: squareIds },
+        paymentStatus: "pending",
+        playerEmail: email,
+        stripePaymentId: { not: null },
+      },
+      select: { stripePaymentId: true },
+    });
 
-    await prisma.$transaction(async (tx) => {
-      for (const sid of squareIds) {
-        const { count } = await tx.square.updateMany({
-          where: { squareId: sid, paymentStatus: "open" },
-          data: {
-            paymentStatus: "pending",
-            playerName: name,
-            playerEmail: email,
-            checkoutExpiresAt: expiresAt,
-            releaseReason: null,
-          },
-        });
-        totalLocked += count;
+    if (existingPendingSquares.length > 0) {
+      const sessionIds = new Set(
+        existingPendingSquares.map((s) => s.stripePaymentId!)
+      );
+      for (const sessionId of sessionIds) {
+        try {
+          await stripe.checkout.sessions.expire(sessionId, {
+            stripeAccount: board.host.stripeAccountId!,
+          });
+        } catch {
+          // Session may already be expired — safe to ignore
+        }
       }
+    }
 
-      if (totalLocked !== squareIds.length) {
+    // 6. Lock all squares as pending — single atomic updateMany
+    //    OR clause: allows re-claiming own pending squares
+    const expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
+
+    const { count: totalLocked } = await prisma.$transaction(async (tx) => {
+      const result = await tx.square.updateMany({
+        where: {
+          squareId: { in: squareIds },
+          OR: [
+            { paymentStatus: "open" },
+            {
+              paymentStatus: "pending",
+              playerEmail: email,
+            },
+          ],
+        },
+        data: {
+          paymentStatus: "pending",
+          playerName: name,
+          playerEmail: email,
+          checkoutExpiresAt: expiresAt,
+          releaseReason: null,
+        },
+      });
+
+      if (result.count !== squareIds.length) {
         throw new Error("SQUARE_TAKEN");
       }
+
+      return result;
     });
 
     // 6b. Post-lock re-check: max_squares_per_player race condition
@@ -154,7 +248,6 @@ export async function POST(request: Request) {
     });
 
     if (postLockCount > board.maxSquaresPerPlayer) {
-      // Release all squares we just locked
       await prisma.square.updateMany({
         where: { squareId: { in: squareIds }, paymentStatus: "pending" },
         data: {
@@ -174,7 +267,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Create Stripe Checkout session — one line item with quantity
+    // 7. Create Stripe Checkout session
     const baseUrl =
       process.env.NEXT_PUBLIC_URL ||
       request.headers.get("origin") ||
@@ -222,7 +315,6 @@ export async function POST(request: Request) {
         }
       );
     } catch (stripeError) {
-      // Roll back all pending locks if Stripe fails
       console.error("Stripe Checkout creation failed:", stripeError);
       await prisma.square.updateMany({
         where: { squareId: { in: squareIds }, paymentStatus: "pending" },
@@ -247,7 +339,6 @@ export async function POST(request: Request) {
       where: {
         squareId: { in: squareIds },
         paymentStatus: "pending",
-        stripePaymentId: null,
       },
       data: { stripePaymentId: session.id },
     });
