@@ -1,3 +1,4 @@
+import { randomInt } from "crypto";
 import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -143,6 +144,16 @@ export async function POST(request: Request) {
     const hasCredits = host.boardCredits >= 1;
     const squarePriceCents = Math.round(body.squarePrice * 100);
 
+    // --- Auto-enable cash mode for cash-only hosts ---
+
+
+    const isCashHost = host.paymentPreference === "cash";
+
+
+    const cashPin = isCashHost ? String(randomInt(1000, 10000)) : null;
+
+
+
     const boardData = {
       hostId: host.id,
       gameName: body.gameName.trim(),
@@ -158,6 +169,11 @@ export async function POST(request: Request) {
       maxSquaresPerPlayer: 10,
       currency: "USD",
       hostPayoutResponsible: true,
+          ...(isCashHost && {
+            cashModeEnabled: true,
+            cashPin: cashPin,
+            cashLiabilityAccepted: true,
+          }),
     };
 
     // --- Guard: one pending board per host at a time ---
@@ -178,7 +194,8 @@ export async function POST(request: Request) {
     // --- Path 1: Platform owner — skip credits entirely ---
     if (isPlatformOwner) {
       const board = await prisma.$transaction(async (tx) => {
-        const newBoard = await tx.board.create({
+
+      const newBoard = await tx.board.create({
           data: {
             ...boardData,
             status: "open",
