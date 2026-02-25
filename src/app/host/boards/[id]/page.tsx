@@ -40,24 +40,6 @@ export default async function HostBoardPage({ params }: Props) {
     },
   });
 
-
-  // Inline cleanup: release expired pending squares on page load
-  await prisma.square.updateMany({
-    where: {
-      boardId: board.boardId,
-      paymentStatus: { in: ["pending", "reserved_cash"] },
-      checkoutExpiresAt: { lt: new Date() },
-    },
-    data: {
-      paymentStatus: "open",
-      playerName: null,
-      playerEmail: null,
-      stripePaymentId: null,
-      checkoutExpiresAt: null,
-      releaseReason: "expired",
-    },
-  });
-
   if (!board || board.hostId !== host.id) {
     notFound();
   }
