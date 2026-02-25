@@ -118,8 +118,10 @@ async function handleAccountUpdated(account: Stripe.Account) {
 
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  const squareId = session.metadata?.squareId;
-  if (!squareId) return;
+  // Support both multi-square (squareIds) and legacy single (squareId)
+  const raw = session.metadata?.squareIds || session.metadata?.squareId;
+  if (!raw) return;
+  const squareIds = raw.split(",").map((s) => s.trim()).filter(Boolean);
 
   // Idempotency: if PaymentReference already exists for this session, skip
   const existing = await prisma.paymentReference.findUnique({
@@ -129,10 +131,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   try {
     await prisma.$transaction(async (tx) => {
-      // State guard + session identity check
+      // Update all squares in this session
       const { count } = await tx.square.updateMany({
         where: {
-          squareId,
+          squareId: { in: squareIds },
           paymentStatus: "pending",
           stripePaymentId: session.id,
         },
@@ -147,9 +149,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         throw new Error("STATE_MISMATCH");
       }
 
+      // Create payment reference (one per session)
       await tx.paymentReference.create({
         data: {
-          squareId,
+          squareId: squareIds[0],
           stripeSessionId: session.id,
           amount: session.amount_total ?? 0,
         },
@@ -157,22 +160,15 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "STATE_MISMATCH") {
-      // Square was released (expired/cron) or session mismatch.
-      // Money moved in Stripe. Log for manual investigation / refund.
       console.warn(
-        `checkout.session.completed: square ${squareId} not in expected state for session ${session.id}. May need manual refund.`
+        `checkout.session.completed: squares [${squareIds.join(",")}] not in expected state for session ${session.id}. May need manual refund.`
       );
       return;
     }
-    // Other errors (DB failure) — re-throw so outer handler returns 500 and Stripe retries
     throw error;
   }
 }
 
-/**
- * Checkout session expired — release the square.
- * Wired up in Track 6 (pay-to-lock).
- */
 async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
   const squareId = session.metadata?.squareId;
   if (!squareId) return;
