@@ -8,7 +8,7 @@ type SquareData = {
   squareId: string;
   position: number;
   playerName: string | null;
-  paymentStatus: PaymentStatus;
+  paymentStatus: string;
 };
 
 type FilterValue = "all" | "filled" | "empty" | "pending" | "paid";
