@@ -90,7 +90,6 @@ export default function PlayerBoard({
 
       setError("");
       setCashSuccess(false);
-      setShowModal(true);
     },
     [isOpen, maxPerPlayer]
   );
@@ -385,6 +384,38 @@ export default function PlayerBoard({
             >
               Checkout
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Floating checkout bar — appears when squares are selected */}
+      {selectedCount > 0 && isOpen && !showModal && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-gray-950 via-gray-950/95 to-transparent">
+          <div className="max-w-lg mx-auto flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">
+                {selectedCount === 1
+                  ? `Square #${Array.from(selectedSquares.values())[0].position + 1}`
+                  : `${selectedCount} squares selected`}
+              </p>
+              <p className="text-xs text-gray-500">
+                {totalPrice} total
+              </p>
+            </div>
+            <div className="flex items-center gap-2 ml-3">
+              <button
+                onClick={handleClose}
+                className="rounded-lg px-3 py-2 text-xs text-gray-400 hover:text-white transition-colors"
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => setShowModal(true)}
+                className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-colors"
+              >
+                Checkout
+              </button>
+            </div>
           </div>
         </div>
       )}

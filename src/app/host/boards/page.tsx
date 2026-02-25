@@ -16,12 +16,14 @@ export default async function HostBoardsPage() {
   }
 
 
-  if (!host.stripeAccountId) {
-    redirect("/host/stripe");
-  }
-
-  if (host.stripeAccountId && !host.stripeChargesEnabled) {
-    redirect("/host/stripe?refresh=true");
+  // Only require Stripe for hosts who chose card payments
+  if (host.paymentPreference === "stripe") {
+    if (!host.stripeAccountId) {
+      redirect("/host/stripe");
+    }
+    if (host.stripeAccountId && !host.stripeChargesEnabled) {
+      redirect("/host/stripe?refresh=true");
+    }
   }
 
   const boards = await prisma.board.findMany({
