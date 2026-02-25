@@ -22,6 +22,8 @@ model Host {
   creditTransactions     CreditTransaction[]
   invite_codes           InviteCode[]
 
+  paymentPreference         String?             @map("payment_preference")
+
   @@map("hosts")
 }
 
@@ -52,7 +54,6 @@ model Board {
   cashPin                   String?     @map("cash_pin")
   cashReservationTtlMins    Int         @default(20) @map("cash_reservation_ttl_mins")
   cashLiabilityAccepted     Boolean     @default(false) @map("cash_liability_accepted")
-  paymentPreference  String?  @map("payment_preference")
   scores                    Json?
 
   // Monetization lifecycle
