@@ -9,7 +9,8 @@ interface CheckoutBody {
 }
 
 // 30-minute checkout TTL (Stripe minimum for checkout sessions)
-const CHECKOUT_TTL_MS = 10 * 60 * 1000; // 10-min DB hold (Stripe session stays 30 min)
+const CHECKOUT_TTL_MS = 10 * 60 * 1000; // 10-min DB hold for square lock
+const STRIPE_SESSION_TTL_MS = 30 * 60 * 1000; // 30-min minimum required by Stripe
 
 export async function POST(request: Request) {
   try {
@@ -312,7 +313,7 @@ export async function POST(request: Request) {
           },
           success_url: `${boardUrl}?success=true&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${boardUrl}?cancelled=true`,
-          expires_at: Math.floor(expiresAt.getTime() / 1000),
+          expires_at: Math.floor((Date.now() + STRIPE_SESSION_TTL_MS) / 1000),
         },
         {
           stripeAccount: board.host.stripeAccountId,
