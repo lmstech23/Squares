@@ -102,7 +102,7 @@ export default function CashModeToggle({
         <p className="text-xs text-gray-500 mb-4">
           Players can reserve squares with cash. You collect payment in person
           and confirm on the dashboard. You&apos;re responsible for collecting
-          cash — Squares doesn&apos;t process these payments.
+          cash — Daali doesn&apos;t process these payments.
         </p>
 
         <div className="mb-3">
@@ -133,7 +133,7 @@ export default function CashModeToggle({
           />
           <span className="text-xs text-gray-400">
             I understand I&apos;m responsible for collecting cash payments.
-            Squares is not liable for uncollected cash.
+            Daali is not liable for uncollected cash.
           </span>
         </label>
 

@@ -297,7 +297,7 @@ export async function POST(request: Request) {
                   name:
                     squareIds.length === 1
                       ? `Square #${squares[0].position + 1}`
-                      : `${squareIds.length} Squares (#${positions})`,
+                      : `${squareIds.length} squares (#${positions})`,
                   description: board.gameName,
                 },
                 unit_amount: board.squarePrice,

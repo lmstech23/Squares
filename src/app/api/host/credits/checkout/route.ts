@@ -73,7 +73,7 @@ export async function POST(request: Request) {
             currency: "usd",
             product_data: {
               name: pack.label,
-              description: "Squares board credits",
+              description: "Daali board credits",
             },
             unit_amount: pack.priceCents,
           },

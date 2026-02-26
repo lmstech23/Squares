@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!board) return { title: "Board Not Found" };
 
   return {
-    title: `${board.gameName} — Squares`,
+    title: `${board.gameName} — Daali Boards`,
     description: `$${board.squarePrice / 100} per square. Pick your square and pay to lock it in.`,
   };
 }
