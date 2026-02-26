@@ -2,7 +2,7 @@ import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { redirect, notFound } from "next/navigation";
-import CopyLinkButton from "./copy-link";
+import ShareCard from "./share-card";
 import BoardGrid from "./grid";
 import CloseBoardButton from "./close-button";
 import ScoreEntry from "./score-entry";
@@ -127,7 +127,7 @@ export default async function HostBoardPage({ params }: Props) {
       {/* Copy Link — always accessible */}
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
         <p className="text-xs text-gray-500 mb-2">Share this link with your group</p>
-        <CopyLinkButton url={boardUrl} />
+        <ShareCard url={boardUrl} />
       </div>
 
       {/* Fill Tracker */}

@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Stripe readiness gate
-    if (host.paymentPreference !== "cash" && !host.stripeChargesEnabled) {
+    if (!host.stripeChargesEnabled) {
       return NextResponse.json(
         { error: "Stripe account not ready. Complete onboarding first." },
         { status: 403 }
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
     // --- Auto-enable cash mode for cash-only hosts ---
 
 
-    const isCashHost = host.paymentPreference === "cash";
+    const isCashHost = false;
 
 
     const cashPin = isCashHost ? String(randomInt(1000, 10000)) : null;
@@ -169,11 +169,11 @@ export async function POST(request: Request) {
       maxSquaresPerPlayer: 10,
       currency: "USD",
       hostPayoutResponsible: true,
-          ...(isCashHost && {
+          ...(isCashHost ? {
             cashModeEnabled: true,
             cashPin: cashPin,
             cashLiabilityAccepted: true,
-          }),
+          } : {}),
     };
 
     // --- Guard: one pending board per host at a time ---

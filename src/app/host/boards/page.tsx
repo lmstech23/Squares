@@ -10,22 +10,15 @@ export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
 
-  // New hosts who haven't chosen payment method yet
-  if (!host.paymentPreference) {
-    redirect("/host/payment-setup");
+  // No Stripe at all — send them to connect
+  if (!host.stripeAccountId) {
+    redirect("/host/stripe");
   }
 
-
-  // Only require Stripe for hosts who chose card payments
-  if (host.paymentPreference === "stripe") {
-    if (!host.stripeAccountId) {
-      redirect("/host/stripe");
-    }
-    if (host.stripeAccountId && !host.stripeChargesEnabled) {
-      redirect("/host/stripe?refresh=true");
-    }
+  // Started Stripe but didn't finish
+  if (host.stripeAccountId && !host.stripeChargesEnabled) {
+    redirect("/host/stripe?refresh=true");
   }
-
   const boards = await prisma.board.findMany({
     where: { hostId: host.id },
     orderBy: { createdAt: "desc" },
