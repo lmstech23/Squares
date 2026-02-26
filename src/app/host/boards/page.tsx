@@ -8,7 +8,8 @@ import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
-  }
+  if (!host) redirect("/login");
+
   const boards = await prisma.board.findMany({
     where: { hostId: host.id },
     orderBy: { createdAt: "desc" },
@@ -28,7 +29,7 @@ export default async function HostBoardsPage() {
 
   return (
     <div>
-    {/* Stripe connect banner — only for non-platform hosts without Stripe */}
+      {/* Stripe connect banner — only for non-platform hosts without Stripe */}
       {!isPlatformOwner && !host.stripeAccountId && (
         <div className="rounded-lg border border-yellow-900/50 bg-yellow-950/20 p-4 mb-6">
           <div className="flex items-center justify-between">
