@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Stripe readiness gate
-    if (!host.stripeChargesEnabled) {
+    if (host.paymentPreference !== "cash" && !host.stripeChargesEnabled) {
       return NextResponse.json(
         { error: "Stripe account not ready. Complete onboarding first." },
         { status: 403 }
