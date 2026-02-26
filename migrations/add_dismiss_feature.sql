@@ -1,0 +1,1 @@
+ALTER TABLE boards ADD COLUMN hidden_from_host BOOLEAN NOT NULL DEFAULT false;

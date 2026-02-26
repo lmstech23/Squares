@@ -5,13 +5,14 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
 import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
+import { DismissButton } from "./components/dismiss-button";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
 
   const boards = await prisma.board.findMany({
-    where: { hostId: host.id },
+    where: { hostId: host.id, hiddenFromHost: false },
     orderBy: { createdAt: "desc" },
     include: {
       _count: {
@@ -135,7 +136,10 @@ export default async function HostBoardsPage() {
                             Complete payment to activate · {hoursLeft}h remaining
                           </p>
                         </div>
-                        <CreditBuyButton boardId={board.boardId} />
+                        <div className="flex items-center gap-3">
+                          <DismissButton boardId={board.boardId} />
+                          <CreditBuyButton boardId={board.boardId} />
+                        </div>
                       </div>
                     </div>
                   );
@@ -164,9 +168,12 @@ export default async function HostBoardsPage() {
                             Expired before payment
                           </p>
                         </div>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700">
-                          expired
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <DismissButton boardId={board.boardId} />
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700">
+                            expired
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}

@@ -61,6 +61,9 @@ model Board {
   expiredAt                 DateTime?   @map("expired_at") @db.Timestamptz(6)
   activatedAt               DateTime?   @map("activated_at") @db.Timestamptz(6)
 
+  // Dismiss feature (Addendum K) — soft-hide from host dashboard
+  hiddenFromHost            Boolean     @default(false) @map("hidden_from_host")
+
   host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
   squares                   Square[]
   creditTransactions        CreditTransaction[]

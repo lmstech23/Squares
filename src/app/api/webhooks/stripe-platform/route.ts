@@ -156,6 +156,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session) {
           status: "open",
           pendingExpiresAt: null,
           activatedAt: new Date(),
+          hiddenFromHost: false,
         },
       });
 
