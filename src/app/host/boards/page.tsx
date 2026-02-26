@@ -9,15 +9,7 @@ import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
 export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
-
-  // No Stripe at all — send them to connect
-  if (!host.stripeAccountId) {
-    redirect("/host/stripe");
-  }
-
-  // Started Stripe but didn't finish
   if (host.stripeAccountId && !host.stripeChargesEnabled) {
-    redirect("/host/stripe?refresh=true");
   }
   const boards = await prisma.board.findMany({
     where: { hostId: host.id },
