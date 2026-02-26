@@ -80,7 +80,7 @@ export async function POST(request: Request) {
           quantity: 1,
         },
       ],
-      customer_email: host.email,
+      ...(host.email ? { customer_email: host.email } : {}),
       metadata: {
         type: "credit_purchase",
         hostId: host.id,

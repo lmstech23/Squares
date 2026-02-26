@@ -8,8 +8,6 @@ import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
-  if (!host) redirect("/login");
-  if (host.stripeAccountId && !host.stripeChargesEnabled) {
   }
   const boards = await prisma.board.findMany({
     where: { hostId: host.id },
@@ -30,6 +28,25 @@ export default async function HostBoardsPage() {
 
   return (
     <div>
+    {/* Stripe connect banner — only for non-platform hosts without Stripe */}
+      {!isPlatformOwner && !host.stripeAccountId && (
+        <div className="rounded-lg border border-yellow-900/50 bg-yellow-950/20 p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-yellow-300">Connect Stripe to accept card payments</p>
+              <p className="text-xs text-yellow-500/70 mt-0.5">
+                Optional — you can still run cash-only boards without Stripe.
+              </p>
+            </div>
+            <Link
+              href="/host/stripe"
+              className="shrink-0 rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-500 transition-colors"
+            >
+              Connect Stripe
+            </Link>
+          </div>
+        </div>
+      )}
       {/* Credit badge — hidden for platform owner */}
       {!isPlatformOwner && (
         <div className="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-6 flex items-center justify-between">
