@@ -7,9 +7,6 @@ export default async function NewBoardPage() {
   const host = await getHost();
   if (!host) redirect("/login");
 
-  if (!host.stripeChargesEnabled) {
-    redirect("/host/stripe");
-  }
 
   return (
     <div className="max-w-lg mx-auto">

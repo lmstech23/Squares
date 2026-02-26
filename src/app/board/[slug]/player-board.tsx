@@ -348,7 +348,7 @@ export default function PlayerBoard({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
+      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-gray-600">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-sm bg-gray-900 border border-gray-800" />
           Open
