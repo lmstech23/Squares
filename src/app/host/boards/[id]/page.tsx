@@ -10,6 +10,9 @@ import CashModeToggle from "./cash-mode-toggle";
 import CashReservePanel from "./cash-reserve-panel";
 import SquareList from "./square-list";
 import { calculateWinnersFromArrays } from "@/lib/winners";
+export const dynamic = "force-dynamic";
+
+export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ id: string }>;

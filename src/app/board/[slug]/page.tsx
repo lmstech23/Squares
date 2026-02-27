@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
 import { calculateWinnersFromArrays } from "@/lib/winners";
 import type { Metadata } from "next";
+export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ slug: string }>;

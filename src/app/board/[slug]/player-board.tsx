@@ -304,14 +304,7 @@ export default function PlayerBoard({
       )}
 
       {/* Host payment info — shows how host pays winners */}
-      <HostPaymentInfo
-        venmo={hostVenmo}
-        zelle={hostZelle}
-        cashapp={hostCashapp}
-        visibility={payoutVisibility as "public" | "pin_gated"}
-        pinVerified={pinVerified}
-      />
-
+      
       {/* Grid */}
       <div className="overflow-x-auto pb-4">
         <div className="mx-auto w-fit">
@@ -475,7 +468,13 @@ export default function PlayerBoard({
           </span>
         )}
       </div>
-
+      <HostPaymentInfo
+        venmo={hostVenmo}
+        zelle={hostZelle}
+        cashapp={hostCashapp}
+        visibility={payoutVisibility as "public" | "pin_gated"}
+        pinVerified={pinVerified}
+      />
       {/* Selection summary bar — appears when squares are selected */}
       {selectedCount > 0 && isOpen && !showModal && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 border-t border-gray-800 p-3">
