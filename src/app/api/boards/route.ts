@@ -19,6 +19,12 @@ interface CreateBoardBody {
   periodType?: "halves" | "quarters";
   hostCutPercent?: number;
   payoutStructure: Record<string, number>;
+  // Payout coordination
+  hostVenmo?: string | null;
+  hostZelle?: string | null;
+  hostCashapp?: string | null;
+  payoutVisibility?: "public" | "pin_gated";
+  requirePlayerPayout?: boolean;
 }
 
 export async function POST(request: Request) {
@@ -41,13 +47,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Host not found" }, { status: 404 });
     }
 
-    // 2. Stripe readiness gate
-    if (!host.stripeChargesEnabled) {
-      return NextResponse.json(
-        { error: "Stripe account not ready. Complete onboarding first." },
-        { status: 403 }
-      );
-    }
 
     // 3. Parse + validate body
     const body: CreateBoardBody = await request.json();
@@ -147,12 +146,27 @@ export async function POST(request: Request) {
     // --- Auto-enable cash mode for cash-only hosts ---
 
 
-    const isCashHost = false;
+    const isCashHost = host.paymentPreference === "cash";
 
 
     const cashPin = isCashHost ? String(randomInt(1000, 10000)) : null;
 
 
+
+     // Payout coordination fields
+    const hostVenmo = body.hostVenmo?.trim() || null;
+    const hostZelle = body.hostZelle?.trim() || null;
+    const hostCashapp = body.hostCashapp?.trim() || null;
+    const payoutVisibility = body.payoutVisibility === "pin_gated" ? "pin_gated" : "public";
+    const requirePlayerPayout = body.requirePlayerPayout ?? false;
+
+    // Validate: cash mode requires at least one payment handle
+    if (isCashHost && !hostVenmo && !hostZelle && !hostCashapp) {
+      return NextResponse.json(
+        { error: "Cash mode requires at least one payment method (Venmo, Zelle, or CashApp)." },
+        { status: 400 }
+      );
+    }
 
     const boardData = {
       hostId: host.id,
@@ -169,11 +183,16 @@ export async function POST(request: Request) {
       maxSquaresPerPlayer: 10,
       currency: "USD",
       hostPayoutResponsible: true,
-          ...(isCashHost ? {
-            cashModeEnabled: true,
-            cashPin: cashPin,
-            cashLiabilityAccepted: true,
-          } : {}),
+      hostVenmo,
+      hostZelle,
+      hostCashapp,
+      payoutVisibility: payoutVisibility as any,
+      requirePlayerPayout,
+      ...(isCashHost ? {
+        cashModeEnabled: true,
+        cashPin: cashPin,
+        cashLiabilityAccepted: true,
+      } : {}),
     };
 
     // --- Guard: one pending board per host at a time ---

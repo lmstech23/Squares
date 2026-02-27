@@ -35,7 +35,12 @@ export default async function HostBoardPage({ params }: Props) {
           stripePaymentId: true,
           checkoutExpiresAt: true,
           releaseReason: true,
+          playerPhone: true,
+          playerPayoutMethod: true,
+          playerPayoutHandle: true,
+          smsOptIn: true,
         },
+        
       },
     },
   });
@@ -234,6 +239,16 @@ export default async function HostBoardPage({ params }: Props) {
                 <div className="text-xs text-gray-500 mt-0.5">
                   {board.teamCol} {w.colScore} – {board.teamRow} {w.rowScore}
                   <span className="text-yellow-500/70 ml-1">→ ${prize}</span>
+                </div>
+                <div className="text-[10px] text-yellow-300/70 mt-1.5 flex items-center gap-1">
+                  <span>💰</span>
+                  {sq?.playerPayoutMethod && sq.playerPayoutMethod !== "cash"
+                    ? `${sq.playerPayoutMethod === "venmo" ? "Venmo" : sq.playerPayoutMethod === "zelle" ? "Zelle" : "CashApp"}: ${sq.playerPayoutHandle || "—"}`
+                    : sq?.playerPayoutMethod === "cash"
+                      ? "Cash (pay in person)"
+                      : sq?.playerPhone
+                        ? `No payout method — contact ${sq.playerPhone}`
+                        : "No payout method on file"}
                 </div>
               </div>
             );

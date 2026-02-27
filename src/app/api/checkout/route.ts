@@ -6,6 +6,11 @@ interface CheckoutBody {
   squareIds: string[];
   playerName: string;
   playerEmail: string;
+  // Payout coordination
+  playerPhone: string;
+  playerPayoutMethod?: string | null;
+  playerPayoutHandle?: string | null;
+  smsOptIn?: boolean;
 }
 
 // 30-minute checkout TTL (Stripe minimum for checkout sessions)
@@ -47,6 +52,14 @@ export async function POST(request: Request) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json(
         { error: "Valid email is required." },
+        { status: 400 }
+      );
+    }
+    
+     const phone = body.playerPhone?.trim();
+    if (!phone) {
+      return NextResponse.json(
+        { error: "Phone number is required." },
         { status: 400 }
       );
     }
@@ -231,6 +244,10 @@ export async function POST(request: Request) {
           paymentStatus: "pending",
           playerName: name,
           playerEmail: email,
+          playerPhone: body.playerPhone?.trim() || null,
+          playerPayoutMethod: (body.playerPayoutMethod as any) || null,
+          playerPayoutHandle: body.playerPayoutHandle?.trim() || null,
+          smsOptIn: body.smsOptIn ?? false,
           checkoutExpiresAt: expiresAt,
           releaseReason: null,
         },

@@ -54,6 +54,11 @@ model Board {
   cashPin                   String?     @map("cash_pin")
   cashReservationTtlMins    Int         @default(20) @map("cash_reservation_ttl_mins")
   cashLiabilityAccepted     Boolean     @default(false) @map("cash_liability_accepted")
+  hostVenmo              String?          @map("host_venmo")
+  hostZelle              String?          @map("host_zelle")
+  hostCashapp            String?          @map("host_cashapp")
+  payoutVisibility       PayoutVisibility @default(public) @map("payout_visibility")
+  requirePlayerPayout    Boolean          @default(false) @map("require_player_payout")
   scores                    Json?
 
   // Monetization lifecycle
@@ -85,6 +90,10 @@ model Square {
   releaseReason     ReleaseReason?    @map("release_reason")
   reservedByHost    Boolean?          @default(false) @map("reserved_by_host")
   paymentMethod     PaymentMethod     @default(stripe) @map("payment_method")
+  playerPhone           String?              @map("player_phone")
+  playerPayoutMethod    PlayerPayoutMethod?  @map("player_payout_method")
+  playerPayoutHandle    String?              @map("player_payout_handle")
+  smsOptIn              Boolean              @default(false) @map("sms_opt_in")
   payment           PaymentReference?
   board             Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
 
@@ -157,6 +166,18 @@ enum ReleaseReason {
 
 enum PaymentMethod {
   stripe
+  cash
+}
+
+enum PayoutVisibility {
+  public
+  pin_gated
+}
+
+enum PlayerPayoutMethod {
+  venmo
+  zelle
+  cashapp
   cash
 }
 

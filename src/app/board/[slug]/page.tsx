@@ -42,7 +42,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         },
       },
       host: {
-        select: { name: true },
+        select: { name: true, stripeAccountId: true, stripeChargesEnabled: true },
       },
     },
   });
@@ -209,6 +209,12 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           teamRow={board.status === "open" ? "Team B" : (board.teamRow ?? undefined)}
           winnerPositions={winnerPositions}
           cashModeEnabled={board.cashModeEnabled}
+          stripeConnected={board.host.stripeChargesEnabled ?? false}
+          hostVenmo={board.hostVenmo}
+          hostZelle={board.hostZelle}
+          hostCashapp={board.hostCashapp}
+          payoutVisibility={board.payoutVisibility}
+          requirePlayerPayout={board.requirePlayerPayout}
         />
       </div>
     </div>

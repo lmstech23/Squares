@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 // PLAYER: Self-serve cash reservation with PIN
 //
 // POST /api/board/[slug]/cash-reserve
-// Body: { squareId: string, playerName: string, pin: string }
+// Body: { squareId, playerName, pin, playerPhone, ... }
 //
 // Player scans QR, picks square, enters PIN + name → reserved_cash.
 // Host must still tap "Mark Cash Received" to confirm.
@@ -16,6 +16,12 @@ interface CashReserveBody {
   squareId: string;
   playerName: string;
   pin: string;
+  // Payout coordination
+  playerPhone: string;
+  playerEmail?: string | null;
+  playerPayoutMethod?: string | null;
+  playerPayoutHandle?: string | null;
+  smsOptIn?: boolean;
 }
 
 export async function POST(
@@ -29,6 +35,13 @@ export async function POST(
     if (!squareId || !playerName?.trim() || !pin?.trim()) {
       return NextResponse.json(
         { error: "Square ID, name, and PIN are required." },
+        { status: 400 }
+      );
+    }
+
+    if (!body.playerPhone?.trim()) {
+      return NextResponse.json(
+        { error: "Phone number is required." },
         { status: 400 }
       );
     }
@@ -102,7 +115,11 @@ export async function POST(
         paymentStatus: "reserved_cash",
         paymentMethod: "cash",
         playerName: name,
-        playerEmail: null,
+        playerEmail: body.playerEmail?.trim().toLowerCase() || null,
+        playerPhone: body.playerPhone?.trim() || null,
+        playerPayoutMethod: (body.playerPayoutMethod as any) || null,
+        playerPayoutHandle: body.playerPayoutHandle?.trim() || null,
+        smsOptIn: body.smsOptIn ?? false,
         stripePaymentId: null,
         checkoutExpiresAt: expiresAt,
         releaseReason: null,

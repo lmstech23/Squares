@@ -6,6 +6,7 @@ import Link from "next/link";
 export default async function NewBoardPage() {
   const host = await getHost();
   if (!host) redirect("/login");
+  if (host.paymentPreference !== "cash" && !host.stripeChargesEnabled) redirect("/host/stripe");
 
 
   return (

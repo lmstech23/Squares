@@ -12,39 +12,56 @@ export default function NewBoardForm() {
   const [teamCol, setTeamCol] = useState("");
   const [teamRow, setTeamRow] = useState("");
   const [squarePrice, setSquarePrice] = useState("");
-  const [hostCut, setHostCut] = useState("20");
+  const [hostCut, setHostCut] = useState("0");
   const [payouts, setPayouts] = useState(DEFAULT_PAYOUTS);
   const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Payout coordination fields
+  const [hostVenmo, setHostVenmo] = useState("");
+  const [hostZelle, setHostZelle] = useState("");
+  const [hostCashapp, setHostCashapp] = useState("");
+  const [payoutVisibility, setPayoutVisibility] = useState<"public" | "pin_gated">("public");
+  const [requirePlayerPayout, setRequirePlayerPayout] = useState(false);
+  const [showPayoutSection, setShowPayoutSection] = useState(false);
 
   const payoutTotal = PERIOD_LABELS.reduce(
     (sum, label) => sum + (payouts[label] ?? 0),
     0
   );
-  const payoutValid = Math.abs(payoutTotal - 100) <= 0.01;
-  const priceNum = parseFloat(squarePrice);
-  const hostCutNum = parseInt(hostCut, 10) || 0;
-  const hostCutValid = hostCutNum >= 0 && hostCutNum <= 50;
-  const formValid =
-    gameName.trim().length > 0 &&
-    teamCol.trim().length > 0 &&
-    teamRow.trim().length > 0 &&
-    priceNum >= 1 &&
-    payoutValid &&
-    hostCutValid;
+  const payoutValid = payoutTotal === 100;
 
-  const totalPot = priceNum >= 1 ? priceNum * 100 : 0;
-  const playerPool = Math.round(totalPot * (1 - hostCutNum / 100));
+  const priceNum = parseInt(squarePrice, 10);
+  const priceValid = !isNaN(priceNum) && priceNum >= 100; // $1 min in cents
+  const totalPot = priceValid ? priceNum * 100 : 0;
+
+  const hostCutNum = parseInt(hostCut, 10);
+  const hostCutValid = !isNaN(hostCutNum) && hostCutNum >= 0 && hostCutNum <= 50;
+  const playerPool = hostCutValid ? Math.round(totalPot * (1 - hostCutNum / 100)) : 0;
 
   function updatePayout(label: string, value: string) {
-    const num = parseFloat(value) || 0;
-    setPayouts((prev) => ({ ...prev, [label]: num }));
+    const num = parseInt(value, 10);
+    setPayouts((p) => ({ ...p, [label]: isNaN(num) ? 0 : num }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!formValid || submitted) return;
+    if (!gameName.trim() || !teamCol.trim() || !teamRow.trim()) {
+      setError("Game name and both team names are required.");
+      return;
+    }
+    if (!priceValid) {
+      setError("Price must be at least $1 (enter in cents).");
+      return;
+    }
+    if (!hostCutValid) {
+      setError("Host cut must be 0–50%.");
+      return;
+    }
+    if (!payoutValid) {
+      setError("Payout percentages must total 100%.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -55,39 +72,40 @@ export default function NewBoardForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gameName: gameName.trim(),
-          squarePrice: priceNum,
-          teamRow: teamRow.trim(),
           teamCol: teamCol.trim(),
-          periodType: "halves",
+          teamRow: teamRow.trim(),
+          squarePrice: priceNum,
           hostCutPercent: hostCutNum,
           payoutStructure: payouts,
+          // Payout coordination
+          hostVenmo: hostVenmo.trim() || null,
+          hostZelle: hostZelle.trim() || null,
+          hostCashapp: hostCashapp.trim() || null,
+          payoutVisibility,
+          requirePlayerPayout,
         }),
       });
-
       const data = await res.json();
-
-      // Payment required — follow server's redirect
-      if (data.redirectTo) {
-        router.push(data.redirectTo);
-        return;
-      }
-
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(data.error || "Failed to create board.");
         setLoading(false);
         return;
       }
-
-      setSubmitted(true);
       router.push(`/host/boards/${data.boardId}`);
     } catch {
-      setError("Failed to create board");
+      setError("Network error. Please try again.");
       setLoading(false);
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-3">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
+      )}
+
       {/* Game Name */}
       <div>
         <label htmlFor="gameName" className="block text-sm text-gray-400 mb-1.5">
@@ -96,11 +114,10 @@ export default function NewBoardForm() {
         <input
           id="gameName"
           type="text"
-          required
           value={gameName}
           onChange={(e) => setGameName(e.target.value)}
-          placeholder="e.g. UNC vs Duke"
-          className="w-full rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600"
+          placeholder="March Madness — Duke vs. Vermont"
+          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
         />
       </div>
 
@@ -108,58 +125,50 @@ export default function NewBoardForm() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="teamCol" className="block text-sm text-gray-400 mb-1.5">
-            Team across top
+            Team (columns)
           </label>
           <input
             id="teamCol"
             type="text"
-            required
             value={teamCol}
             onChange={(e) => setTeamCol(e.target.value)}
-            placeholder="e.g. UNC"
-            className="w-full rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600"
+            placeholder="Duke"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
           />
         </div>
         <div>
           <label htmlFor="teamRow" className="block text-sm text-gray-400 mb-1.5">
-            Team down side
+            Team (rows)
           </label>
           <input
             id="teamRow"
             type="text"
-            required
             value={teamRow}
             onChange={(e) => setTeamRow(e.target.value)}
-            placeholder="e.g. Duke"
-            className="w-full rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600"
+            placeholder="Vermont"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
           />
         </div>
       </div>
 
-      {/* Price */}
+      {/* Price Per Square */}
       <div>
         <label htmlFor="squarePrice" className="block text-sm text-gray-400 mb-1.5">
-          Price per square
+          Price per square (cents)
         </label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-            $
-          </span>
-          <input
-            id="squarePrice"
-            type="number"
-            min="1"
-            step="1"
-            required
-            value={squarePrice}
-            onChange={(e) => setSquarePrice(e.target.value)}
-            placeholder="10"
-            className="w-full rounded-lg bg-gray-900 border border-gray-800 pl-7 pr-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600"
-          />
-        </div>
-        {priceNum >= 1 && (
-          <p className="text-xs text-gray-600 mt-1">
-            100 squares × ${priceNum} = ${priceNum * 100} total pot
+        <input
+          id="squarePrice"
+          type="number"
+          min="100"
+          step="1"
+          value={squarePrice}
+          onChange={(e) => setSquarePrice(e.target.value)}
+          placeholder="1000 = $10"
+          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+        />
+        {priceValid && (
+          <p className="text-xs text-gray-600 mt-1.5">
+            ${(priceNum / 100).toFixed(2)} per square · ${(totalPot / 100).toFixed(2)} total pot
           </p>
         )}
       </div>
@@ -178,78 +187,171 @@ export default function NewBoardForm() {
             step="1"
             value={hostCut}
             onChange={(e) => setHostCut(e.target.value)}
-            className="w-full rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 pr-8"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-            %
-          </span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</span>
         </div>
         {totalPot > 0 && hostCutValid && (
-          <p className="text-xs text-gray-600 mt-1">
-            You keep ${Math.round(totalPot * (hostCutNum / 100))} · Players
-            split ${playerPool}
+          <p className="text-xs text-gray-600 mt-1.5">
+            You keep ${Math.round(totalPot * (hostCutNum / 100)) / 100} · Players split ${(playerPool / 100).toFixed(2)}
           </p>
+        )}
+        {!hostCutValid && (
+          <p className="text-xs text-red-400 mt-1.5">Must be 0–50%</p>
         )}
       </div>
 
-      {/* Payout Split */}
+      {/* Payout Structure */}
       <div>
         <label className="block text-sm text-gray-400 mb-1.5">
           Player payout split
         </label>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${PERIOD_LABELS.length}, 1fr)` }}>
           {PERIOD_LABELS.map((label) => (
             <div key={label}>
-              <p className="text-xs text-gray-500 mb-1 text-center">{label}</p>
+              <div className="text-xs text-gray-500 mb-1 text-center">{label}</div>
               <div className="relative">
                 <input
                   type="number"
                   min="0"
                   max="100"
                   step="1"
-                  value={payouts[label] ?? ""}
+                  value={payouts[label] || ""}
                   onChange={(e) => updatePayout(label, e.target.value)}
-                  className="w-full rounded-lg bg-gray-900 border border-gray-800 px-3 py-2 text-sm text-white text-center focus:outline-none focus:border-gray-600 pr-8"
+                  className="w-full rounded-lg border border-gray-800 bg-gray-900 px-2 py-2 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
-                  %
-                </span>
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</span>
               </div>
             </div>
           ))}
         </div>
-        <p
-          className={`text-xs mt-1.5 ${
-            payoutValid
-              ? "text-gray-600" : "text-red-400"
-          }`}
-        >
+        <p className={`text-xs mt-1.5 ${payoutValid ? "text-gray-600" : "text-red-400"}`}>
           Total: {payoutTotal}%{!payoutValid && " — must equal 100%"}
         </p>
-        {payoutValid && totalPot > 0 && hostCutValid && (
-          <p className="text-xs text-gray-600 mt-0.5">
-            {PERIOD_LABELS.map(
-              (label) =>
-                `${label}: $${Math.round(playerPool * ((payouts[label] ?? 0) / 100))}`
-            ).join(" · ")}
-          </p>
-        )}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-3">
-          <p className="text-sm text-red-300">{error}</p>
-        </div>
-      )}
+      {/* ============================================ */}
+      {/* PAYOUT COORDINATION SECTION                  */}
+      {/* ============================================ */}
+      <div className="border-t border-gray-800 pt-6">
+        <button
+          type="button"
+          onClick={() => setShowPayoutSection(!showPayoutSection)}
+          className="flex items-center justify-between w-full text-left"
+        >
+          <div>
+            <p className="text-sm font-medium text-gray-300">How will you pay winners?</p>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Add your Venmo, Zelle, or CashApp so players know where winnings come from
+            </p>
+          </div>
+          <svg
+            className={`w-5 h-5 text-gray-500 transition-transform ${showPayoutSection ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showPayoutSection && (
+          <div className="mt-4 space-y-4">
+            {/* Venmo */}
+            <div>
+              <label htmlFor="hostVenmo" className="block text-xs text-gray-500 mb-1">
+                Venmo
+              </label>
+              <input
+                id="hostVenmo"
+                type="text"
+                value={hostVenmo}
+                onChange={(e) => setHostVenmo(e.target.value)}
+                placeholder="@your-venmo"
+                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+              />
+            </div>
+
+            {/* Zelle */}
+            <div>
+              <label htmlFor="hostZelle" className="block text-xs text-gray-500 mb-1">
+                Zelle
+              </label>
+              <input
+                id="hostZelle"
+                type="text"
+                value={hostZelle}
+                onChange={(e) => setHostZelle(e.target.value)}
+                placeholder="email or phone"
+                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+              />
+            </div>
+
+            {/* CashApp */}
+            <div>
+              <label htmlFor="hostCashapp" className="block text-xs text-gray-500 mb-1">
+                CashApp
+              </label>
+              <input
+                id="hostCashapp"
+                type="text"
+                value={hostCashapp}
+                onChange={(e) => setHostCashapp(e.target.value)}
+                placeholder="$your-cashapp"
+                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+              />
+            </div>
+
+            {/* Visibility Toggle */}
+            <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 p-3">
+              <div>
+                <p className="text-xs text-gray-300">Show payment info to everyone</p>
+                <p className="text-[10px] text-gray-600">Or only after players enter the PIN</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPayoutVisibility(payoutVisibility === "public" ? "pin_gated" : "public")}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  payoutVisibility === "public" ? "bg-green-600" : "bg-gray-700"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    payoutVisibility === "public" ? "translate-x-5" : ""
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Require Player Payout Toggle */}
+            <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 p-3">
+              <div>
+                <p className="text-xs text-gray-300">Require players to share payout info</p>
+                <p className="text-[10px] text-gray-600">Helps you pay winners faster</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRequirePlayerPayout(!requirePlayerPayout)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  requirePlayerPayout ? "bg-green-600" : "bg-gray-700"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    requirePlayerPayout ? "translate-x-5" : ""
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Submit */}
       <button
         type="submit"
-        disabled={!formValid || loading || submitted}
-        className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        disabled={loading || !gameName.trim() || !priceValid || !payoutValid || !hostCutValid}
+        className="w-full rounded-lg bg-white text-gray-950 px-4 py-3 text-sm font-semibold hover:bg-gray-200 active:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {submitted ? "Board Created — Redirecting…" : loading ? "Creating…" : "Create Board"}
+        {loading ? "Creating…" : "Create Board"}
       </button>
     </form>
   );

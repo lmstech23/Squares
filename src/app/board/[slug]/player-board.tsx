@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
+import { loadPlayerInfo, savePlayerInfo } from "@/lib/player-storage";
+import HostPaymentInfo from "@/components/host-payment-info";
+import PlayerPayoutSelect from "@/components/player-payout-select";
 
 type SquareData = {
   squareId: string;
@@ -22,6 +25,13 @@ interface PlayerBoardProps {
   teamRow?: string;
   winnerPositions?: number[];
   cashModeEnabled?: boolean;
+  stripeConnected?: boolean;
+  // Payout coordination
+  hostVenmo?: string | null;
+  hostZelle?: string | null;
+  hostCashapp?: string | null;
+  payoutVisibility?: string;
+  requirePlayerPayout?: boolean;
 }
 
 function getInitials(name: string): string {
@@ -48,16 +58,50 @@ export default function PlayerBoard({
   teamRow,
   winnerPositions: winnerPositionsArr,
   cashModeEnabled = false,
+  stripeConnected = false,
+  // Payout coordination
+  hostVenmo = null,
+  hostZelle = null,
+  hostCashapp = null,
+  payoutVisibility = "public",
+  requirePlayerPayout = false,
 }: PlayerBoardProps) {
   const [squares] = useState(initialSquares);
   const [selectedSquares, setSelectedSquares] = useState<Map<string, SquareData>>(new Map());
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
+  const [playerPhone, setPlayerPhone] = useState("");
   const [cashPin, setCashPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [cashSuccess, setCashSuccess] = useState(false);
-  const [paymentMode, setPaymentMode] = useState<"card" | "cash">("card");
+
+  // Payout coordination state
+  const [playerPayoutMethod, setPlayerPayoutMethod] = useState("");
+  const [playerPayoutHandle, setPlayerPayoutHandle] = useState("");
+  const [smsOptIn, setSmsOptIn] = useState(false);
+  const [saveInfo, setSaveInfo] = useState(false);
+  const [pinVerified, setPinVerified] = useState(false);
+
+  // Load saved player info from localStorage on mount
+  useEffect(() => {
+    const saved = loadPlayerInfo();
+    if (saved) {
+      setPlayerName(saved.name);
+      setPlayerEmail(saved.email);
+      setPlayerPhone(saved.phone);
+      setSaveInfo(true);
+    }
+  }, []);
+
+  // Payment method availability
+  const hasCard = stripeConnected;
+  const hasCash = cashModeEnabled;
+  const hasBoth = hasCard && hasCash;
+
+  const [paymentMode, setPaymentMode] = useState<"card" | "cash">(
+    hasCard ? "card" : "cash"
+  );
   const [showModal, setShowModal] = useState(false);
 
   const isOpen = status === "open";
@@ -108,6 +152,7 @@ export default function PlayerBoard({
 
     const trimmedName = playerName.trim();
     const trimmedEmail = playerEmail.trim().toLowerCase();
+    const trimmedPhone = playerPhone.trim();
 
     if (!trimmedName) {
       setError("Name is required.");
@@ -119,8 +164,28 @@ export default function PlayerBoard({
       return;
     }
 
+    if (!trimmedPhone) {
+      setError("Phone number is required.");
+      return;
+    }
+
+    if (requirePlayerPayout && !playerPayoutMethod) {
+      setError("Please select how the host should pay you.");
+      return;
+    }
+
+    if (playerPayoutMethod && playerPayoutMethod !== "cash" && !playerPayoutHandle.trim()) {
+      setError("Please enter your payment handle.");
+      return;
+    }
+
     setLoading(true);
     setError("");
+
+    // Save info to localStorage if checked
+    if (saveInfo) {
+      savePlayerInfo({ name: trimmedName, email: trimmedEmail, phone: trimmedPhone });
+    }
 
     try {
       const res = await fetch("/api/checkout", {
@@ -130,6 +195,10 @@ export default function PlayerBoard({
           squareIds: Array.from(selectedSquares.keys()),
           playerName: trimmedName,
           playerEmail: trimmedEmail,
+          playerPhone: trimmedPhone,
+          playerPayoutMethod: playerPayoutMethod || null,
+          playerPayoutHandle: playerPayoutHandle.trim() || null,
+          smsOptIn,
         }),
       });
 
@@ -157,9 +226,15 @@ export default function PlayerBoard({
 
     const trimmedName = playerName.trim();
     const trimmedPin = cashPin.trim();
+    const trimmedPhone = playerPhone.trim();
 
     if (!trimmedName) {
       setError("Name is required.");
+      return;
+    }
+
+    if (!trimmedPhone) {
+      setError("Phone number is required.");
       return;
     }
 
@@ -168,8 +243,23 @@ export default function PlayerBoard({
       return;
     }
 
+    if (requirePlayerPayout && !playerPayoutMethod) {
+      setError("Please select how the host should pay you.");
+      return;
+    }
+
+    if (playerPayoutMethod && playerPayoutMethod !== "cash" && !playerPayoutHandle.trim()) {
+      setError("Please enter your payment handle.");
+      return;
+    }
+
     setLoading(true);
     setError("");
+
+    // Save info to localStorage if checked
+    if (saveInfo) {
+      savePlayerInfo({ name: trimmedName, email: playerEmail.trim(), phone: trimmedPhone });
+    }
 
     try {
       const res = await fetch(`/api/board/${slug}/cash-reserve`, {
@@ -179,6 +269,11 @@ export default function PlayerBoard({
           squareId: firstSquare.squareId,
           playerName: trimmedName,
           pin: trimmedPin,
+          playerPhone: trimmedPhone,
+          playerEmail: playerEmail.trim().toLowerCase() || null,
+          playerPayoutMethod: playerPayoutMethod || null,
+          playerPayoutHandle: playerPayoutHandle.trim() || null,
+          smsOptIn,
         }),
       });
 
@@ -191,6 +286,7 @@ export default function PlayerBoard({
       }
 
       setCashSuccess(true);
+      setPinVerified(true);
       setLoading(false);
     } catch {
       setError("Network error. Please try again.");
@@ -206,6 +302,15 @@ export default function PlayerBoard({
           Pick a square. {priceDisplay} each. {maxPerPlayer > 1 ? `Up to ${maxPerPlayer} per person.` : ""}
         </p>
       )}
+
+      {/* Host payment info — shows how host pays winners */}
+      <HostPaymentInfo
+        venmo={hostVenmo}
+        zelle={hostZelle}
+        cashapp={hostCashapp}
+        visibility={payoutVisibility as "public" | "pin_gated"}
+        pinVerified={pinVerified}
+      />
 
       {/* Grid */}
       <div className="overflow-x-auto pb-4">
@@ -502,8 +607,8 @@ export default function PlayerBoard({
                     </div>
                   )}
 
-                  {/* Payment mode tabs — only show if cash mode is enabled */}
-                  {cashModeEnabled && (
+                  {/* Payment mode tabs — only show if both methods available */}
+                  {hasBoth && (
                     <div className="flex gap-1 mb-4 p-1 rounded-lg bg-gray-800">
                       <button
                         onClick={() => {
@@ -535,7 +640,7 @@ export default function PlayerBoard({
                   )}
 
                   {/* Card payment form */}
-                  {paymentMode === "card" && (
+                  {paymentMode === "card" && hasCard && (
                     <form onSubmit={handleCheckout}>
                       <div className="space-y-3">
                         <div>
@@ -577,6 +682,68 @@ export default function PlayerBoard({
                             For your receipt and winner notifications only.
                           </p>
                         </div>
+
+                        <div>
+                          <label
+                            htmlFor="playerPhone"
+                            className="block text-xs text-gray-400 mb-1"
+                          >
+                            Phone
+                          </label>
+                          <input
+                            id="playerPhone"
+                            type="tel"
+                            required
+                            value={playerPhone}
+                            onChange={(e) => setPlayerPhone(e.target.value)}
+                            placeholder="(555) 123-4567"
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                          />
+                          <p className="text-[10px] text-gray-600 mt-1">
+                            Mobile number (so the host can reach you if you win)
+                          </p>
+                        </div>
+
+                        {/* Payout preference */}
+                        <PlayerPayoutSelect
+                          hostVenmo={hostVenmo}
+                          hostZelle={hostZelle}
+                          hostCashapp={hostCashapp}
+                          required={requirePlayerPayout}
+                          selectedMethod={playerPayoutMethod}
+                          handle={playerPayoutHandle}
+                          onMethodChange={setPlayerPayoutMethod}
+                          onHandleChange={setPlayerPayoutHandle}
+                        />
+
+                        {/* SMS opt-in */}
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={smsOptIn}
+                            onChange={(e) => setSmsOptIn(e.target.checked)}
+                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
+                          />
+                          <span className="text-xs text-gray-400">
+                            Text me updates about this board (winners + reminders)
+                            <span className="block text-[10px] text-gray-600 mt-0.5">
+                              Msg & data rates may apply. Reply STOP to opt out.
+                            </span>
+                          </span>
+                        </label>
+
+                        {/* Save my info */}
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={saveInfo}
+                            onChange={(e) => setSaveInfo(e.target.checked)}
+                            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
+                          />
+                          <span className="text-xs text-gray-400">
+                            Save my info for next time
+                          </span>
+                        </label>
                       </div>
 
                       {error && (
@@ -596,7 +763,7 @@ export default function PlayerBoard({
                   )}
 
                   {/* Cash reserve form */}
-                  {paymentMode === "cash" && (
+                  {paymentMode === "cash" && hasCash && (
                     <form onSubmit={handleCashReserve}>
                       {selectedCount > 1 && (
                         <div className="mb-3 p-2 rounded-lg bg-gray-800">
@@ -628,6 +795,44 @@ export default function PlayerBoard({
 
                         <div>
                           <label
+                            htmlFor="cashPlayerPhone"
+                            className="block text-xs text-gray-400 mb-1"
+                          >
+                            Phone
+                          </label>
+                          <input
+                            id="cashPlayerPhone"
+                            type="tel"
+                            required
+                            value={playerPhone}
+                            onChange={(e) => setPlayerPhone(e.target.value)}
+                            placeholder="(555) 123-4567"
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                          />
+                          <p className="text-[10px] text-gray-600 mt-1">
+                            Mobile number (so the host can reach you if you win)
+                          </p>
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="cashPlayerEmail"
+                            className="block text-xs text-gray-400 mb-1"
+                          >
+                            Email <span className="text-gray-600">(optional)</span>
+                          </label>
+                          <input
+                            id="cashPlayerEmail"
+                            type="email"
+                            value={playerEmail}
+                            onChange={(e) => setPlayerEmail(e.target.value)}
+                            placeholder="john@email.com"
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                          />
+                        </div>
+
+                        <div>
+                          <label
                             htmlFor="cashPin"
                             className="block text-xs text-gray-400 mb-1"
                           >
@@ -652,6 +857,47 @@ export default function PlayerBoard({
                             Ask the host for the 4-digit PIN.
                           </p>
                         </div>
+
+                        {/* Payout preference */}
+                        <PlayerPayoutSelect
+                          hostVenmo={hostVenmo}
+                          hostZelle={hostZelle}
+                          hostCashapp={hostCashapp}
+                          required={requirePlayerPayout}
+                          selectedMethod={playerPayoutMethod}
+                          handle={playerPayoutHandle}
+                          onMethodChange={setPlayerPayoutMethod}
+                          onHandleChange={setPlayerPayoutHandle}
+                        />
+
+                        {/* SMS opt-in */}
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={smsOptIn}
+                            onChange={(e) => setSmsOptIn(e.target.checked)}
+                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
+                          />
+                          <span className="text-xs text-gray-400">
+                            Text me updates about this board (winners + reminders)
+                            <span className="block text-[10px] text-gray-600 mt-0.5">
+                              Msg & data rates may apply. Reply STOP to opt out.
+                            </span>
+                          </span>
+                        </label>
+
+                        {/* Save my info */}
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={saveInfo}
+                            onChange={(e) => setSaveInfo(e.target.checked)}
+                            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
+                          />
+                          <span className="text-xs text-gray-400">
+                            Save my info for next time
+                          </span>
+                        </label>
                       </div>
 
                       {error && (
