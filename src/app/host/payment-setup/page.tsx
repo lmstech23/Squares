@@ -61,7 +61,7 @@ export default function PaymentSetupPage() {
 
         {/* Options */}
         <div className="space-y-3 mb-6">
-          {/* Credit &amp; debit cards */}
+          {/* Credit &amp; Debit Cards */}
           <button
             type="button"
             onClick={() => setSelected("stripe")}
@@ -86,7 +86,7 @@ export default function PaymentSetupPage() {
                   </svg>
                 </div>
                 <div>
-                  <div className="font-semibold text-white">Credit &amp; debit cards</div>
+                  <div className="font-semibold text-white">Credit &amp; Debit Cards</div>
                   <div className="text-sm text-gray-400">
                     Players pay online — money goes straight to your bank. No chasing.
                   </div>
@@ -156,7 +156,7 @@ export default function PaymentSetupPage() {
             <ul className="mt-3 ml-[52px] space-y-1 text-sm text-gray-400">
               <li>• Cash, Venmo, Zelle, or CashApp</li>
               <li>• You mark players as paid</li>
-              <li>• Add Stripe for credit &amp; debit cards anytime</li>
+              <li>• Add Stripe for Credit &amp; Debit Cards anytime</li>
             </ul>
           </button>
         </div>
