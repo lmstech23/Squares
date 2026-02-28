@@ -31,9 +31,10 @@ export default function NewBoardForm() {
   );
   const payoutValid = payoutTotal === 100;
 
-  const priceNum = parseInt(squarePrice, 10);
-  const priceValid = !isNaN(priceNum) && priceNum >= 100; // $1 min in cents
-  const totalPot = priceValid ? priceNum * 100 : 0;
+  const priceNum = parseFloat(squarePrice);
+  const priceInCents = Math.round(priceNum * 100);
+  const priceValid = !isNaN(priceNum) && priceNum >= 1; // $1 min in cents
+  const totalPot = priceValid ? priceInCents * 100 : 0;
 
   const hostCutNum = parseInt(hostCut, 10);
   const hostCutValid = !isNaN(hostCutNum) && hostCutNum >= 0 && hostCutNum <= 50;
@@ -51,7 +52,7 @@ export default function NewBoardForm() {
       return;
     }
     if (!priceValid) {
-      setError("Price must be at least $1 (enter in cents).");
+      setError("Price must be at least $1.");
       return;
     }
     if (!hostCutValid) {
@@ -74,7 +75,7 @@ export default function NewBoardForm() {
           gameName: gameName.trim(),
           teamCol: teamCol.trim(),
           teamRow: teamRow.trim(),
-          squarePrice: priceNum,
+          squarePrice: priceInCents,
           hostCutPercent: hostCutNum,
           payoutStructure: payouts,
           // Payout coordination
@@ -154,16 +155,16 @@ export default function NewBoardForm() {
       {/* Price Per Square */}
       <div>
         <label htmlFor="squarePrice" className="block text-sm text-gray-400 mb-1.5">
-          Price per square (cents)
+          Price per square
         </label>
         <input
           id="squarePrice"
           type="number"
-          min="100"
-          step="1"
+          min="1"
+          step="0.01"
           value={squarePrice}
           onChange={(e) => setSquarePrice(e.target.value)}
-          placeholder="1000 = $10"
+          placeholder="10.00"
           className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
         />
         {priceValid && (
@@ -184,7 +185,7 @@ export default function NewBoardForm() {
             type="number"
             min="0"
             max="50"
-            step="1"
+            step="0.01"
             value={hostCut}
             onChange={(e) => setHostCut(e.target.value)}
             className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
@@ -215,7 +216,7 @@ export default function NewBoardForm() {
                   type="number"
                   min="0"
                   max="100"
-                  step="1"
+                  step="0.01"
                   value={payouts[label] || ""}
                   onChange={(e) => updatePayout(label, e.target.value)}
                   className="w-full rounded-lg border border-gray-800 bg-gray-900 px-2 py-2 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
