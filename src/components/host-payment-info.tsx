@@ -18,26 +18,26 @@ export default function HostPaymentInfo({
   const hasAny = venmo || zelle || cashapp;
   if (!hasAny) return null;
 
-  // PIN-gated and not verified
   if (visibility === "pin_gated" && !pinVerified) {
     return (
       <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mt-4 mb-4">
         <p className="text-xs text-gray-500">
-          🔒 Host payment info available after PIN entry
+          Host payment info available after PIN entry
         </p>
       </div>
     );
   }
 
   const methods: string[] = [];
-  if (venmo) methods.push(`Venmo: ${venmo}`);
-  if (zelle) methods.push(`Zelle: ${zelle}`);
-  if (cashapp) methods.push(`CashApp: ${cashapp}`);
+  if (venmo) methods.push("Venmo: " + venmo);
+  if (zelle) methods.push("Zelle: " + zelle);
+  if (cashapp) methods.push("CashApp: " + cashapp);
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mt-4 mb-4">
       <p className="text-xs text-gray-400">
-        💰 Host pays winners via: {methods.join(" · ")}
+        <span className="font-bold text-gray-200">Payment:</span>{" "}
+        {methods.join(" - ")}
       </p>
     </div>
   );
