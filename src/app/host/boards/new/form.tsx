@@ -118,7 +118,7 @@ export default function NewBoardForm() {
           value={gameName}
           onChange={(e) => setGameName(e.target.value)}
           placeholder="March Madness — Duke vs. Vermont"
-          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
         />
       </div>
 
@@ -134,7 +134,7 @@ export default function NewBoardForm() {
             value={teamCol}
             onChange={(e) => setTeamCol(e.target.value)}
             placeholder="Duke"
-            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
           />
         </div>
         <div>
@@ -147,7 +147,7 @@ export default function NewBoardForm() {
             value={teamRow}
             onChange={(e) => setTeamRow(e.target.value)}
             placeholder="Vermont"
-            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
           />
         </div>
       </div>
@@ -165,7 +165,7 @@ export default function NewBoardForm() {
           value={squarePrice}
           onChange={(e) => setSquarePrice(e.target.value)}
           placeholder="e.g. 10.00"
-          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
         />
         {priceValid && (
           <p className="text-xs text-gray-600 mt-1.5">
