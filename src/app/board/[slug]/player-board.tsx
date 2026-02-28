@@ -475,22 +475,6 @@ export default function PlayerBoard({
         visibility={payoutVisibility as "public" | "pin_gated"}
         pinVerified={pinVerified}
       />
-      {/* Selection summary bar — appears when squares are selected */}
-      {selectedCount > 0 && isOpen && !showModal && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 border-t border-gray-800 p-3">
-          <div className="max-w-lg mx-auto flex items-center justify-between">
-            <span className="text-sm text-gray-300">
-              {selectedCount} square{selectedCount > 1 ? "s" : ""} · {totalPrice}
-            </span>
-            <button
-              onClick={() => setShowModal(true)}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-            >
-              Checkout
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Floating checkout bar — appears when squares are selected */}
       {selectedCount > 0 && isOpen && !showModal && (
