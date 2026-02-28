@@ -888,8 +888,7 @@ export default function PlayerBoard({
                       )}
 
                       <p className="text-[10px] text-gray-600 mt-3">
-                        After reserving, hand {priceDisplay} to the host to
-                        confirm.
+                        Send {priceDisplay} to the host to secure this square. Unpaid squares will be released.
                       </p>
 
                       <button

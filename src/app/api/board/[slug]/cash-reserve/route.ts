@@ -138,7 +138,7 @@ export async function POST(
       squareId,
       playerName: name,
       expiresAt: expiresAt.toISOString(),
-      message: "Square reserved! Please hand your cash to the host to confirm.",
+      message: "Square reserved! Send the amount owed to the host to secure your square. Unpaid squares will be released.",
     });
   } catch (error) {
     console.error("Cash reserve error:", error);
