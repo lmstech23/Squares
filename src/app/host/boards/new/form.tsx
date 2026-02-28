@@ -165,6 +165,7 @@ export default function NewBoardForm() {
           step="0.01"
           value={squarePrice}
           onChange={(e) => setSquarePrice(e.target.value)}
+          onBlur={() => { const n = parseFloat(squarePrice); if (!isNaN(n)) setSquarePrice(n.toFixed(2)); }}
           placeholder="e.g. 10.00"
           className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
         />
