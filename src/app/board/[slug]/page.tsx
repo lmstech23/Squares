@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
+import HostPaymentInfo from "@/components/host-payment-info";
 import { calculateWinnersFromArrays } from "@/lib/winners";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
@@ -195,6 +196,15 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
             })}
           </div>
         )}
+
+        {/* Payment info */}
+        <HostPaymentInfo
+          venmo={board.hostVenmo}
+          zelle={board.hostZelle}
+          cashapp={board.hostCashapp}
+          visibility={(board.payoutVisibility ?? "public") as "public" | "pin_gated"}
+          pinVerified={false}
+        />
 
         {/* Board — interactive for open, read-only for closed */}
         <PlayerBoard
