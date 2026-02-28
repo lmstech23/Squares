@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!body.squarePrice || body.squarePrice < 1) {
+    if (!body.squarePrice || body.squarePrice < 100) {
       return NextResponse.json(
         { error: "Price per square must be at least $1." },
         { status: 400 }
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
     // 8. Determine creation path
     const isPlatformOwner = host.id === PLATFORM_OWNER_ID;
     const hasCredits = host.boardCredits >= 1;
-    const squarePriceCents = Math.round(body.squarePrice * 100);
+    const squarePriceCents = body.squarePrice;
 
     // --- Auto-enable cash mode for cash-only hosts ---
 
