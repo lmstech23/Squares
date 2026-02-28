@@ -298,7 +298,7 @@ export default function PlayerBoard({
     <div>
       {/* Instruction line */}
       {isOpen && (
-        <p className="text-xs text-gray-500 mb-3">
+        <p className="text-xs text-gray-500 mb-3 text-center">
           Pick a square. {priceDisplay} each. {maxPerPlayer > 1 ? `Up to ${maxPerPlayer} per person.` : ""}
         </p>
       )}
