@@ -126,7 +126,7 @@ export default function NewBoardForm() {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="teamCol" className="block text-sm text-gray-400 mb-1.5">
-            Team (columns)
+            Team A
           </label>
           <input
             id="teamCol"
@@ -139,7 +139,7 @@ export default function NewBoardForm() {
         </div>
         <div>
           <label htmlFor="teamRow" className="block text-sm text-gray-400 mb-1.5">
-            Team (rows)
+            Team B
           </label>
           <input
             id="teamRow"
