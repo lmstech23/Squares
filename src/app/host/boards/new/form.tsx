@@ -241,9 +241,8 @@ export default function NewBoardForm() {
           className="flex items-center justify-between w-full text-left"
         >
           <div>
-            <p className="text-sm font-medium text-gray-300">How will you pay winners?</p>
+            <p className="text-sm font-medium text-gray-300">Add your payment accounts</p>
             <p className="text-xs text-gray-600 mt-0.5">
-              Add your Venmo, Zelle, or CashApp so players know where winnings come from
             </p>
           </div>
           <svg

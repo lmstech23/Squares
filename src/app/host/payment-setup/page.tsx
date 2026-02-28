@@ -53,15 +53,15 @@ export default function PaymentSetupPage() {
 
         {/* Heading */}
         <h1 className="text-center text-2xl font-bold tracking-tight text-white mb-2">
-          How will your players pay?
+          How do you want to collect?
         </h1>
         <p className="text-center text-sm text-gray-400 mb-8">
-          Pick what works for your crew. You can always change this later.
+          You can change this anytime.
         </p>
 
         {/* Options */}
         <div className="space-y-3 mb-6">
-          {/* Cards via Stripe */}
+          {/* Credit &amp; debit cards */}
           <button
             type="button"
             onClick={() => setSelected("stripe")}
@@ -86,9 +86,9 @@ export default function PaymentSetupPage() {
                   </svg>
                 </div>
                 <div>
-                  <div className="font-semibold text-white">Cards via Stripe</div>
+                  <div className="font-semibold text-white">Credit &amp; debit cards</div>
                   <div className="text-sm text-gray-400">
-                    Accept credit &amp; debit cards online
+                    Players pay online — money goes straight to your bank. No chasing.
                   </div>
                 </div>
               </div>
@@ -105,13 +105,12 @@ export default function PaymentSetupPage() {
               </div>
             </div>
             <ul className="mt-3 ml-[52px] space-y-1 text-sm text-gray-400">
-              <li>• Players pay with credit &amp; debit cards</li>
               <li>• Money goes directly to your bank</li>
               <li>• Automatic — no chasing payments</li>
             </ul>
           </button>
 
-          {/* Cash only */}
+          {/* Direct Payments */}
           <button
             type="button"
             onClick={() => setSelected("cash")}
@@ -136,9 +135,9 @@ export default function PaymentSetupPage() {
                   </svg>
                 </div>
                 <div>
-                  <div className="font-semibold text-white">Cash only</div>
+                  <div className="font-semibold text-white">Direct Payments</div>
                   <div className="text-sm text-gray-400">
-                    Collect from players face-to-face
+                    Collect from players your way.
                   </div>
                 </div>
               </div>
@@ -155,9 +154,9 @@ export default function PaymentSetupPage() {
               </div>
             </div>
             <ul className="mt-3 ml-[52px] space-y-1 text-sm text-gray-400">
-              <li>• Collect cash from players in person</li>
-              <li>• Perfect for watch parties &amp; cookouts</li>
-              <li>• Connect Stripe anytime later</li>
+              <li>• Cash, Venmo, Zelle, or CashApp</li>
+              <li>• You mark players as paid</li>
+              <li>• Add Stripe for credit &amp; debit cards anytime</li>
             </ul>
           </button>
         </div>
