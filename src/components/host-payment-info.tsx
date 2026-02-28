@@ -21,7 +21,7 @@ export default function HostPaymentInfo({
   // PIN-gated and not verified
   if (visibility === "pin_gated" && !pinVerified) {
     return (
-      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mb-4">
+      <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mt-4 mb-4">
         <p className="text-xs text-gray-500">
           🔒 Host payment info available after PIN entry
         </p>
@@ -35,7 +35,7 @@ export default function HostPaymentInfo({
   if (cashapp) methods.push(`CashApp: ${cashapp}`);
 
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mb-4">
+    <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mt-4 mb-4">
       <p className="text-xs text-gray-400">
         💰 Host pays winners via: {methods.join(" · ")}
       </p>
