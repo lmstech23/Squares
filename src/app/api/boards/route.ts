@@ -160,13 +160,6 @@ export async function POST(request: Request) {
     const payoutVisibility = body.payoutVisibility === "pin_gated" ? "pin_gated" : "public";
     const requirePlayerPayout = body.requirePlayerPayout ?? false;
 
-    // Validate: cash mode requires at least one payment handle
-    if (isCashHost && !hostVenmo && !hostZelle && !hostCashapp) {
-      return NextResponse.json(
-        { error: "Cash mode requires at least one payment method (Venmo, Zelle, or CashApp)." },
-        { status: 400 }
-      );
-    }
 
     const boardData = {
       hostId: host.id,
