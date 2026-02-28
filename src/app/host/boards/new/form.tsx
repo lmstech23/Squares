@@ -21,6 +21,7 @@ export default function NewBoardForm() {
   const [hostVenmo, setHostVenmo] = useState("");
   const [hostZelle, setHostZelle] = useState("");
   const [hostCashapp, setHostCashapp] = useState("");
+  const hasPaymentHandle = hostVenmo.trim() || hostZelle.trim() || hostCashapp.trim();
   const [payoutVisibility, setPayoutVisibility] = useState<"public" | "pin_gated">("public");
   const [requirePlayerPayout, setRequirePlayerPayout] = useState(false);
   const [showPayoutSection, setShowPayoutSection] = useState(false);
@@ -308,9 +309,9 @@ export default function NewBoardForm() {
               </div>
               <button
                 type="button"
-                onClick={() => setPayoutVisibility(payoutVisibility === "public" ? "pin_gated" : "public")}
+                onClick={() => hasPaymentHandle && setPayoutVisibility(payoutVisibility === "public" ? "pin_gated" : "public")}
                 className={`relative w-10 h-5 rounded-full transition-colors ${
-                  payoutVisibility === "public" ? "bg-green-600" : "bg-gray-700"
+                  hasPaymentHandle ? (payoutVisibility === "public" ? "bg-green-600" : "bg-gray-700") : "bg-gray-800 opacity-40 cursor-not-allowed"
                 }`}
               >
                 <span
