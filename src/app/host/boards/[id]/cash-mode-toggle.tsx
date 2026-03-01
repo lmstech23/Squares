@@ -16,7 +16,8 @@ export default function CashModeToggle({
   liabilityAccepted: initialLiability,
 }: CashModeToggleProps) {
   const [enabled, setEnabled] = useState(initialEnabled);
-  const [pin, setPin] = useState(initialPin ?? "");
+ const [pin, setPin] = useState(
+  initialPin || String(Math.floor(1000 + Math.random() * 9000)));
   const [liability, setLiability] = useState(initialLiability);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
