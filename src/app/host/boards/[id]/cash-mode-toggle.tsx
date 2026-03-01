@@ -72,7 +72,7 @@ export default function CashModeToggle({
       const res = await fetch(`/api/host/boards/${boardId}/cash-mode`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: true, pin: trimmedPin }),
+        body: JSON.stringify({ enabled: true, pin: trimmedPin, liabilityAccepted: liability }),
       });
 
       if (!res.ok) {
