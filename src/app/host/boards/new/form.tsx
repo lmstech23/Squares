@@ -32,10 +32,10 @@ export default function NewBoardForm() {
   );
   const payoutValid = payoutTotal === 100;
 
-  const priceNum = parseFloat(squarePrice);
+  const priceNum = parseFloat(squarePrice) || 0;
   const priceInCents = Math.round(priceNum * 100);
-  const priceValid = !isNaN(priceNum) && priceNum >= 1; // $1 min in cents
-  const totalPot = priceValid ? priceInCents * 100 : 0;
+  const priceValid = !isNaN(priceNum) && priceNum >= 1;
+  const totalPot = priceValid ? Math.round(priceNum * 100 * 100) : 0;
 
   const hostCutNum = parseInt(hostCut, 10);
   const hostCutValid = !isNaN(hostCutNum) && hostCutNum >= 0 && hostCutNum <= 50;
@@ -171,7 +171,7 @@ export default function NewBoardForm() {
         />
         {priceValid && (
           <p className="text-xs text-gray-600 mt-1.5">
-            ${(priceNum / 100).toFixed(2)} per square · ${(totalPot / 100).toFixed(2)} total pot
+            ${priceNum.toFixed(2)} per square · ${(totalPot / 100).toFixed(2)} total pot
           </p>
         )}
       </div>
