@@ -54,6 +54,7 @@ model Board {
   cashPin                   String?     @map("cash_pin")
   cashReservationTtlMins    Int         @default(20) @map("cash_reservation_ttl_mins")
   cashLiabilityAccepted     Boolean     @default(false) @map("cash_liability_accepted")
+  winnerNotifiedByPeriod  Json    @default("{}") @map("winner_notified_by_period")
   hostVenmo              String?          @map("host_venmo")
   hostZelle              String?          @map("host_zelle")
   hostCashapp            String?          @map("host_cashapp")
@@ -66,7 +67,7 @@ model Board {
   expiredAt                 DateTime?   @map("expired_at") @db.Timestamptz(6)
   activatedAt               DateTime?   @map("activated_at") @db.Timestamptz(6)
 
-  // Dismiss feature (Addendum K) — soft-hide from host dashboard
+  // Dismiss feature (Addendum K) ï¿½ soft-hide from host dashboard
   hiddenFromHost            Boolean     @default(false) @map("hidden_from_host")
 
   host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
