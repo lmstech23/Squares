@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
 import { calculateWinnersFromArrays } from "@/lib/winners";
 import type { Metadata } from "next";
+import HostPaymentInfo from "@/components/host-payment-info";
 export const dynamic = "force-dynamic";
 
 interface Props {
@@ -195,7 +196,14 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
             })}
           </div>
         )}
-
+ <HostPaymentInfo
+          venmo={board.hostVenmo}
+          zelle={board.hostZelle}
+          cashapp={board.hostCashapp}
+          visibility={(board.payoutVisibility ?? "public") as "public" | "pin_gated"}
+          pinVerified={false}
+        />
+        
         {/* Board — interactive for open, read-only for closed */}
         <PlayerBoard
           boardId={board.boardId}
