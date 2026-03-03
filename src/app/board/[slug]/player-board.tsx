@@ -83,7 +83,7 @@ export default function PlayerBoard({
   const [resumeFreedUp, setResumeFreedUp] = useState(false);
 
   const isOpen = status === "open";
-  const hasNumbers = rowNumbers && colNumbers;
+  const hasNumbers = !!(rowNumbers?.length && colNumbers?.length);
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
 
@@ -336,7 +336,7 @@ export default function PlayerBoard({
             {Array.from({ length: 10 }, (_, row) => (
               <div key={`row-${row}`} className="contents">
                 {hasNumbers && (
-                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 aspect-square">
+                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-[28px] aspect-square">
                     {rowNumbers![row]}
                   </div>
                 )}
