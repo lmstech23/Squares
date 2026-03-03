@@ -324,6 +324,7 @@ export async function POST(request: Request) {
           ],
           customer_email: email,
           metadata: {
+            squareId: squareIds[0],
             squareIds: squareIds.join(","),
             boardId: board.boardId,
             positions,

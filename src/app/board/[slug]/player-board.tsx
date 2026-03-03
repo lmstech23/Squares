@@ -1,9 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useEffect } from "react";
-import { loadPlayerInfo, savePlayerInfo } from "@/lib/player-storage";
-import HostPaymentInfo from "@/components/host-payment-info";
-import PlayerPayoutSelect from "@/components/player-payout-select";
+import { useState, useCallback, useEffect } from "react";
 
 type SquareData = {
   squareId: string;
@@ -25,13 +22,6 @@ interface PlayerBoardProps {
   teamRow?: string;
   winnerPositions?: number[];
   cashModeEnabled?: boolean;
-  stripeConnected?: boolean;
-  // Payout coordination
-  hostVenmo?: string | null;
-  hostZelle?: string | null;
-  hostCashapp?: string | null;
-  payoutVisibility?: string;
-  requirePlayerPayout?: boolean;
 }
 
 function getInitials(name: string): string {
@@ -58,395 +48,350 @@ export default function PlayerBoard({
   teamRow,
   winnerPositions: winnerPositionsArr,
   cashModeEnabled = false,
-  stripeConnected = false,
-  // Payout coordination
-  hostVenmo = null,
-  hostZelle = null,
-  hostCashapp = null,
-  payoutVisibility = "public",
-  requirePlayerPayout = false,
 }: PlayerBoardProps) {
-  const [squares] = useState(initialSquares);
-  const [selectedSquares, setSelectedSquares] = useState<Map<string, SquareData>>(new Map());
+  const [squares, setSquares] = useState(initialSquares);
+
+  // Claim flow state (open squares)
+  const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
-  const [playerPhone, setPlayerPhone] = useState("");
   const [cashPin, setCashPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [cashSuccess, setCashSuccess] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<"card" | "cash">("card");
 
-  // Payout coordination state
-  const [playerPayoutMethod, setPlayerPayoutMethod] = useState("");
-  const [playerPayoutHandle, setPlayerPayoutHandle] = useState("");
-  const [smsOptIn, setSmsOptIn] = useState(false);
-  const [saveInfo, setSaveInfo] = useState(false);
-  const [pinVerified, setPinVerified] = useState(false);
-
-  // Load saved player info from localStorage on mount
-  useEffect(() => {
-    const saved = loadPlayerInfo();
-    if (saved) {
-      setPlayerName(saved.name);
-      setPlayerEmail(saved.email);
-      setPlayerPhone(saved.phone);
-      setSaveInfo(true);
-    }
-  }, []);
-
-  // Payment method availability
-  const hasCard = stripeConnected;
-  const hasCash = cashModeEnabled;
-  const hasBoth = hasCard && hasCash;
-
-  const [paymentMode, setPaymentMode] = useState<"card" | "cash">(
-    hasCard ? "card" : "cash"
-  );
-  const [showModal, setShowModal] = useState(false);
+  // Resume flow state (pending squares)
+  const [pendingSquare, setPendingSquare] = useState<SquareData | null>(null);
+  const [resumeEmail, setResumeEmail] = useState("");
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const [resumeError, setResumeError] = useState("");
+  // When a square freed up mid-resume, let the player tap directly into claim
+  const [resumeFreedUp, setResumeFreedUp] = useState(false);
 
   const isOpen = status === "open";
   const hasNumbers = rowNumbers && colNumbers;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
 
-  const selectedCount = selectedSquares.size;
-  const totalPrice = `$${(selectedCount * squarePrice) / 100}`;
+  // ----------------------------------------------------------------
+  // Polling — refresh square statuses while any are pending
+  // ----------------------------------------------------------------
+  useEffect(() => {
+    const hasPending = squares.some(
+      (s) => s.paymentStatus === "pending" || s.paymentStatus === "reserved_cash"
+    );
+    if (!hasPending) return;
 
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/board/${slug}/squares`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setSquares(data.squares ?? data);
+      } catch {
+        // Network blip — stay quiet, try again next tick
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [squares, slug]);
+
+  // ----------------------------------------------------------------
+  // Square tap handler
+  // ----------------------------------------------------------------
   const handleSquareTap = useCallback(
     (sq: SquareData) => {
       if (!isOpen) return;
-      // Allow tapping open squares and pending squares (for resume flow)
-      if (sq.paymentStatus !== "open" && sq.paymentStatus !== "pending") return;
 
-      setSelectedSquares((prev) => {
-        const next = new Map(prev);
-        if (next.has(sq.squareId)) {
-          next.delete(sq.squareId);
-        } else {
-          // Enforce max per player at selection time
-          if (next.size >= maxPerPlayer) {
-            return prev;
-          }
-          next.set(sq.squareId, sq);
-        }
-        return next;
-      });
+      if (sq.paymentStatus === "pending") {
+        setPendingSquare(sq);
+        setResumeEmail("");
+        setResumeError("");
+        setResumeFreedUp(false);
+        return;
+      }
 
+      if (sq.paymentStatus !== "open") return;
+
+      setSelectedSquare(sq);
       setError("");
       setCashSuccess(false);
+      setPaymentMode("card");
     },
-    [isOpen, maxPerPlayer]
+    [isOpen]
   );
 
   const handleClose = useCallback(() => {
-    setSelectedSquares(new Map());
-    setShowModal(false);
+    setSelectedSquare(null);
+    setPendingSquare(null);
     setError("");
+    setResumeError("");
+    setResumeFreedUp(false);
     setCashSuccess(false);
-    setPaymentMode("card");
   }, []);
 
+  // ----------------------------------------------------------------
+  // Claim checkout (open squares → Stripe)
+  // ----------------------------------------------------------------
   async function handleCheckout(e: React.FormEvent) {
     e.preventDefault();
-    if (selectedSquares.size === 0) return;
+    if (!selectedSquare) return;
 
     const trimmedName = playerName.trim();
     const trimmedEmail = playerEmail.trim().toLowerCase();
-    const trimmedPhone = playerPhone.trim();
 
-    if (!trimmedName) {
-      setError("Name is required.");
-      return;
-    }
-
+    if (!trimmedName) { setError("Name is required."); return; }
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setError("Valid email is required.");
       return;
     }
 
-    if (!trimmedPhone) {
-      setError("Phone number is required.");
-      return;
-    }
-
-    if (requirePlayerPayout && !playerPayoutMethod) {
-      setError("Please select how the host should pay you.");
-      return;
-    }
-
-    if (playerPayoutMethod && playerPayoutMethod !== "cash" && !playerPayoutHandle.trim()) {
-      setError("Please enter your payment handle.");
-      return;
-    }
-
     setLoading(true);
     setError("");
-
-    // Save info to localStorage if checked
-    if (saveInfo) {
-      savePlayerInfo({ name: trimmedName, email: trimmedEmail, phone: trimmedPhone });
-    }
 
     try {
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareIds: Array.from(selectedSquares.keys()),
+          squareIds: [selectedSquare.squareId],
           playerName: trimmedName,
           playerEmail: trimmedEmail,
-          playerPhone: trimmedPhone,
-          playerPayoutMethod: playerPayoutMethod || null,
-          playerPayoutHandle: playerPayoutHandle.trim() || null,
-          smsOptIn,
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Something went wrong. Try again.");
-        setLoading(false);
+        setError(data.error || "Something went wrong. Please try again.");
         return;
       }
 
-      // Redirect to Stripe Checkout
-      window.location.href = data.checkoutUrl;
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      }
     } catch {
       setError("Network error. Please try again.");
+    } finally {
       setLoading(false);
     }
   }
 
+  // ----------------------------------------------------------------
+  // Cash reserve (open squares → cash hold)
+  // ----------------------------------------------------------------
   async function handleCashReserve(e: React.FormEvent) {
     e.preventDefault();
-    // Cash reserve: use first selected square only
-    const firstSquare = Array.from(selectedSquares.values())[0];
-    if (!firstSquare) return;
+    if (!selectedSquare) return;
 
     const trimmedName = playerName.trim();
-    const trimmedPin = cashPin.trim();
-    const trimmedPhone = playerPhone.trim();
 
-    if (!trimmedName) {
-      setError("Name is required.");
-      return;
-    }
-
-    if (!trimmedPhone) {
-      setError("Phone number is required.");
-      return;
-    }
-
-    if (!/^\d{4}$/.test(trimmedPin)) {
-      setError("Enter the 4-digit PIN from the host.");
-      return;
-    }
-
-    if (requirePlayerPayout && !playerPayoutMethod) {
-      setError("Please select how the host should pay you.");
-      return;
-    }
-
-    if (playerPayoutMethod && playerPayoutMethod !== "cash" && !playerPayoutHandle.trim()) {
-      setError("Please enter your payment handle.");
+    if (!trimmedName) { setError("Name is required."); return; }
+    if (!cashPin || cashPin.length !== 4) {
+      setError("4-digit PIN is required.");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    // Save info to localStorage if checked
-    if (saveInfo) {
-      savePlayerInfo({ name: trimmedName, email: playerEmail.trim(), phone: trimmedPhone });
-    }
-
     try {
-      const res = await fetch(`/api/board/${slug}/cash-reserve`, {
+      const res = await fetch("/api/checkout/cash", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareId: firstSquare.squareId,
+          squareId: selectedSquare.squareId,
           playerName: trimmedName,
-          pin: trimmedPin,
-          playerPhone: trimmedPhone,
-          playerEmail: playerEmail.trim().toLowerCase() || null,
-          playerPayoutMethod: playerPayoutMethod || null,
-          playerPayoutHandle: playerPayoutHandle.trim() || null,
-          smsOptIn,
+          cashPin,
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Something went wrong. Try again.");
-        setLoading(false);
+        setError(data.error || "Something went wrong. Please try again.");
         return;
       }
 
       setCashSuccess(true);
-      setPinVerified(true);
-      setLoading(false);
     } catch {
       setError("Network error. Please try again.");
+    } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <div>
-      {/* Instruction line */}
-      {isOpen && (
-        <p className="text-xs text-gray-500 mb-3 text-center">
-          Pick a square. {priceDisplay} each. {maxPerPlayer > 1 ? `Up to ${maxPerPlayer} per person.` : ""}
-        </p>
-      )}
+  // ----------------------------------------------------------------
+  // Resume checkout (pending squares → re-enter existing Stripe session)
+  // ----------------------------------------------------------------
+  async function handleResume(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pendingSquare) return;
 
-      {/* Host payment info — shows how host pays winners */}
-      
+    const trimmedEmail = resumeEmail.trim().toLowerCase();
+
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setResumeError("Valid email is required.");
+      return;
+    }
+
+    setResumeLoading(true);
+    setResumeError("");
+
+    try {
+      const res = await fetch("/api/checkout/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          squareId: pendingSquare.squareId,
+          email: trimmedEmail,
+        }),
+      });
+
+      const data = await res.json();
+
+      // Square just freed up — stay in the modal, show a "claim it now" prompt.
+      // Polling will update the grid within 2 seconds.
+      if (res.status === 410) {
+        setResumeFreedUp(true);
+        setResumeError("");
+        return;
+      }
+
+      // Payment was already completed, webhook hadn't fired yet.
+      // Redirect to success URL so the player sees the confirmation banner.
+      if (res.status === 200 && data.alreadyPaid) {
+        window.location.href = `/board/${data.boardSlug}?success=true`;
+        return;
+      }
+
+      if (!res.ok) {
+        setResumeError(data.error || "Something went wrong. Please try again.");
+        return;
+      }
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      }
+    } catch {
+      setResumeError("Network error. Please try again.");
+    } finally {
+      setResumeLoading(false);
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Render
+  // ----------------------------------------------------------------
+  return (
+    <div className="relative">
       {/* Grid */}
-      <div className="overflow-x-auto pb-4">
-        <div className="mx-auto w-fit">
+      <div className="overflow-x-auto">
+        <div className="inline-block min-w-full">
+          {teamCol && teamRow && (
+            <div className="flex justify-between text-[10px] text-gray-500 mb-1 px-1">
+              <span>← {teamRow}</span>
+              <span>{teamCol} →</span>
+            </div>
+          )}
+
           <div
-            className="grid"
+            className="grid gap-1"
             style={{
               gridTemplateColumns: hasNumbers
-                ? '24px 28px repeat(10, 28px)'
-                : 'repeat(10, 28px)',
-              gridTemplateRows: hasNumbers
-                ? 'auto 20px repeat(10, 28px)'
-                : 'repeat(10, 28px)',
-              gap: '2px',
+                ? `28px repeat(10, 1fr)`
+                : `repeat(10, 1fr)`,
             }}
           >
-            {/* Team A label */}
-            {hasNumbers && teamCol && (
-              <div
-                style={{ gridColumn: '3 / 13', gridRow: 1 }}
-                className="flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium h-6"
-              >
-                {teamCol}
-              </div>
+            {/* Column headers */}
+            {hasNumbers && (
+              <>
+                <div />
+                {colNumbers.map((num, i) => (
+                  <div
+                    key={`col-${i}`}
+                    className="flex items-center justify-center text-[10px] font-bold text-gray-500 h-6"
+                  >
+                    {num}
+                  </div>
+                ))}
+              </>
             )}
 
-            {/* Column numbers */}
-            {hasNumbers && colNumbers.map((num, i) => (
-              <div
-                key={`col-${i}`}
-                style={{ gridColumn: i + 3, gridRow: 2 }}
-                className="flex items-center justify-center text-[10px] font-bold text-gray-500"
-              >
-                {num}
-              </div>
-            ))}
+            {/* Grid rows */}
+            {Array.from({ length: 10 }, (_, row) => (
+              <div key={`row-${row}`} className="contents">
+                {hasNumbers && (
+                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-7">
+                    {rowNumbers![row]}
+                  </div>
+                )}
 
-            {/* Team B label */}
-            {hasNumbers && teamRow && (
-              <div
-                style={{ gridColumn: 1, gridRow: '3 / 13' }}
-                className="flex items-center justify-center"
-              >
-                <span
-                  className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium whitespace-nowrap"
-                  style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
-                >
-                  {teamRow}
-                </span>
-              </div>
-            )}
+                {Array.from({ length: 10 }, (_, col) => {
+                  const position = row * 10 + col;
+                  const sq = squares[position];
+                  if (!sq) return null;
 
-            {/* Row numbers + squares */}
-            {Array.from({ length: 10 }, (_, row) => {
-              const gridRow = hasNumbers ? row + 3 : row + 1;
-              const colOffset = hasNumbers ? 3 : 1;
+                  const isPaid = sq.paymentStatus === "paid";
+                  const isPending = sq.paymentStatus === "pending";
+                  const isAvailable = sq.paymentStatus === "open" && isOpen;
+                  const isSelected = selectedSquare?.squareId === sq.squareId;
+                  const isPendingSelected = pendingSquare?.squareId === sq.squareId;
+                  const isWinner = winnerSet.has(position) && isPaid;
 
-              return (
-                <React.Fragment key={`row-group-${row}`}>
-                  {/* Row number */}
-                  {hasNumbers && (
-                    <div
-                      style={{ gridColumn: 2, gridRow }}
-                      className="flex items-center justify-center text-[10px] font-bold text-gray-500"
-                    >
-                      {rowNumbers[row]}
-                    </div>
-                  )}
-
-                  {/* Squares */}
-                  {Array.from({ length: 10 }, (_, col) => {
-                    const position = row * 10 + col;
-                    const sq = squares[position];
-                    if (!sq) return <div key={`empty-${position}`} style={{ gridColumn: col + colOffset, gridRow }} />;
-
-                    const isPaid = sq.paymentStatus === "paid";
-                    const isPending = sq.paymentStatus === "pending";
-                    const isReservedCash = sq.paymentStatus === "reserved_cash";
-                    const isAvailable = sq.paymentStatus === "open" && isOpen;
-                    const isTappable = isAvailable || (isPending && isOpen);
-                    const isSelected = selectedSquares.has(sq.squareId);
-                    const isWinner = winnerSet.has(position) && isPaid;
-
-                    return (
-                      <button
-                        key={sq.squareId}
-                        disabled={!isTappable}
-                        onClick={() => handleSquareTap(sq)}
-                        style={{ gridColumn: col + colOffset, gridRow }}
-                        className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all ${
-                          isSelected
-                            ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
+                  return (
+                    <button
+                      key={sq.squareId}
+                      // Paid squares are never interactive.
+                      // Pending squares are clickable so players can resume.
+                      disabled={isPaid || !isOpen}
+                      onClick={() => handleSquareTap(sq)}
+                      className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all min-w-[28px] ${
+                        isSelected
+                          ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
+                          : isPendingSelected
+                            ? "bg-yellow-600 border-2 border-yellow-400 text-white ring-2 ring-yellow-500/30"
                             : isWinner
                               ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
                               : isPaid
                                 ? "bg-green-950 border border-green-900 text-green-400"
-                                : isReservedCash
-                                  ? "bg-amber-950 border border-amber-800 text-amber-500"
-                                  : isPending
-                                    ? "bg-yellow-950 border border-yellow-900 text-yellow-500 hover:border-yellow-600 cursor-pointer"
-                                    : isAvailable
-                                      ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
-                                      : "bg-gray-900 border border-gray-800 text-gray-700"
-                        }`}
-                        title={
-                          isSelected
-                            ? `Selected — Square ${position + 1}`
-                            : isWinner
-                              ? `★ WINNER — ${sq.playerName ?? "Paid"}`
-                              : isPaid
-                                ? sq.playerName ?? "Paid"
-                                : isReservedCash
-                                  ? `Reserved (cash) — ${sq.playerName ?? ""}`
-                                  : isPending
-                                    ? `Pending — tap to resume if this is yours`
-                                    : isAvailable
-                                      ? `Square ${position + 1} — ${priceDisplay}`
-                                      : "Unavailable"
-                        }
-                      >
-                        {isSelected
-                          ? "✓"
-                          : isWinner
-                            ? "★"
-                            : isPaid && sq.playerName
-                              ? getInitials(sq.playerName)
-                              : isReservedCash
-                                ? "💵"
                                 : isPending
-                                  ? "…"
-                                  : <span className="text-gray-700">{position + 1}</span>}
-                      </button>
-                    );
-                  })}
-                </React.Fragment>
-              );
-            })}
+                                  ? "bg-yellow-950 border border-yellow-900 text-yellow-500 hover:border-yellow-600 hover:bg-yellow-900/40 active:scale-95 cursor-pointer"
+                                  : isAvailable
+                                    ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
+                                    : "bg-gray-900 border border-gray-800 text-gray-700"
+                      }`}
+                      title={
+                        isWinner
+                          ? `★ WINNER — ${sq.playerName ?? "Paid"}`
+                          : isPaid
+                            ? sq.playerName ?? "Paid"
+                            : isPending
+                              ? "Tap to resume checkout"
+                              : isAvailable
+                                ? `Square ${position + 1} — ${priceDisplay}`
+                                : "Unavailable"
+                      }
+                    >
+                      {isWinner
+                        ? "★"
+                        : isPaid && sq.playerName
+                          ? getInitials(sq.playerName)
+                          : isPending
+                            ? "…"
+                            : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
       {/* Legend */}
-      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-gray-600">
+      <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-sm bg-gray-900 border border-gray-800" />
           Open
@@ -468,68 +413,22 @@ export default function PlayerBoard({
           </span>
         )}
       </div>
-      <HostPaymentInfo
-        venmo={hostVenmo}
-        zelle={hostZelle}
-        cashapp={hostCashapp}
-        visibility={payoutVisibility as "public" | "pin_gated"}
-        pinVerified={pinVerified}
-      />
 
-      {/* Floating checkout bar — appears when squares are selected */}
-      {selectedCount > 0 && isOpen && !showModal && (
-        <div className="fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-gray-950 via-gray-950/95 to-transparent">
-          <div className="max-w-lg mx-auto flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">
-                {selectedCount === 1
-                  ? `Square #${Array.from(selectedSquares.values())[0].position + 1}`
-                  : `${selectedCount} squares selected`}
-              </p>
-              <p className="text-xs text-gray-500">
-                {totalPrice} total
-              </p>
-            </div>
-            <div className="flex items-center gap-2 ml-3">
-              <button
-                onClick={handleClose}
-                className="rounded-lg px-3 py-2 text-xs text-gray-400 hover:text-white transition-colors"
-              >
-                Clear
-              </button>
-              <button
-                onClick={() => setShowModal(true)}
-                className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-colors"
-              >
-                Checkout
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Claim Modal — slides up */}
-      {showModal && selectedCount > 0 && isOpen && (
+      {/* ============================================================
+          CLAIM MODAL — open squares
+          ============================================================ */}
+      {selectedSquare && isOpen && (
         <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/60 z-40"
-            onClick={handleClose}
-          />
+          <div className="fixed inset-0 bg-black/60 z-40" onClick={handleClose} />
 
-          {/* Sheet */}
           <div className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up">
             <div className="max-w-lg mx-auto bg-gray-900 border-t border-gray-800 rounded-t-2xl p-5">
-              {/* Handle */}
               <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-4" />
 
-              {/* Cash success state */}
               {cashSuccess ? (
                 <div className="text-center py-4">
                   <div className="text-3xl mb-2">✓</div>
-                  <p className="text-sm font-medium text-green-300">
-                    Square reserved!
-                  </p>
+                  <p className="text-sm font-medium text-green-300">Square reserved!</p>
                   <p className="text-xs text-gray-500 mt-1">
                     Hand your cash to the host to confirm.
                   </p>
@@ -545,94 +444,42 @@ export default function PlayerBoard({
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm font-medium">
-                        {selectedCount === 1
-                          ? `Square #${Array.from(selectedSquares.values())[0].position + 1}`
-                          : `${selectedCount} Squares`}
+                        Square #{selectedSquare.position + 1}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {totalPrice} total — {paymentMode === "card" ? "pay to lock" : "reserve with cash"}
+                        {priceDisplay} —{" "}
+                        {paymentMode === "card" ? "pay to lock it in" : "reserve with cash"}
                       </p>
-                      {selectedCount > 1 && (
-                        <p className="text-[10px] text-gray-600 mt-1">
-                          #{Array.from(selectedSquares.values())
-                            .map((s) => s.position + 1)
-                            .sort((a, b) => a - b)
-                            .join(", ")}
-                        </p>
-                      )}
                     </div>
-                    <button
-                      onClick={handleClose}
-                      className="text-gray-500 hover:text-white p-1 transition-colors"
-                      aria-label="Close"
-                    >
-                      <svg
-                        width="20"
-                        height="20"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
+                    <button onClick={handleClose} className="text-gray-500 hover:text-white p-1 transition-colors" aria-label="Close">
+                      <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
                   </div>
 
-                  {/* Pending resume hint */}
-                  {Array.from(selectedSquares.values()).some(
-                    (s) => s.paymentStatus === "pending"
-                  ) && (
-                    <div className="mb-3 p-2 rounded-lg bg-yellow-950/50 border border-yellow-900/50">
-                      <p className="text-[10px] text-yellow-400">
-                        Some selected squares are pending. Enter the same email you used before to resume your purchase.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Payment mode tabs — only show if both methods available */}
-                  {hasBoth && (
+                  {cashModeEnabled && (
                     <div className="flex gap-1 mb-4 p-1 rounded-lg bg-gray-800">
                       <button
-                        onClick={() => {
-                          setPaymentMode("card");
-                          setError("");
-                        }}
-                        className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                          paymentMode === "card"
-                            ? "bg-gray-700 text-white"
-                            : "text-gray-500 hover:text-gray-300"
-                        }`}
+                        onClick={() => { setPaymentMode("card"); setError(""); }}
+                        className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${paymentMode === "card" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
                       >
                         💳 Card
                       </button>
                       <button
-                        onClick={() => {
-                          setPaymentMode("cash");
-                          setError("");
-                        }}
-                        className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                          paymentMode === "cash"
-                            ? "bg-gray-700 text-white"
-                            : "text-gray-500 hover:text-gray-300"
-                        }`}
+                        onClick={() => { setPaymentMode("cash"); setError(""); }}
+                        className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${paymentMode === "cash" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
                       >
                         💵 Cash
                       </button>
                     </div>
                   )}
 
-                  {/* Card payment form */}
-                  {paymentMode === "card" && hasCard && (
+                  {paymentMode === "card" && (
                     <form onSubmit={handleCheckout}>
                       <div className="space-y-3">
                         <div>
-                          <label
-                            htmlFor="playerName"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            Your name
-                          </label>
+                          <label htmlFor="playerName" className="block text-xs text-gray-400 mb-1">Your name</label>
                           <input
                             id="playerName"
                             type="text"
@@ -644,14 +491,8 @@ export default function PlayerBoard({
                             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
                         </div>
-
                         <div>
-                          <label
-                            htmlFor="playerEmail"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            Email
-                          </label>
+                          <label htmlFor="playerEmail" className="block text-xs text-gray-400 mb-1">Email</label>
                           <input
                             id="playerEmail"
                             type="email"
@@ -665,107 +506,25 @@ export default function PlayerBoard({
                             For your receipt and winner notifications only.
                           </p>
                         </div>
-
-                        <div>
-                          <label
-                            htmlFor="playerPhone"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            Phone
-                          </label>
-                          <input
-                            id="playerPhone"
-                            type="tel"
-                            required
-                            value={playerPhone}
-                            onChange={(e) => setPlayerPhone(e.target.value)}
-                            placeholder="(555) 123-4567"
-                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
-                          <p className="text-[10px] text-gray-600 mt-1">
-                            Mobile number (so the host can reach you if you win)
-                          </p>
-                        </div>
-
-                        {/* Payout preference */}
-                        <PlayerPayoutSelect
-                          hostVenmo={hostVenmo}
-                          hostZelle={hostZelle}
-                          hostCashapp={hostCashapp}
-                          required={requirePlayerPayout}
-                          selectedMethod={playerPayoutMethod}
-                          handle={playerPayoutHandle}
-                          onMethodChange={setPlayerPayoutMethod}
-                          onHandleChange={setPlayerPayoutHandle}
-                        />
-
-                        {/* SMS opt-in */}
-                        <label className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={smsOptIn}
-                            onChange={(e) => setSmsOptIn(e.target.checked)}
-                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">
-                              Msg & data rates may apply. Reply STOP to opt out.
-                            </span>
-                          </span>
-                        </label>
-
-                        {/* Save my info */}
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={saveInfo}
-                            onChange={(e) => setSaveInfo(e.target.checked)}
-                            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Save my info for next time
-                          </span>
-                        </label>
+                        {error && <p className="text-xs text-red-400">{error}</p>}
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+                        >
+                          {loading ? "Setting up payment…" : `Pay ${priceDisplay}`}
+                        </button>
                       </div>
-
-                      {error && (
-                        <p className="text-xs text-red-400 mt-3">{error}</p>
-                      )}
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full mt-4 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {loading
-                          ? "Redirecting to payment…"
-                          : `Pay ${totalPrice}${selectedCount > 1 ? ` (${selectedCount} squares)` : ""}`}
-                      </button>
                     </form>
                   )}
 
-                  {/* Cash reserve form */}
-                  {paymentMode === "cash" && hasCash && (
+                  {paymentMode === "cash" && (
                     <form onSubmit={handleCashReserve}>
-                      {selectedCount > 1 && (
-                        <div className="mb-3 p-2 rounded-lg bg-gray-800">
-                          <p className="text-[10px] text-gray-400">
-                            Cash reserves one square at a time. Reserving square #{Array.from(selectedSquares.values())[0].position + 1}.
-                          </p>
-                        </div>
-                      )}
-
                       <div className="space-y-3">
                         <div>
-                          <label
-                            htmlFor="cashPlayerName"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            Your name
-                          </label>
+                          <label htmlFor="cashName" className="block text-xs text-gray-400 mb-1">Your name</label>
                           <input
-                            id="cashPlayerName"
+                            id="cashName"
                             type="text"
                             required
                             autoFocus
@@ -775,134 +534,114 @@ export default function PlayerBoard({
                             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
                         </div>
-
                         <div>
-                          <label
-                            htmlFor="cashPlayerPhone"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            Phone
-                          </label>
-                          <input
-                            id="cashPlayerPhone"
-                            type="tel"
-                            required
-                            value={playerPhone}
-                            onChange={(e) => setPlayerPhone(e.target.value)}
-                            placeholder="(555) 123-4567"
-                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
-                          <p className="text-[10px] text-gray-600 mt-1">
-                            Mobile number (so the host can reach you if you win)
-                          </p>
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="cashPlayerEmail"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            Email <span className="text-gray-600">(optional)</span>
-                          </label>
-                          <input
-                            id="cashPlayerEmail"
-                            type="email"
-                            value={playerEmail}
-                            onChange={(e) => setPlayerEmail(e.target.value)}
-                            placeholder="john@email.com"
-                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
-                        </div>
-
-                        <div>
-                          <label
-                            htmlFor="cashPin"
-                            className="block text-xs text-gray-400 mb-1"
-                          >
-                            PIN from host
-                          </label>
+                          <label htmlFor="cashPin" className="block text-xs text-gray-400 mb-1">Host PIN</label>
                           <input
                             id="cashPin"
                             type="text"
                             inputMode="numeric"
+                            pattern="[0-9]{4}"
                             maxLength={4}
                             required
                             value={cashPin}
-                            onChange={(e) =>
-                              setCashPin(
-                                e.target.value.replace(/\D/g, "").slice(0, 4)
-                              )
-                            }
-                            placeholder="••••"
-                            className="w-32 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white text-center tracking-widest placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                            onChange={(e) => setCashPin(e.target.value.replace(/\D/g, ""))}
+                            placeholder="4-digit PIN from host"
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
-                          <p className="text-[10px] text-gray-600 mt-1">
-                            Ask the host for the 4-digit PIN.
-                          </p>
                         </div>
-
-                        {/* Payout preference */}
-                        <PlayerPayoutSelect
-                          hostVenmo={hostVenmo}
-                          hostZelle={hostZelle}
-                          hostCashapp={hostCashapp}
-                          required={requirePlayerPayout}
-                          selectedMethod={playerPayoutMethod}
-                          handle={playerPayoutHandle}
-                          onMethodChange={setPlayerPayoutMethod}
-                          onHandleChange={setPlayerPayoutHandle}
-                        />
-
-                        {/* SMS opt-in */}
-                        <label className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={smsOptIn}
-                            onChange={(e) => setSmsOptIn(e.target.checked)}
-                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">
-                              Msg & data rates may apply. Reply STOP to opt out.
-                            </span>
-                          </span>
-                        </label>
-
-                        {/* Save my info */}
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={saveInfo}
-                            onChange={(e) => setSaveInfo(e.target.checked)}
-                            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Save my info for next time
-                          </span>
-                        </label>
+                        {error && <p className="text-xs text-red-400">{error}</p>}
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full rounded-lg bg-yellow-700 py-3 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50 transition-colors"
+                        >
+                          {loading ? "Reserving…" : "Reserve with Cash"}
+                        </button>
                       </div>
-
-                      {error && (
-                        <p className="text-xs text-red-400 mt-3">{error}</p>
-                      )}
-
-                      <p className="text-[10px] text-gray-600 mt-3">
-                        Send {priceDisplay} to the host to secure this square. Unpaid squares will be released.
-                      </p>
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full mt-4 rounded-lg bg-amber-600 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-500 active:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        {loading
-                          ? "Reserving…"
-                          : `💵 Reserve with Cash — ${priceDisplay}`}
-                      </button>
                     </form>
                   )}
                 </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ============================================================
+          RESUME MODAL — pending squares
+          ============================================================ */}
+      {pendingSquare && isOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/60 z-40" onClick={handleClose} />
+
+          <div className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up">
+            <div className="max-w-lg mx-auto bg-gray-900 border-t border-gray-800 rounded-t-2xl p-5">
+              <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-4" />
+
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-medium">
+                    Square #{pendingSquare.position + 1}
+                  </p>
+                  <p className="text-xs text-yellow-500 mt-0.5">Pending payment</p>
+                </div>
+                <button onClick={handleClose} className="text-gray-500 hover:text-white p-1 transition-colors" aria-label="Close">
+                  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Square just freed up — invite the player to claim it */}
+              {resumeFreedUp ? (
+                <div className="text-center py-2">
+                  <p className="text-sm font-medium text-green-300 mb-1">
+                    This square just freed up!
+                  </p>
+                  <p className="text-xs text-gray-500 mb-4">
+                    Close this sheet and tap the square to claim it.
+                  </p>
+                  <button
+                    onClick={handleClose}
+                    className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
+                  >
+                    Got it
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleResume}>
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-400">
+                      This square has an active checkout. Enter the email you
+                      used to claim it to pick up where you left off.
+                    </p>
+                    <div>
+                      <label htmlFor="resumeEmail" className="block text-xs text-gray-400 mb-1">
+                        Email used at checkout
+                      </label>
+                      <input
+                        id="resumeEmail"
+                        type="email"
+                        required
+                        autoFocus
+                        value={resumeEmail}
+                        onChange={(e) => setResumeEmail(e.target.value)}
+                        placeholder="john@email.com"
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-yellow-600 focus:ring-1 focus:ring-yellow-600"
+                      />
+                    </div>
+                    {resumeError && (
+                      <p className="text-xs text-red-400">{resumeError}</p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={resumeLoading}
+                      className="w-full rounded-lg bg-yellow-700 py-3 text-sm font-semibold text-white hover:bg-yellow-600 disabled:opacity-50 transition-colors"
+                    >
+                      {resumeLoading ? "Checking…" : "Resume Checkout"}
+                    </button>
+                  </div>
+                </form>
               )}
             </div>
           </div>
