@@ -320,7 +320,7 @@ export default function PlayerBoard({
             {/* Column headers */}
             {hasNumbers && (
               <>
-                <div />
+                <div className="w-[28px]" /> {/* Fixed spacer */}
                 {colNumbers.map((num, i) => (
                   <div
                     key={`col-${i}`}
@@ -448,7 +448,7 @@ export default function PlayerBoard({
          {hostCashapp && (
           <div className="flex items-center gap-2">
             <span className="text-gray-500 w-14 shrink-0">Cash App</span>
-            <span className="text-white font-medium">${hostCashapp}</span>
+            <span className="text-white font-medium">{hostCashapp}</span>
           </div>
          )}
         </div>
