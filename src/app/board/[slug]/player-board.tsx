@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-
+import React, { useState, useCallback, useEffect } from "react";
 type SquareData = {
   squareId: string;
   position: number;
@@ -300,109 +299,134 @@ export default function PlayerBoard({
   return (
     <div className="relative">
       {/* Grid */}
-      <div className="overflow-x-auto">
-        <div className="inline-block min-w-full">
-          {teamCol && teamRow && (
-            <div className="flex justify-between text-[10px] text-gray-500 mb-1 px-1">
-              <span>← {teamRow}</span>
-              <span>{teamCol} →</span>
-            </div>
-          )}
-
+      <div className="overflow-x-auto pb-4">
+        <div className="mx-auto w-fit">
           <div
-            className="grid gap-1"
+            className="grid"
             style={{
               gridTemplateColumns: hasNumbers
-                ? `28px repeat(10, 1fr)`
-                : `repeat(10, 1fr)`,
+                ? '24px 28px repeat(10, 28px)'
+                : 'repeat(10, 28px)',
+              gridTemplateRows: hasNumbers
+                ? 'auto 20px repeat(10, 28px)'
+                : 'repeat(10, 28px)',
+              gap: '2px',
             }}
           >
-            {/* Column headers */}
-            {hasNumbers && (
-              <>
-                <div className="w-[28px]" /> {/* Fixed spacer */}
-                {colNumbers.map((num, i) => (
-                  <div
-                    key={`col-${i}`}
-                    className="flex items-center justify-center text-[10px] font-bold text-gray-500 h-6"
-                  >
-                    {num}
-                  </div>
-                ))}
-              </>
+            {/* Team A label */}
+            {hasNumbers && teamCol && (
+              <div
+                style={{ gridColumn: '3 / 13', gridRow: 1 }}
+                className="flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium h-6"
+              >
+                {teamCol}
+              </div>
             )}
 
-            {/* Grid rows */}
-            {Array.from({ length: 10 }, (_, row) => (
-              <div key={`row-${row}`} className="contents">
-                {hasNumbers && (
-                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-[28px] aspect-square">
-                    {rowNumbers![row]}
-                  </div>
-                )}
-
-                {Array.from({ length: 10 }, (_, col) => {
-                  const position = row * 10 + col;
-                  const sq = squares[position];
-                  if (!sq) return null;
-
-                  const isPaid = sq.paymentStatus === "paid";
-                  const isPending = sq.paymentStatus === "pending";
-                  const isAvailable = sq.paymentStatus === "open" && isOpen;
-                  const isSelected = selectedSquare?.squareId === sq.squareId;
-                  const isPendingSelected = pendingSquare?.squareId === sq.squareId;
-                  const isWinner = winnerSet.has(position) && isPaid;
-
-                  return (
-                    <button
-                      key={sq.squareId}
-                      // Paid squares are never interactive.
-                      // Pending squares are clickable so players can resume.
-                      disabled={isPaid || !isOpen}
-                      onClick={() => handleSquareTap(sq)}
-                      className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all min-w-[28px] ${
-                        isSelected
-                          ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
-                          : isPendingSelected
-                            ? "bg-yellow-600 border-2 border-yellow-400 text-white ring-2 ring-yellow-500/30"
-                            : isWinner
-                              ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
-                              : isPaid
-                                ? "bg-green-950 border border-green-900 text-green-400"
-                                : isPending
-                                  ? "bg-yellow-950 border border-yellow-900 text-yellow-500 hover:border-yellow-600 hover:bg-yellow-900/40 active:scale-95 cursor-pointer"
-                                  : isAvailable
-                                    ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
-                                    : "bg-gray-900 border border-gray-800 text-gray-700"
-                      }`}
-                      title={
-                        isWinner
-                          ? `★ WINNER — ${sq.playerName ?? "Paid"}`
-                          : isPaid
-                            ? sq.playerName ?? "Paid"
-                            : isPending
-                              ? "Tap to resume checkout"
-                              : isAvailable
-                                ? `Square ${position + 1} — ${priceDisplay}`
-                                : "Unavailable"
-                      }
-                    >
-                      {isWinner
-                        ? "★"
-                        : isPaid && sq.playerName
-                          ? getInitials(sq.playerName)
-                          : isPending
-                            ? "…"
-                            : ""}
-                    </button>
-                  );
-                })}
+            {/* Column numbers */}
+            {hasNumbers && colNumbers!.map((num, i) => (
+              <div
+                key={`col-${i}`}
+                style={{ gridColumn: i + 3, gridRow: 2 }}
+                className="flex items-center justify-center text-[10px] font-bold text-gray-500"
+              >
+                {num}
               </div>
             ))}
+
+            {/* Team B label */}
+            {hasNumbers && teamRow && (
+              <div
+                style={{ gridColumn: 1, gridRow: '3 / 13' }}
+                className="flex items-center justify-center"
+              >
+                <span
+                  className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium whitespace-nowrap"
+                  style={{ writingMode: 'vertical-lr', transform: 'rotate(180deg)' }}
+                >
+                  {teamRow}
+                </span>
+              </div>
+            )}
+
+            {/* Row numbers + squares */}
+            {Array.from({ length: 10 }, (_, row) => {
+              const gridRow = hasNumbers ? row + 3 : row + 1;
+              const colOffset = hasNumbers ? 3 : 1;
+              return (
+                <React.Fragment key={`row-group-${row}`}>
+                  {hasNumbers && (
+                    <div
+                      style={{ gridColumn: 2, gridRow }}
+                      className="flex items-center justify-center text-[10px] font-bold text-gray-500"
+                    >
+                      {rowNumbers![row]}
+                    </div>
+                  )}
+
+                  {Array.from({ length: 10 }, (_, col) => {
+                    const position = row * 10 + col;
+                    const sq = squares[position];
+                    if (!sq) return null;
+
+                    const isPaid = sq.paymentStatus === "paid";
+                    const isPending = sq.paymentStatus === "pending";
+                    const isAvailable = sq.paymentStatus === "open" && isOpen;
+                    const isSelected = selectedSquare?.squareId === sq.squareId;
+                    const isPendingSelected = pendingSquare?.squareId === sq.squareId;
+                    const isWinner = winnerSet.has(position) && isPaid;
+
+                    return (
+                      <button
+                        key={sq.squareId}
+                        disabled={isPaid || !isOpen}
+                        onClick={() => handleSquareTap(sq)}
+                        style={{ gridColumn: col + colOffset, gridRow }}
+                        className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-all ${
+                          isSelected
+                            ? "bg-indigo-600 border-2 border-indigo-400 text-white ring-2 ring-indigo-500/30"
+                            : isPendingSelected
+                              ? "bg-yellow-600 border-2 border-yellow-400 text-white ring-2 ring-yellow-500/30"
+                              : isWinner
+                                ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
+                                : isPaid
+                                  ? "bg-green-950 border border-green-900 text-green-400"
+                                  : isPending
+                                    ? "bg-yellow-950 border border-yellow-900 text-yellow-500 hover:border-yellow-600 hover:bg-yellow-900/40 active:scale-95 cursor-pointer"
+                                    : isAvailable
+                                      ? "bg-gray-900 border border-gray-800 text-gray-600 hover:border-indigo-700 hover:bg-indigo-950/30 active:scale-95 cursor-pointer"
+                                      : "bg-gray-900 border border-gray-800 text-gray-700"
+                        }`}
+                        title={
+                          isWinner
+                            ? `★ WINNER — ${sq.playerName ?? "Paid"}`
+                            : isPaid
+                              ? sq.playerName ?? "Paid"
+                              : isPending
+                                ? "Tap to resume checkout"
+                                : isAvailable
+                                  ? `Square ${position + 1} — ${priceDisplay}`
+                                  : "Unavailable"
+                        }
+                      >
+                        {isWinner
+                          ? "★"
+                          : isPaid && sq.playerName
+                            ? getInitials(sq.playerName)
+                            : isPending
+                              ? "…"
+                              : ""}
+                      </button>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
       </div>
 
+      
       {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
         <span className="flex items-center gap-1.5">
