@@ -43,6 +43,7 @@ function getInitials(name: string): string {
 }
 
 export default function PlayerBoard({
+  boardId,
   slug,
   squares: initialSquares,
   squarePrice,
@@ -54,10 +55,16 @@ export default function PlayerBoard({
   teamRow,
   winnerPositions: winnerPositionsArr,
   cashModeEnabled = false,
+  stripeConnected = false,
+  hostVenmo,
+  hostZelle,
+  hostCashapp,
+  payoutVisibility,
+  requirePlayerPayout = false,
 }: PlayerBoardProps) {
-  const [squares, setSquares] = useState(initialSquares);
 
   // Claim flow state (open squares)
+  const [squares, setSquares] = useState(initialSquares);
   const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
@@ -329,7 +336,7 @@ export default function PlayerBoard({
             {Array.from({ length: 10 }, (_, row) => (
               <div key={`row-${row}`} className="contents">
                 {hasNumbers && (
-                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 w-7">
+                  <div className="flex items-center justify-center text-[10px] font-bold text-gray-500 aspect-square">
                     {rowNumbers![row]}
                   </div>
                 )}
@@ -419,6 +426,36 @@ export default function PlayerBoard({
           </span>
         )}
       </div>
+
+      {/* Host payment handles — shown when at least one method exists */}
+      {(hostVenmo || hostZelle || hostCashapp) && (
+        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3 text-xs text-gray-400 space-y-1.5">
+        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-2">
+        Pay host via
+        </p>
+         {hostVenmo && (
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 w-14 shrink-0">Venmo</span>
+            <span className="text-white font-medium">@{hostVenmo}</span>
+          </div>
+         )}
+         {hostZelle && (
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 w-14 shrink-0">Zelle</span>
+            <span className="text-white font-medium">{hostZelle}</span>
+          </div>
+         )}
+         {hostCashapp && (
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 w-14 shrink-0">Cash App</span>
+            <span className="text-white font-medium">${hostCashapp}</span>
+          </div>
+         )}
+        </div>
+      )}
+
+
+
 
       {/* ============================================================
           CLAIM MODAL — open squares
