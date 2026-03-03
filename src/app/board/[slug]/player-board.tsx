@@ -22,12 +22,6 @@ interface PlayerBoardProps {
   teamRow?: string;
   winnerPositions?: number[];
   cashModeEnabled?: boolean;
-  stripeConnected?: boolean;
-  hostVenmo?: string | null;
-  hostZelle?: string | null;
-  hostCashapp?: string | null;
-  payoutVisibility?: string | null;
-  requirePlayerPayout?: boolean;
 }
 
 function getInitials(name: string): string {
