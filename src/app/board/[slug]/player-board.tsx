@@ -67,6 +67,7 @@ export default function PlayerBoard({
   const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
+  const [playerPhone, setPlayerPhone] = useState("");
   const [cashPin, setCashPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -170,6 +171,7 @@ export default function PlayerBoard({
           squareIds: [selectedSquare.squareId],
           playerName: trimmedName,
           playerEmail: trimmedEmail,
+          playerPhone: playerPhone.trim(),
         }),
       });
 
@@ -543,7 +545,20 @@ export default function PlayerBoard({
                             For your receipt and winner notifications only.
                           </p>
                         </div>
+                        <div>
+                          <label htmlFor="playerPhone" className="block text-xs text-gray-400 mb-1">Phone</label>
+                          <input
+                            id="playerPhone"
+                            type="tel"
+                            required
+                            value={playerPhone}
+                            onChange={(e) => setPlayerPhone(e.target.value)}
+                            placeholder="(555) 123-4567"
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                          />
+                        </div>
                         {error && <p className="text-xs text-red-400">{error}</p>}
+
                         <button
                           type="submit"
                           disabled={loading}
