@@ -451,36 +451,6 @@ export default function PlayerBoard({
         )}
       </div>
 
-      {/* Host payment handles — shown when at least one method exists */}
-      {(hostVenmo || hostZelle || hostCashapp) && (
-        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3 text-xs text-gray-400 space-y-1.5">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium mb-2">
-        Pay host via
-        </p>
-         {hostVenmo && (
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 w-14 shrink-0">Venmo</span>
-            <span className="text-white font-medium">@{hostVenmo}</span>
-          </div>
-         )}
-         {hostZelle && (
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 w-14 shrink-0">Zelle</span>
-            <span className="text-white font-medium">{hostZelle}</span>
-          </div>
-         )}
-         {hostCashapp && (
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 w-14 shrink-0">Cash App</span>
-            <span className="text-white font-medium">{hostCashapp}</span>
-          </div>
-         )}
-        </div>
-      )}
-
-
-
-
       {/* ============================================================
           CLAIM MODAL — open squares
           ============================================================ */}
