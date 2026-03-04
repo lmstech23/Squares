@@ -89,9 +89,13 @@ export default function NewBoardForm() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to create board.");
-        setLoading(false);
-        return;
+        if (res.status === 402 && data.redirectTo) {
+            router.push(data.redirectTo);
+            return;
+          }
+          setError(data.error || "Failed to create board.");
+          setLoading(false);
+          return;
       }
       router.push(`/host/boards/${data.boardId}`);
     } catch {
