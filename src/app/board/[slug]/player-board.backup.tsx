@@ -1,9 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { loadPlayerInfo, savePlayerInfo } from "@/lib/player-storage";
-import PlayerPayoutSelect from "@/components/player-payout-select";
-
 type SquareData = {
   squareId: string;
   position: number;
@@ -65,10 +62,9 @@ export default function PlayerBoard({
   requirePlayerPayout = false,
 }: PlayerBoardProps) {
 
+  // Claim flow state (open squares)
   const [squares, setSquares] = useState(initialSquares);
   const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
-
-  // Player info
   const [playerName, setPlayerName] = useState("");
   const [playerEmail, setPlayerEmail] = useState("");
   const [playerPhone, setPlayerPhone] = useState("");
@@ -76,39 +72,20 @@ export default function PlayerBoard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [cashSuccess, setCashSuccess] = useState(false);
-
-  // Payout coordination
-  const [playerPayoutMethod, setPlayerPayoutMethod] = useState("");
-  const [playerPayoutHandle, setPlayerPayoutHandle] = useState("");
-  const [smsOptIn, setSmsOptIn] = useState(false);
-  const [saveInfo, setSaveInfo] = useState(false);
-
-  // Payment mode — default to card if Stripe connected, else cash
-  const [paymentMode, setPaymentMode] = useState<"card" | "cash">(stripeConnected ? "card" : "cash");
+  const [paymentMode, setPaymentMode] = useState<"card" | "cash">("card");
 
   // Resume flow state (pending squares)
   const [pendingSquare, setPendingSquare] = useState<SquareData | null>(null);
   const [resumeEmail, setResumeEmail] = useState("");
   const [resumeLoading, setResumeLoading] = useState(false);
   const [resumeError, setResumeError] = useState("");
+  // When a square freed up mid-resume, let the player tap directly into claim
   const [resumeFreedUp, setResumeFreedUp] = useState(false);
 
   const isOpen = status === "open";
   const hasNumbers = !!(rowNumbers?.length && colNumbers?.length);
-  const hasBoth = stripeConnected && cashModeEnabled;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
-
-  // Load saved player info on mount
-  useEffect(() => {
-    const saved = loadPlayerInfo();
-    if (saved) {
-      setPlayerName(saved.name);
-      setPlayerEmail(saved.email);
-      setPlayerPhone(saved.phone);
-      setSaveInfo(true);
-    }
-  }, []);
 
   // ----------------------------------------------------------------
   // Polling — refresh square statuses while any are pending
@@ -153,10 +130,9 @@ export default function PlayerBoard({
       setSelectedSquare(sq);
       setError("");
       setCashSuccess(false);
-      // Reset to correct default mode
-      setPaymentMode(stripeConnected ? "card" : "cash");
+      setPaymentMode("card");
     },
-    [isOpen, stripeConnected]
+    [isOpen]
   );
 
   const handleClose = useCallback(() => {
@@ -177,26 +153,15 @@ export default function PlayerBoard({
 
     const trimmedName = playerName.trim();
     const trimmedEmail = playerEmail.trim().toLowerCase();
-    const trimmedPhone = playerPhone.trim();
 
     if (!trimmedName) { setError("Name is required."); return; }
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       setError("Valid email is required.");
       return;
     }
-    if (!trimmedPhone) { setError("Phone number is required."); return; }
-
-    if (requirePlayerPayout && !playerPayoutMethod) {
-      setError("Please select how the host should pay you.");
-      return;
-    }
 
     setLoading(true);
     setError("");
-
-    if (saveInfo) {
-      savePlayerInfo({ name: trimmedName, email: trimmedEmail, phone: trimmedPhone });
-    }
 
     try {
       const res = await fetch("/api/checkout", {
@@ -206,10 +171,7 @@ export default function PlayerBoard({
           squareIds: [selectedSquare.squareId],
           playerName: trimmedName,
           playerEmail: trimmedEmail,
-          playerPhone: trimmedPhone,
-          playerPayoutMethod: playerPayoutMethod || null,
-          playerPayoutHandle: playerPayoutHandle.trim() || null,
-          smsOptIn,
+          playerPhone: playerPhone.trim(),
         }),
       });
 
@@ -238,40 +200,24 @@ export default function PlayerBoard({
     if (!selectedSquare) return;
 
     const trimmedName = playerName.trim();
-    const trimmedPhone = playerPhone.trim();
 
     if (!trimmedName) { setError("Name is required."); return; }
-    if (!trimmedPhone) { setError("Phone number is required."); return; }
     if (!cashPin || cashPin.length !== 4) {
       setError("4-digit PIN is required.");
-      return;
-    }
-
-    if (requirePlayerPayout && !playerPayoutMethod) {
-      setError("Please select how the host should pay you.");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    if (saveInfo) {
-      savePlayerInfo({ name: trimmedName, email: playerEmail.trim(), phone: trimmedPhone });
-    }
-
     try {
-      const res = await fetch(`/api/board/${slug}/cash-reserve`, {
+      const res = await fetch("/api/checkout/cash", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           squareId: selectedSquare.squareId,
           playerName: trimmedName,
-          pin: cashPin,
-          playerPhone: trimmedPhone,
-          playerEmail: playerEmail.trim().toLowerCase() || null,
-          playerPayoutMethod: playerPayoutMethod || null,
-          playerPayoutHandle: playerPayoutHandle.trim() || null,
-          smsOptIn,
+          cashPin,
         }),
       });
 
@@ -319,12 +265,16 @@ export default function PlayerBoard({
 
       const data = await res.json();
 
+      // Square just freed up — stay in the modal, show a "claim it now" prompt.
+      // Polling will update the grid within 2 seconds.
       if (res.status === 410) {
         setResumeFreedUp(true);
         setResumeError("");
         return;
       }
 
+      // Payment was already completed, webhook hadn't fired yet.
+      // Redirect to success URL so the player sees the confirmation banner.
       if (res.status === 200 && data.alreadyPaid) {
         window.location.href = `/board/${data.boardSlug}?success=true`;
         return;
@@ -478,6 +428,7 @@ export default function PlayerBoard({
         </div>
       </div>
 
+      
       {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
         <span className="flex items-center gap-1.5">
@@ -546,8 +497,7 @@ export default function PlayerBoard({
                     </button>
                   </div>
 
-                  {/* Tabs — only when BOTH methods available */}
-                  {hasBoth && (
+                  {cashModeEnabled && (
                     <div className="flex gap-1 mb-4 p-1 rounded-lg bg-gray-800">
                       <button
                         onClick={() => { setPaymentMode("card"); setError(""); }}
@@ -564,8 +514,7 @@ export default function PlayerBoard({
                     </div>
                   )}
 
-                  {/* Card form — only when Stripe connected */}
-                  {paymentMode === "card" && stripeConnected && (
+                  {paymentMode === "card" && (
                     <form onSubmit={handleCheckout}>
                       <div className="space-y-3">
                         <div>
@@ -608,40 +557,8 @@ export default function PlayerBoard({
                             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
                         </div>
-                        <PlayerPayoutSelect
-                          hostVenmo={hostVenmo ?? null}
-                          hostZelle={hostZelle ?? null}
-                          hostCashapp={hostCashapp ?? null}
-                          required={requirePlayerPayout}
-                          selectedMethod={playerPayoutMethod}
-                          handle={playerPayoutHandle}
-                          onMethodChange={setPlayerPayoutMethod}
-                          onHandleChange={setPlayerPayoutHandle}
-                        />
-                        <label className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={smsOptIn}
-                            onChange={(e) => setSmsOptIn(e.target.checked)}
-                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">
-                              Msg & data rates may apply. Reply STOP to opt out.
-                            </span>
-                          </span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={saveInfo}
-                            onChange={(e) => setSaveInfo(e.target.checked)}
-                            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">Save my info for next time</span>
-                        </label>
                         {error && <p className="text-xs text-red-400">{error}</p>}
+
                         <button
                           type="submit"
                           disabled={loading}
@@ -653,8 +570,7 @@ export default function PlayerBoard({
                     </form>
                   )}
 
-                  {/* Cash form — only when cash mode enabled */}
-                  {paymentMode === "cash" && cashModeEnabled && (
+                  {paymentMode === "cash" && (
                     <form onSubmit={handleCashReserve}>
                       <div className="space-y-3">
                         <div>
@@ -667,31 +583,6 @@ export default function PlayerBoard({
                             value={playerName}
                             onChange={(e) => setPlayerName(e.target.value)}
                             placeholder="John Smith"
-                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="cashPhone" className="block text-xs text-gray-400 mb-1">Phone</label>
-                          <input
-                            id="cashPhone"
-                            type="tel"
-                            required
-                            value={playerPhone}
-                            onChange={(e) => setPlayerPhone(e.target.value)}
-                            placeholder="(555) 123-4567"
-                            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="cashEmail" className="block text-xs text-gray-400 mb-1">
-                            Email <span className="text-gray-600">(optional)</span>
-                          </label>
-                          <input
-                            id="cashEmail"
-                            type="email"
-                            value={playerEmail}
-                            onChange={(e) => setPlayerEmail(e.target.value)}
-                            placeholder="john@email.com"
                             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
                         </div>
@@ -710,39 +601,6 @@ export default function PlayerBoard({
                             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
                         </div>
-                        <PlayerPayoutSelect
-                          hostVenmo={hostVenmo ?? null}
-                          hostZelle={hostZelle ?? null}
-                          hostCashapp={hostCashapp ?? null}
-                          required={requirePlayerPayout}
-                          selectedMethod={playerPayoutMethod}
-                          handle={playerPayoutHandle}
-                          onMethodChange={setPlayerPayoutMethod}
-                          onHandleChange={setPlayerPayoutHandle}
-                        />
-                        <label className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={smsOptIn}
-                            onChange={(e) => setSmsOptIn(e.target.checked)}
-                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">
-                              Msg & data rates may apply. Reply STOP to opt out.
-                            </span>
-                          </span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={saveInfo}
-                            onChange={(e) => setSaveInfo(e.target.checked)}
-                            className="rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">Save my info for next time</span>
-                        </label>
                         {error && <p className="text-xs text-red-400">{error}</p>}
                         <button
                           type="submit"
@@ -786,6 +644,7 @@ export default function PlayerBoard({
                 </button>
               </div>
 
+              {/* Square just freed up — invite the player to claim it */}
               {resumeFreedUp ? (
                 <div className="text-center py-2">
                   <p className="text-sm font-medium text-green-300 mb-1">
