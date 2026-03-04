@@ -66,7 +66,11 @@ export default function PlayerBoard({
 }: PlayerBoardProps) {
 
   const [squares, setSquares] = useState(initialSquares);
-  const [selectedSquare, setSelectedSquare] = useState<SquareData | null>(null);
+
+  // Multi-select: Map of squareId → SquareData
+  const [selectedSquares, setSelectedSquares] = useState<Map<string, SquareData>>(new Map());
+  // Modal is separate — does NOT open automatically on tap
+  const [showModal, setShowModal] = useState(false);
 
   // Player info
   const [playerName, setPlayerName] = useState("");
@@ -98,6 +102,7 @@ export default function PlayerBoard({
   const hasBoth = stripeConnected && cashModeEnabled;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
+  const selectedCount = selectedSquares.size;
 
   // Load saved player info on mount
   useEffect(() => {
@@ -134,7 +139,7 @@ export default function PlayerBoard({
   }, [squares, slug]);
 
   // ----------------------------------------------------------------
-  // Square tap handler
+  // Square tap handler — toggles selection, does NOT open modal
   // ----------------------------------------------------------------
   const handleSquareTap = useCallback(
     (sq: SquareData) => {
@@ -150,17 +155,26 @@ export default function PlayerBoard({
 
       if (sq.paymentStatus !== "open") return;
 
-      setSelectedSquare(sq);
+      setSelectedSquares((prev) => {
+        const next = new Map(prev);
+        if (next.has(sq.squareId)) {
+          next.delete(sq.squareId);
+        } else {
+          if (next.size >= maxPerPlayer) return prev;
+          next.set(sq.squareId, sq);
+        }
+        return next;
+      });
       setError("");
       setCashSuccess(false);
-      // Reset to correct default mode
       setPaymentMode(stripeConnected ? "card" : "cash");
     },
-    [isOpen, stripeConnected]
+    [isOpen, maxPerPlayer, stripeConnected]
   );
 
   const handleClose = useCallback(() => {
-    setSelectedSquare(null);
+    setSelectedSquares(new Map());
+    setShowModal(false);
     setPendingSquare(null);
     setError("");
     setResumeError("");
@@ -169,11 +183,11 @@ export default function PlayerBoard({
   }, []);
 
   // ----------------------------------------------------------------
-  // Claim checkout (open squares → Stripe)
+  // Claim checkout (Stripe — sends all selected squareIds)
   // ----------------------------------------------------------------
   async function handleCheckout(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedSquare) return;
+    if (selectedSquares.size === 0) return;
 
     const trimmedName = playerName.trim();
     const trimmedEmail = playerEmail.trim().toLowerCase();
@@ -203,7 +217,7 @@ export default function PlayerBoard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareIds: [selectedSquare.squareId],
+          squareIds: Array.from(selectedSquares.keys()),
           playerName: trimmedName,
           playerEmail: trimmedEmail,
           playerPhone: trimmedPhone,
@@ -231,12 +245,13 @@ export default function PlayerBoard({
   }
 
   // ----------------------------------------------------------------
-  // Cash reserve (open squares → cash hold)
+  // Cash reserve — one square at a time (uses first selected)
   // ----------------------------------------------------------------
   async function handleCashReserve(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedSquare) return;
+    if (selectedSquares.size === 0) return;
 
+    const firstSquare = Array.from(selectedSquares.values())[0];
     const trimmedName = playerName.trim();
     const trimmedPhone = playerPhone.trim();
 
@@ -264,7 +279,7 @@ export default function PlayerBoard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareId: selectedSquare.squareId,
+          squareId: firstSquare.squareId,
           playerName: trimmedName,
           pin: cashPin,
           playerPhone: trimmedPhone,
@@ -291,7 +306,7 @@ export default function PlayerBoard({
   }
 
   // ----------------------------------------------------------------
-  // Resume checkout (pending squares → re-enter existing Stripe session)
+  // Resume checkout (pending squares)
   // ----------------------------------------------------------------
   async function handleResume(e: React.FormEvent) {
     e.preventDefault();
@@ -422,9 +437,9 @@ export default function PlayerBoard({
                     if (!sq) return null;
 
                     const isPaid = sq.paymentStatus === "paid";
-                    const isPending = sq.paymentStatus === "pending";
+                    const isPending = sq.paymentStatus === "pending" || sq.paymentStatus === "reserved_cash";
                     const isAvailable = sq.paymentStatus === "open" && isOpen;
-                    const isSelected = selectedSquare?.squareId === sq.squareId;
+                    const isSelected = selectedSquares.has(sq.squareId);
                     const isPendingSelected = pendingSquare?.squareId === sq.squareId;
                     const isWinner = winnerSet.has(position) && isPaid;
 
@@ -467,7 +482,9 @@ export default function PlayerBoard({
                             ? getInitials(sq.playerName)
                             : isPending
                               ? "…"
-                              : ""}
+                              : isSelected
+                                ? "✓"
+                                : ""}
                       </button>
                     );
                   })}
@@ -503,9 +520,45 @@ export default function PlayerBoard({
       </div>
 
       {/* ============================================================
-          CLAIM MODAL — open squares
+          FLOATING CHECKOUT BAR — appears when squares selected, before modal
           ============================================================ */}
-      {selectedSquare && isOpen && (
+      {selectedCount > 0 && !showModal && isOpen && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 p-4 bg-gradient-to-t from-gray-950 via-gray-950/95 to-transparent">
+          <div className="max-w-lg mx-auto flex items-center justify-between bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 shadow-lg">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white">
+                {selectedCount === 1
+                  ? `Square #${Array.from(selectedSquares.values())[0].position + 1} selected`
+                  : `${selectedCount} squares selected`}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {selectedCount === 1
+                  ? priceDisplay
+                  : `${selectedCount} × ${priceDisplay} = $${(squarePrice * selectedCount) / 100}`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 ml-3">
+              <button
+                onClick={handleClose}
+                className="text-xs text-gray-500 hover:text-gray-300 px-2 py-1 transition-colors"
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => setShowModal(true)}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-colors"
+              >
+                Checkout →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          CLAIM MODAL — only opens when player taps Checkout on the bar
+          ============================================================ */}
+      {showModal && selectedCount > 0 && isOpen && (
         <>
           <div className="fixed inset-0 bg-black/60 z-40" onClick={handleClose} />
 
@@ -517,9 +570,7 @@ export default function PlayerBoard({
                 <div className="text-center py-4">
                   <div className="text-3xl mb-2">✓</div>
                   <p className="text-sm font-medium text-green-300">Square reserved!</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Hand your cash to the host to confirm.
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Hand your cash to the host to confirm.</p>
                   <button
                     onClick={() => window.location.reload()}
                     className="mt-4 rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
@@ -532,12 +583,22 @@ export default function PlayerBoard({
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <p className="text-sm font-medium">
-                        Square #{selectedSquare.position + 1}
+                        {selectedCount === 1
+                          ? `Square #${Array.from(selectedSquares.values())[0].position + 1}`
+                          : `${selectedCount} squares selected`}
                       </p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {priceDisplay} —{" "}
-                        {paymentMode === "card" ? "pay to lock it in" : "reserve with cash"}
+                        {selectedCount === 1
+                          ? priceDisplay
+                          : `${selectedCount} × ${priceDisplay} = $${(squarePrice * selectedCount) / 100}`}
+                        {" — "}
+                        {paymentMode === "card" ? "pay to lock them in" : "reserve with cash"}
                       </p>
+                      {selectedCount > 1 && (
+                        <p className="text-[10px] text-indigo-400 mt-0.5">
+                          #{Array.from(selectedSquares.values()).map(s => s.position + 1).join(", #")}
+                        </p>
+                      )}
                     </div>
                     <button onClick={handleClose} className="text-gray-500 hover:text-white p-1 transition-colors" aria-label="Close">
                       <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -564,7 +625,7 @@ export default function PlayerBoard({
                     </div>
                   )}
 
-                  {/* Card form — only when Stripe connected */}
+                  {/* Card form */}
                   {paymentMode === "card" && stripeConnected && (
                     <form onSubmit={handleCheckout}>
                       <div className="space-y-3">
@@ -592,9 +653,7 @@ export default function PlayerBoard({
                             placeholder="john@email.com"
                             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
                           />
-                          <p className="text-[10px] text-gray-600 mt-1">
-                            For your receipt and winner notifications only.
-                          </p>
+                          <p className="text-[10px] text-gray-600 mt-1">For your receipt and winner notifications only.</p>
                         </div>
                         <div>
                           <label htmlFor="playerPhone" className="block text-xs text-gray-400 mb-1">Phone</label>
@@ -627,9 +686,7 @@ export default function PlayerBoard({
                           />
                           <span className="text-xs text-gray-400">
                             Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">
-                              Msg & data rates may apply. Reply STOP to opt out.
-                            </span>
+                            <span className="block text-[10px] text-gray-600 mt-0.5">Msg & data rates may apply. Reply STOP to opt out.</span>
                           </span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -647,16 +704,25 @@ export default function PlayerBoard({
                           disabled={loading}
                           className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
                         >
-                          {loading ? "Setting up payment…" : `Pay ${priceDisplay}`}
+                          {loading
+                            ? "Setting up payment…"
+                            : selectedCount === 1
+                              ? `Pay ${priceDisplay}`
+                              : `Pay $${(squarePrice * selectedCount) / 100} for ${selectedCount} squares`}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {/* Cash form — only when cash mode enabled */}
+                  {/* Cash form */}
                   {paymentMode === "cash" && cashModeEnabled && (
                     <form onSubmit={handleCashReserve}>
                       <div className="space-y-3">
+                        {selectedCount > 1 && (
+                          <p className="text-[10px] text-yellow-500 bg-yellow-950/40 border border-yellow-900/30 rounded-lg px-3 py-2">
+                            Cash reserves one square at a time. Reserving square #{Array.from(selectedSquares.values())[0].position + 1}.
+                          </p>
+                        )}
                         <div>
                           <label htmlFor="cashName" className="block text-xs text-gray-400 mb-1">Your name</label>
                           <input
@@ -729,9 +795,7 @@ export default function PlayerBoard({
                           />
                           <span className="text-xs text-gray-400">
                             Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">
-                              Msg & data rates may apply. Reply STOP to opt out.
-                            </span>
+                            <span className="block text-[10px] text-gray-600 mt-0.5">Msg & data rates may apply. Reply STOP to opt out.</span>
                           </span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
@@ -774,9 +838,7 @@ export default function PlayerBoard({
 
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-medium">
-                    Square #{pendingSquare.position + 1}
-                  </p>
+                  <p className="text-sm font-medium">Square #{pendingSquare.position + 1}</p>
                   <p className="text-xs text-yellow-500 mt-0.5">Pending payment</p>
                 </div>
                 <button onClick={handleClose} className="text-gray-500 hover:text-white p-1 transition-colors" aria-label="Close">
@@ -788,12 +850,8 @@ export default function PlayerBoard({
 
               {resumeFreedUp ? (
                 <div className="text-center py-2">
-                  <p className="text-sm font-medium text-green-300 mb-1">
-                    This square just freed up!
-                  </p>
-                  <p className="text-xs text-gray-500 mb-4">
-                    Close this sheet and tap the square to claim it.
-                  </p>
+                  <p className="text-sm font-medium text-green-300 mb-1">This square just freed up!</p>
+                  <p className="text-xs text-gray-500 mb-4">Close this sheet and tap the square to claim it.</p>
                   <button
                     onClick={handleClose}
                     className="w-full rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
@@ -805,13 +863,10 @@ export default function PlayerBoard({
                 <form onSubmit={handleResume}>
                   <div className="space-y-3">
                     <p className="text-xs text-gray-400">
-                      This square has an active checkout. Enter the email you
-                      used to claim it to pick up where you left off.
+                      This square has an active checkout. Enter the email you used to claim it to pick up where you left off.
                     </p>
                     <div>
-                      <label htmlFor="resumeEmail" className="block text-xs text-gray-400 mb-1">
-                        Email used at checkout
-                      </label>
+                      <label htmlFor="resumeEmail" className="block text-xs text-gray-400 mb-1">Email used at checkout</label>
                       <input
                         id="resumeEmail"
                         type="email"
@@ -823,9 +878,7 @@ export default function PlayerBoard({
                         className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-yellow-600 focus:ring-1 focus:ring-yellow-600"
                       />
                     </div>
-                    {resumeError && (
-                      <p className="text-xs text-red-400">{resumeError}</p>
-                    )}
+                    {resumeError && <p className="text-xs text-red-400">{resumeError}</p>}
                     <button
                       type="submit"
                       disabled={resumeLoading}
