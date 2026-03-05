@@ -482,9 +482,8 @@ export default function PlayerBoard({
                             : isPending
                               ? "…"
                               : isSelected
-                                ? "✓"
-                                : ""}
-                      </button>
+                               ? "✓"
+                               : <span className="text-gray-700">{position + 1}</span>}
                     );
                   })}
                 </React.Fragment>
