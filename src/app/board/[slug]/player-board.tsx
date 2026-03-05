@@ -484,8 +484,9 @@ export default function PlayerBoard({
                               : isSelected
                                ? "✓"
                                : <span className="text-gray-700">{position + 1}</span>}
-                    );
-                  })}
+                               </button>
+                               );
+                            })}
                 </React.Fragment>
               );
             })}
