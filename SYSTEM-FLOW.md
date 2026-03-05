@@ -227,6 +227,7 @@ Fields:
 - Fill progress: "X / 100 squares filled"
 - "Pick a square. Numbers randomize when the board closes."
 - Square price
+- **Open squares display their number (1–100) in dim gray.** This helps players identify and reference specific squares before the board closes. Once selected, the number is replaced with ✓. Once paid, it shows the player's initials. Pending shows …
 
 ### Tapping an Open Square
 
