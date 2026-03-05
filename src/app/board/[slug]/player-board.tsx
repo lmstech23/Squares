@@ -245,13 +245,12 @@ export default function PlayerBoard({
   }
 
   // ----------------------------------------------------------------
-  // Cash reserve — one square at a time (uses first selected)
+  // Cash reserve — all selected squares
   // ----------------------------------------------------------------
   async function handleCashReserve(e: React.FormEvent) {
     e.preventDefault();
     if (selectedSquares.size === 0) return;
 
-    const firstSquare = Array.from(selectedSquares.values())[0];
     const trimmedName = playerName.trim();
     const trimmedPhone = playerPhone.trim();
 
@@ -279,7 +278,7 @@ export default function PlayerBoard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          squareId: firstSquare.squareId,
+          squareIds: Array.from(selectedSquares.keys()),
           playerName: trimmedName,
           pin: cashPin,
           playerPhone: trimmedPhone,
@@ -718,11 +717,6 @@ export default function PlayerBoard({
                   {paymentMode === "cash" && cashModeEnabled && (
                     <form onSubmit={handleCashReserve}>
                       <div className="space-y-3">
-                        {selectedCount > 1 && (
-                          <p className="text-[10px] text-yellow-500 bg-yellow-950/40 border border-yellow-900/30 rounded-lg px-3 py-2">
-                            Cash reserves one square at a time. Reserving square #{Array.from(selectedSquares.values())[0].position + 1}.
-                          </p>
-                        )}
                         <div>
                           <label htmlFor="cashName" className="block text-xs text-gray-400 mb-1">Your name</label>
                           <input
