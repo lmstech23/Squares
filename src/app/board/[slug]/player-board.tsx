@@ -28,6 +28,7 @@ interface PlayerBoardProps {
   hostVenmo?: string | null;
   hostZelle?: string | null;
   hostCashapp?: string | null;
+  hostPaypal?: string | null;
   payoutVisibility?: string | null;
   requirePlayerPayout?: boolean;
 }
@@ -61,6 +62,7 @@ export default function PlayerBoard({
   hostVenmo,
   hostZelle,
   hostCashapp,
+  hostPaypal,
   payoutVisibility,
   requirePlayerPayout = false,
 }: PlayerBoardProps) {
@@ -670,6 +672,7 @@ export default function PlayerBoard({
                           hostVenmo={hostVenmo ?? null}
                           hostZelle={hostZelle ?? null}
                           hostCashapp={hostCashapp ?? null}
+                          hostPaypal={hostPaypal ?? null}
                           required={requirePlayerPayout}
                           selectedMethod={playerPayoutMethod}
                           handle={playerPayoutHandle}
@@ -763,6 +766,7 @@ export default function PlayerBoard({
                           hostVenmo={hostVenmo ?? null}
                           hostZelle={hostZelle ?? null}
                           hostCashapp={hostCashapp ?? null}
+                          hostPaypal={hostPaypal ?? null}
                           required={requirePlayerPayout}
                           selectedMethod={playerPayoutMethod}
                           handle={playerPayoutHandle}

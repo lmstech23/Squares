@@ -23,6 +23,7 @@ interface CreateBoardBody {
   hostVenmo?: string | null;
   hostZelle?: string | null;
   hostCashapp?: string | null;
+  hostPaypal?: string | null;
   payoutVisibility?: "public" | "pin_gated";
   requirePlayerPayout?: boolean;
 }
@@ -157,6 +158,7 @@ export async function POST(request: Request) {
     const hostVenmo = body.hostVenmo?.trim() || null;
     const hostZelle = body.hostZelle?.trim() || null;
     const hostCashapp = body.hostCashapp?.trim() || null;
+    const hostPaypal = body.hostPaypal?.trim() || null;
     const payoutVisibility = body.payoutVisibility === "pin_gated" ? "pin_gated" : "public";
     const requirePlayerPayout = body.requirePlayerPayout ?? false;
 
@@ -179,6 +181,7 @@ export async function POST(request: Request) {
       hostVenmo,
       hostZelle,
       hostCashapp,
+      hostPaypal,
       payoutVisibility: payoutVisibility as any,
       requirePlayerPayout,
       ...(isCashHost ? {

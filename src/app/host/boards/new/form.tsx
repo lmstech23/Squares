@@ -21,7 +21,8 @@ export default function NewBoardForm() {
   const [hostVenmo, setHostVenmo] = useState("");
   const [hostZelle, setHostZelle] = useState("");
   const [hostCashapp, setHostCashapp] = useState("");
-  const hasPaymentHandle = hostVenmo.trim() || hostZelle.trim() || hostCashapp.trim();
+  const [hostPaypal, setHostPaypal] = useState("");
+  const hasPaymentHandle = hostVenmo.trim() || hostZelle.trim() || hostCashapp.trim() || hostPaypal.trim();
   const [payoutVisibility, setPayoutVisibility] = useState<"public" | "pin_gated">("public");
   const [requirePlayerPayout, setRequirePlayerPayout] = useState(false);
   const [showPayoutSection, setShowPayoutSection] = useState(false);
@@ -83,6 +84,7 @@ export default function NewBoardForm() {
           hostVenmo: hostVenmo.trim() || null,
           hostZelle: hostZelle.trim() || null,
           hostCashapp: hostCashapp.trim() || null,
+          hostPaypal: hostPaypal.trim() || null,
           payoutVisibility,
           requirePlayerPayout,
         }),
@@ -302,6 +304,21 @@ export default function NewBoardForm() {
                 value={hostCashapp}
                 onChange={(e) => setHostCashapp(e.target.value)}
                 placeholder="$your-cashapp"
+                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+              />
+            </div>
+
+            {/* PayPal */}
+            <div>
+              <label htmlFor="hostPaypal" className="block text-xs text-gray-500 mb-1">
+                PayPal
+              </label>
+              <input
+                id="hostPaypal"
+                type="text"
+                value={hostPaypal}
+                onChange={(e) => setHostPaypal(e.target.value)}
+                placeholder="you@email.com or @username"
                 className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
               />
             </div>

@@ -4,6 +4,7 @@ interface PlayerPayoutSelectProps {
   hostVenmo: string | null;
   hostZelle: string | null;
   hostCashapp: string | null;
+  hostPaypal: string | null;
   required: boolean;
   selectedMethod: string;
   handle: string;
@@ -15,6 +16,7 @@ export default function PlayerPayoutSelect({
   hostVenmo,
   hostZelle,
   hostCashapp,
+  hostPaypal,
   required,
   selectedMethod,
   handle,
@@ -26,6 +28,7 @@ export default function PlayerPayoutSelect({
   if (hostVenmo) options.push({ value: "venmo", label: "Venmo", needsHandle: true });
   if (hostZelle) options.push({ value: "zelle", label: "Zelle", needsHandle: true });
   if (hostCashapp) options.push({ value: "cashapp", label: "CashApp", needsHandle: true });
+  if (hostPaypal) options.push({ value: "paypal", label: "PayPal", needsHandle: true });
   options.push({ value: "cash", label: "Cash (in person)", needsHandle: false });
 
   if (options.length === 1 && options[0].value === "cash") {
@@ -78,7 +81,9 @@ export default function PlayerPayoutSelect({
                 ? "@your-venmo"
                 : selectedMethod === "zelle"
                   ? "email or phone"
-                  : "$your-cashapp"
+                  : selectedMethod === "paypal"
+                    ? "you@email.com or @username"
+                    : "$your-cashapp"
             }
             className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
           />

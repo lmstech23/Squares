@@ -200,6 +200,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           venmo={board.hostVenmo}
           zelle={board.hostZelle}
           cashapp={board.hostCashapp}
+          paypal={board.hostPaypal}
           visibility={(board.payoutVisibility ?? "public") as "public" | "pin_gated"}
           pinVerified={false}
         />
@@ -222,6 +223,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           hostVenmo={board.hostVenmo}
           hostZelle={board.hostZelle}
           hostCashapp={board.hostCashapp}
+          hostPaypal={board.hostPaypal}
           payoutVisibility={board.payoutVisibility}
           requirePlayerPayout={board.requirePlayerPayout}
         />

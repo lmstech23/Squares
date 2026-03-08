@@ -58,6 +58,7 @@ model Board {
   hostVenmo              String?          @map("host_venmo")
   hostZelle              String?          @map("host_zelle")
   hostCashapp            String?          @map("host_cashapp")
+  hostPaypal             String?          @map("host_paypal")
   payoutVisibility       PayoutVisibility @default(public) @map("payout_visibility")
   requirePlayerPayout    Boolean          @default(false) @map("require_player_payout")
   scores                    Json?
@@ -179,6 +180,7 @@ enum PlayerPayoutMethod {
   venmo
   zelle
   cashapp
+  paypal
   cash
 }
 

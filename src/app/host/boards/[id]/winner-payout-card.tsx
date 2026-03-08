@@ -33,7 +33,9 @@ export default function WinnerPayoutCard({
         ? "Venmo"
         : playerPayoutMethod === "zelle"
           ? "Zelle"
-          : "CashApp";
+          : playerPayoutMethod === "paypal"
+            ? "PayPal"
+            : "CashApp";
     return `${methodLabel}: ${playerPayoutHandle || "—"}`;
   })();
 

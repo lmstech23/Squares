@@ -248,7 +248,7 @@ export default async function HostBoardPage({ params }: Props) {
                 <div className="text-[10px] text-yellow-300/70 mt-1.5 flex items-center gap-1">
                   <span>💰</span>
                   {sq?.playerPayoutMethod && sq.playerPayoutMethod !== "cash"
-                    ? `${sq.playerPayoutMethod === "venmo" ? "Venmo" : sq.playerPayoutMethod === "zelle" ? "Zelle" : "CashApp"}: ${sq.playerPayoutHandle || "—"}`
+                    ? `${sq.playerPayoutMethod === "venmo" ? "Venmo" : sq.playerPayoutMethod === "zelle" ? "Zelle" : sq.playerPayoutMethod === "paypal" ? "PayPal" : "CashApp"}: ${sq.playerPayoutHandle || "—"}`
                     : sq?.playerPayoutMethod === "cash"
                       ? "Cash (pay in person)"
                       : sq?.playerPhone
