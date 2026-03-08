@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Daali Boards Work</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f0e;
+    --surface: #151917;
+    --surface2: #1c201e;
+    --border: #2a2f2d;
+    --green: #3dffa0;
+    --green-dim: #1a7a4a;
+    --amber: #f5c518;
+    --amber-dim: #7a5e08;
+    --text: #e8ede9;
+    --muted: #7a8c80;
+    --white: #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 48px 48px;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    padding: 72px 0 56px;
+    text-align: center;
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--green);
+    background: rgba(61,255,160,0.08);
+    border: 1px solid rgba(61,255,160,0.25);
+    padding: 6px 14px;
+    border-radius: 100px;
+    margin-bottom: 24px;
+  }
+
+  .hero h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(52px, 10vw, 88px);
+    letter-spacing: 0.03em;
+    line-height: 0.95;
+    color: var(--white);
+    margin-bottom: 20px;
+  }
+
+  .hero h1 span { color: var(--green); }
+
+  .hero p {
+    font-size: 17px;
+    color: var(--muted);
+    line-height: 1.65;
+    max-width: 500px;
+    margin: 0 auto;
+    font-weight: 300;
+  }
+
+  /* ── TAB NAV ── */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 40px;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 11px 8px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    border: none;
+    background: none;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .tab:hover { color: var(--text); }
+
+  .tab.active {
+    background: var(--surface2);
+    color: var(--white);
+    box-shadow: 0 1px 6px rgba(0,0,0,0.4);
+  }
+
+  .tab-icon { display: inline-block; margin-right: 6px; }
+
+  /* ── PANELS ── */
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ── STEP CARD ── */
+  .step {
+    display: flex;
+    gap: 20px;
+    padding: 28px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-bottom: 16px;
+    animation: fadeUp 0.3s ease both;
+    transition: border-color 0.2s;
+  }
+
+  .step:hover { border-color: rgba(61,255,160,0.2); }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .step:nth-child(1) { animation-delay: 0.04s; }
+  .step:nth-child(2) { animation-delay: 0.08s; }
+  .step:nth-child(3) { animation-delay: 0.12s; }
+  .step:nth-child(4) { animation-delay: 0.16s; }
+  .step:nth-child(5) { animation-delay: 0.20s; }
+  .step:nth-child(6) { animation-delay: 0.24s; }
+
+  .step-num {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    background: rgba(61,255,160,0.08);
+    border: 1px solid rgba(61,255,160,0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    color: var(--green);
+    margin-top: 2px;
+  }
+
+  .step-num.amber {
+    background: rgba(245,197,24,0.08);
+    border-color: rgba(245,197,24,0.2);
+    color: var(--amber);
+  }
+
+  .step-body { flex: 1; min-width: 0; }
+
+  .step-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--white);
+    margin-bottom: 6px;
+  }
+
+  .step-desc {
+    font-size: 14px;
+    color: var(--muted);
+    line-height: 1.65;
+    font-weight: 300;
+  }
+
+  .step-desc strong { color: var(--text); font-weight: 500; }
+
+  /* ── CALLOUT BOXES ── */
+  .callout {
+    background: rgba(61,255,160,0.04);
+    border: 1px solid rgba(61,255,160,0.15);
+    border-left: 3px solid var(--green);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 20px 0 0;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .callout strong { color: var(--green); font-weight: 500; }
+
+  .callout.amber {
+    background: rgba(245,197,24,0.04);
+    border-color: rgba(245,197,24,0.15);
+    border-left-color: var(--amber);
+  }
+
+  .callout.amber strong { color: var(--amber); }
+
+  /* ── PILL TAGS ── */
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+  .tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    letter-spacing: 0.03em;
+  }
+
+  /* ── SECTION LABEL ── */
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--green-dim);
+    margin: 40px 0 16px;
+  }
+
+  /* ── STATUS LEGEND ── */
+  .legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 18px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 24px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .dot.green { background: #3dffa0; }
+  .dot.amber { background: #f5c518; }
+  .dot.gray  { background: #3a4040; border: 1px solid var(--border); }
+
+  /* ── MINI GRID DEMO ── */
+  .mini-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+    margin-top: 16px;
+  }
+
+  .mini-sq {
+    aspect-ratio: 1;
+    border-radius: 5px;
+    background: #1e2522;
+    border: 1px solid var(--border);
+    transition: all 0.15s;
+  }
+  .mini-sq.taken { background: rgba(61,255,160,0.2); border-color: rgba(61,255,160,0.3); }
+  .mini-sq.pending { background: rgba(245,197,24,0.2); border-color: rgba(245,197,24,0.3); }
+
+  /* ── WINNER CARD DEMO ── */
+  .winner-card {
+    background: linear-gradient(135deg, rgba(61,255,160,0.06), rgba(61,255,160,0.02));
+    border: 1px solid rgba(61,255,160,0.2);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-top: 16px;
+  }
+
+  .winner-card .wc-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--green);
+    margin-bottom: 6px;
+  }
+
+  .winner-card .wc-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--white);
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+
+  .winner-card .wc-meta {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .winner-card .wc-payout {
+    font-size: 14px;
+    color: var(--green);
+    font-weight: 500;
+    margin-top: 10px;
+  }
+
+  /* ── DIVIDER ── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 32px 0;
+  }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="badge">Beta Guide</div>
+    <h1>How Daali<br><span>Boards Work</span></h1>
+    <p style="font-size: 18px; color: var(--text); font-weight: 400; line-height: 1.5;">A board that runs itself.<br>No spreadsheets. No tracking who picked what.</p>
+    <p style="font-size: 15px; color: var(--muted); margin-top: 10px; font-weight: 300;">Create it. Share the link. You're done.</p>
+    <div style="margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+      <a href="/host/boards/new" style="display:inline-block; background: var(--green); color: #0d0f0e; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 14px; padding: 13px 26px; border-radius: 10px; text-decoration: none; letter-spacing: 0.01em;">Create Your Board</a>
+      <a href="#" onclick="switchTab('player', document.querySelectorAll('.tab')[2]); return false;" style="display:inline-block; background: transparent; color: var(--text); font-family: 'DM Sans', sans-serif; font-weight: 500; font-size: 14px; padding: 13px 26px; border-radius: 10px; text-decoration: none; border: 1px solid var(--border); letter-spacing: 0.01em;">See How Players Join →</a>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <p style="font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); text-align: center; margin-bottom: 14px;">Two ways to use Daali Boards</p>
+  <div class="tabs" role="tablist">
+    <button class="tab active" onclick="switchTab('board', this)" role="tab">
+      <span class="tab-icon">⬜</span>Create a Board
+    </button>
+    <button class="tab" onclick="switchTab('host', this)" role="tab">
+      <span class="tab-icon">🎛️</span>Host Features
+    </button>
+    <button class="tab" onclick="switchTab('player', this)" role="tab">
+      <span class="tab-icon">🏃</span>Player Flow
+    </button>
+  </div>
+
+  <!-- ── PANEL: CREATE A BOARD ── -->
+  <div class="panel active" id="panel-board">
+
+    <p class="section-label">Getting started</p>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Sign in and hit "New Board"</div>
+        <div class="step-desc">
+          From your host dashboard, tap <strong>New Board</strong>. If this is your first time, you'll be asked how you want to collect payments — card (via Stripe) or cash only. You can always add Stripe later.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Fill in the game details</div>
+        <div class="step-desc">
+          Enter a <strong>game name</strong>, <strong>team names</strong> (one per axis), and the <strong>price per square</strong> (minimum $1). These are the only required fields — the rest have smart defaults.
+        </div>
+        <div class="tags">
+          <span class="tag">game name</span>
+          <span class="tag">team A · team B</span>
+          <span class="tag">$ per square</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Set your payout structure</div>
+        <div class="step-desc">
+          Choose <strong>halves or quarters</strong> and split the pot per period. You can also set a <strong>host cut</strong> (0–50%, default 20%). The payout percentages must add up to 100%.
+        </div>
+        <div class="callout">
+          <strong>Tip:</strong> Even splits work great for casual pools. The system validates totals automatically so there are no math surprises.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Add your payout info (optional but recommended)</div>
+        <div class="step-desc">
+          Add your <strong>Venmo, CashApp, Zelle, or PayPal</strong> handle so winners know exactly how to get paid. You control whether this is visible to everyone or only after a PIN. If cash mode is on, at least one handle is required.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">Your board is live — share the link</div>
+        <div class="step-desc">
+          After creation, you land on your board dashboard with a <strong>copy link button front and center</strong>. Drop the link in your group chat. Players don't need accounts — they just tap the link and pick a square.
+        </div>
+        <div class="callout">
+          <strong>Numbers randomize</strong> when you close the board — so every square has equal odds until then. No one can game position early.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── PANEL: HOST FEATURES ── -->
+  <div class="panel" id="panel-host">
+
+    <p class="section-label">Your dashboard</p>
+
+    <div class="legend">
+      <div class="legend-item"><div class="dot green"></div> Paid (card or confirmed cash)</div>
+      <div class="legend-item"><div class="dot amber"></div> Pending / Cash awaiting confirmation</div>
+      <div class="legend-item"><div class="dot gray"></div> Open</div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Track your board in real time</div>
+        <div class="step-desc">
+          Your dashboard shows a <strong>live fill tracker</strong> (X / 100 squares), pending payment count, and the full 10×10 grid color-coded by status. You always know exactly where things stand.
+        </div>
+        <div class="mini-grid" aria-hidden="true">
+          <div class="mini-sq taken"></div><div class="mini-sq taken"></div><div class="mini-sq"></div><div class="mini-sq taken"></div><div class="mini-sq"></div>
+          <div class="mini-sq"></div><div class="mini-sq taken"></div><div class="mini-sq taken"></div><div class="mini-sq pending"></div><div class="mini-sq taken"></div>
+          <div class="mini-sq taken"></div><div class="mini-sq"></div><div class="mini-sq pending"></div><div class="mini-sq taken"></div><div class="mini-sq"></div>
+          <div class="mini-sq"></div><div class="mini-sq taken"></div><div class="mini-sq"></div><div class="mini-sq taken"></div><div class="mini-sq taken"></div>
+          <div class="mini-sq taken"></div><div class="mini-sq"></div><div class="mini-sq taken"></div><div class="mini-sq"></div><div class="mini-sq pending"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num amber">2</div>
+      <div class="step-body">
+        <div class="step-title">Enable Cash Mode (optional)</div>
+        <div class="step-desc">
+          Toggle <strong>Cash Reservations</strong> on to generate a 4-digit PIN. Share the PIN with players paying in person — they enter it to reserve a square, then hand you the cash. You confirm receipt on your dashboard to lock their square green.
+        </div>
+        <div class="callout amber">
+          <strong>Cash TTL:</strong> Unconfirmed cash reservations expire automatically after 20 minutes, so squares don't stay locked indefinitely.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num amber">3</div>
+      <div class="step-body">
+        <div class="step-title">Reserve squares for cash players</div>
+        <div class="step-desc">
+          From the Cash Reserve panel, you can <strong>reserve a square by player name</strong> on their behalf, then confirm cash received to lock it — or release it back to open if they didn't pay.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <div class="step-title">Close the board when you're ready</div>
+        <div class="step-desc">
+          Hit <strong>Close Board</strong> and confirm. The system instantly shuffles and assigns random 0–9 numbers to rows and columns (Fisher-Yates). If you have unconfirmed cash squares, you'll be prompted to confirm, release, or cancel before closing.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">Enter scores and see winners instantly</div>
+        <div class="step-desc">
+          After the board is closed, enter scores per period for each team. Winners are calculated automatically based on the <strong>last digit of each score</strong> matching the row/column numbers.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">Winner cards tell you exactly how to pay</div>
+        <div class="step-desc">
+          Each period generates a winner card with everything you need in one glance: the player's name, score match, dollar amount, and their preferred payout method.
+        </div>
+        <div class="winner-card">
+          <div class="wc-label">H1 WINNER</div>
+          <div class="wc-name">Liyah</div>
+          <div class="wc-meta">UNC 9 – Vermont 6</div>
+          <div class="wc-payout">💸 $500 · Venmo: @liyah-jones</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── PANEL: PLAYER FLOW ── -->
+  <div class="panel" id="panel-player">
+
+    <p class="section-label">No app. No sign-up. Just a link.</p>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <div class="step-title">Tap the link the host shared</div>
+        <div class="step-desc">
+          Players open the board link directly — no account needed, no app download. They see the <strong>game name, team names, square price, and the live 10×10 grid</strong> showing which squares are open or taken.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <div class="step-title">Pick an open square</div>
+        <div class="step-desc">
+          Tap any empty square. A checkout form appears. What they see depends on how the host set up payments:
+        </div>
+        <div class="tags">
+          <span class="tag">Card only</span>
+          <span class="tag">Cash only</span>
+          <span class="tag">Card + Cash tabs</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <div class="step-title">Pay by card (Stripe)</div>
+        <div class="step-desc">
+          Enter <strong>name, email, and phone</strong>, then tap Pay. They're redirected to a Stripe checkout page. On success, the square locks green immediately and they see a confirmation banner.
+        </div>
+        <div class="callout">
+          <strong>Pending timeout:</strong> If a player starts checkout but doesn't complete it, the square stays yellow (pending) and releases automatically — no manual cleanup needed.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num amber">4</div>
+      <div class="step-body">
+        <div class="step-title">Pay by cash (PIN required)</div>
+        <div class="step-desc">
+          Enter name and the <strong>4-digit PIN</strong> the host shared. The square turns amber (reserved). Then hand the cash to the host — they confirm on their dashboard and it goes green.
+        </div>
+        <div class="callout amber">
+          <strong>Heads up:</strong> The square stays reserved for 20 minutes. If the host hasn't confirmed by then, it releases back to open.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <div class="step-title">Watch the board fill up</div>
+        <div class="step-desc">
+          Players can return to the board link any time to see fill progress. Once the host closes the board, row and column numbers appear. <strong>Winners are highlighted per period</strong> with payout amounts shown.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <div class="step-title">Add payout info to get paid faster (optional)</div>
+        <div class="step-desc">
+          If the host asks players to share payout info, there's a simple field to enter a <strong>Venmo, CashApp, Zelle, or PayPal handle</strong>. This lets the host pay winners in one tap — no group chat DMs needed.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BOTTOM CTA -->
+  <div style="margin-top: 56px; text-align: center; padding: 48px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px;">
+    <div style="font-family: 'Bebas Neue', sans-serif; font-size: 42px; color: var(--white); letter-spacing: 0.04em; line-height: 1; margin-bottom: 16px;">Ready to Run<br><span style="color: var(--green);">Your Board?</span></div>
+    <p style="font-size: 15px; color: var(--muted); line-height: 1.7; margin-bottom: 28px; font-weight: 300;">No spreadsheets. No chasing payments.<br>Just create a board and share the link.</p>
+    <a href="/host/boards/new" style="display:inline-block; background: var(--green); color: #0d0f0e; font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 15px; padding: 15px 32px; border-radius: 12px; text-decoration: none; letter-spacing: 0.01em;">Create Your Board</a>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + name).classList.add('active');
+    // Re-trigger animations
+    const steps = document.querySelectorAll('#panel-' + name + ' .step');
+    steps.forEach((s, i) => {
+      s.style.animation = 'none';
+      s.offsetHeight; // reflow
+      s.style.animation = `fadeUp 0.3s ease ${0.04 + i * 0.05}s both`;
+    });
+  }
+</script>
+</body>
+</html>

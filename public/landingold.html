@@ -20,28 +20,29 @@
   html{scroll-behavior:smooth}
   body{font-family:'DM Sans',-apple-system,sans-serif;background:var(--navy-deep);color:var(--text-pri);-webkit-font-smoothing:antialiased;overflow-x:hidden}
 
-  /* ═══ HEADER ═══ */
-  .site-header{position:absolute;top:0;left:0;right:0;z-index:20;padding:28px 56px}
-  .site-header-inner{max-width:1360px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
-  .brand{font-family:'Newsreader',Georgia,serif;font-size:16px;font-weight:500;letter-spacing:0.4px;color:var(--text-sec);opacity:0;animation:fadeIn .6s ease .15s forwards}
-  .brand span{color:var(--indigo-muted)}
-  .nav-link{font-size:14px;font-weight:500;color:var(--text-mut);text-decoration:none;letter-spacing:0.2px;transition:color .2s ease;opacity:0;animation:fadeIn .6s ease .3s forwards}
-  .nav-link:hover{color:var(--text-pri)}
-
   /* ═══ HERO ═══ */
   .hero{min-height:100vh;display:flex;align-items:center;position:relative}
   .hero::before{content:'';position:absolute;top:-30%;right:-15%;width:700px;height:700px;background:radial-gradient(circle,rgba(99,102,241,0.025) 0%,transparent 65%);pointer-events:none}
   .hero-inner{width:100%;max-width:1360px;margin:0 auto;padding:0 56px;display:grid;grid-template-columns:1fr 1.1fr;gap:72px;align-items:center;position:relative;z-index:1}
+
   .hero-msg{padding:20px 0 40px}
+  .site-header{position:absolute;top:0;left:0;right:0;z-index:20;padding:28px 56px}
+  .site-header-inner{max-width:1360px;margin:0 auto}
+  .brand{font-family:'Newsreader',Georgia,serif;font-size:16px;font-weight:500;letter-spacing:0.4px;color:var(--text-sec);opacity:0;animation:fadeIn .6s ease .15s forwards}
+  .brand span{color:var(--indigo-muted)}
+
   .hero-h1{font-family:'Newsreader',Georgia,serif;font-size:clamp(36px,3.8vw,56px);font-weight:500;line-height:1.15;letter-spacing:-1.2px;color:var(--text-pri);margin-bottom:32px;opacity:0;animation:fadeUp .7s ease .35s forwards}
+
   .hero-sub{display:flex;flex-direction:column;gap:4px;margin-bottom:44px;opacity:0;animation:fadeUp .7s ease .5s forwards}
   .hero-sub p{font-size:16px;line-height:1.7;color:var(--text-sec);font-weight:300}
+
   .hero-actions{display:flex;align-items:center;gap:16px;margin-bottom:20px;opacity:0;animation:fadeUp .7s ease .65s forwards}
   .btn-p{display:inline-flex;align-items:center;gap:8px;padding:14px 30px;background:var(--text-pri);color:var(--navy-deep);font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;border:none;border-radius:12px;cursor:pointer;transition:all .25s ease;text-decoration:none}
   .btn-p:hover{background:#fff;transform:translateY(-1px);box-shadow:0 8px 24px rgba(241,245,249,0.1)}
   .btn-s{display:inline-flex;align-items:center;gap:8px;padding:14px 26px;background:transparent;color:var(--text-sec);font-family:'DM Sans',sans-serif;font-size:15px;font-weight:500;border:1.5px solid var(--navy-border);border-radius:12px;cursor:pointer;transition:all .25s ease;text-decoration:none}
   .btn-s:hover{border-color:var(--text-mut);color:var(--text-pri)}
-  .btn-s svg{width:16px;height:16px;flex-shrink:0}
+  .btn-s svg{width:16px;height:16px}
+
   .hero-note{font-size:13px;color:var(--text-mut);opacity:0;animation:fadeUp .7s ease .78s forwards}
 
   /* ═══ DEMO ═══ */
@@ -91,6 +92,10 @@
   .s2-c.op{background:var(--navy-surface);border:1px solid var(--navy-border);color:var(--text-fnt)}
   .s2-c.tk{background:var(--green-bg);border:1px solid var(--green-bdr);color:var(--green)}
   .s2-c.cl{background:var(--indigo-sel);border:1.5px solid var(--indigo);color:#fff;transform:scale(1.08)}
+  .s2-lg{display:flex;gap:10px;margin-top:5px;font-size:8px;color:var(--text-fnt)}
+  .s2-ld{width:6px;height:6px;border-radius:2px;display:inline-block;margin-right:2px;vertical-align:middle}
+  .s2-ld.o{background:var(--navy-surface);border:1px solid var(--navy-border)}
+  .s2-ld.t{background:var(--green-bg);border:1px solid var(--green-bdr)}
 
   /* Scene 3 */
   .s3-ban{background:var(--green-bg);border:1px solid var(--green-bdr);border-radius:7px;padding:7px 12px;margin-bottom:8px;opacity:0;transition:opacity .5s ease}
@@ -108,10 +113,6 @@
   .s3-g{display:grid;grid-template-columns:repeat(10,1fr);gap:1.5px;flex:1}
   .s3-c{aspect-ratio:1;border-radius:2px;background:var(--green-bg);border:1px solid var(--green-bdr);display:flex;align-items:center;justify-content:center;font-size:4.5px;font-weight:600;color:var(--green)}
   .s3-tsid{font-size:8px;font-weight:600;color:var(--green);text-transform:uppercase;letter-spacing:1px;writing-mode:vertical-lr;transform:rotate(180deg);position:absolute;left:-13px;top:50%;margin-top:-14px}
-  .s3-rand{background:var(--navy-surface);border:1px solid var(--navy-border);border-radius:7px;padding:7px 12px;margin-bottom:8px;text-align:center}
-  .s3-rand-t{font-size:10px;font-weight:500;color:var(--text-mut)}
-  .s3-rand .dots::after{content:'';animation:dotPulse 1.5s steps(3) infinite}
-  @keyframes dotPulse{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
 
   /* Scene 4 */
   .s4-t{font-size:11px;font-weight:700;margin-bottom:6px}
@@ -134,6 +135,12 @@
   .s4-toast-lbl{font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:2px}
   .s4-toast-val{font-size:16px;font-weight:700;color:var(--text-pri)}
   .s4-toast-who{font-size:9px;color:var(--text-sec);margin-top:2px}
+
+  /* Scene 3 randomizing */
+  .s3-rand{background:var(--navy-surface);border:1px solid var(--navy-border);border-radius:7px;padding:7px 12px;margin-bottom:8px;text-align:center}
+  .s3-rand-t{font-size:10px;font-weight:500;color:var(--text-mut)}
+  .s3-rand .dots::after{content:'';animation:dotPulse 1.5s steps(3) infinite}
+  @keyframes dotPulse{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
 
   /* ═══ SOCIAL PROOF ═══ */
   .proof{padding:0 56px;max-width:1360px;margin:0 auto;text-align:center;padding-top:80px;padding-bottom:80px;position:relative}
@@ -179,7 +186,6 @@
   }
   @media(max-width:640px){
     .site-header{padding:20px}
-    .nav-link{display:none}
     .hero-inner{padding:0 20px}
     .hero{align-items:flex-start;padding-top:120px;padding-bottom:40px}
     .demo-box{transform:none;aspect-ratio:3/3.9;margin-top:16px}
@@ -190,6 +196,7 @@
     .s2-gt{font-size:12px}
     .s1-t{font-size:13px}
     .s4-t{font-size:10px}
+    .wordmark{margin-bottom:32px}
     .hero-h1{margin-bottom:24px}
     .hero-actions{flex-direction:column;align-items:stretch;gap:12px}
     .btn-p,.btn-s{justify-content:center}
@@ -206,7 +213,6 @@
 <header class="site-header">
   <div class="site-header-inner">
     <div class="brand">Daali <span>Boards</span></div>
-    <a href="/how-to" class="nav-link">How it works →</a>
   </div>
 </header>
 
@@ -218,14 +224,12 @@
         <span style="color:var(--indigo-soft)">Starts Here.</span>
       </h1>
       <div class="hero-sub">
-        <p>No spreadsheets.</p>
-        <p>No tracking who picked what.</p>
-        <p>Zero chaos.</p>
-        <p style="margin-top:12px;color:var(--text-pri);font-weight:400">A board that runs itself.</p>
+        <p>Players pick & pay. No notebooks. No spreadsheets.</p>
+        <p>Just a board that runs itself.</p>
       </div>
       <div class="hero-actions">
         <a href="/login" class="btn-p">Create Your Board <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10m0 0L9 4m4 4L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-        <a href="/how-to" class="btn-s"><svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4M8 5.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> How it works</a>
+        <a href="#demo" class="btn-s"><svg viewBox="0 0 16 16" fill="none"><path d="M6.5 4.5l5 3.5-5 3.5V4.5z" fill="currentColor"/></svg> Watch Demo</a>
       </div>
       <p class="hero-note">Start with 2 free boards.</p>
     </div>
@@ -381,9 +385,16 @@ function a3(){
   const top=document.getElementById('s3Top'),side=document.getElementById('s3Side'),grid=document.getElementById('s3Grid'),ban=document.getElementById('s3Ban'),rand=document.getElementById('s3Rand');
   top.innerHTML='<div></div>';side.innerHTML='';grid.innerHTML='';ban.classList.remove('show');
   rand.style.display='block';
+  // Fill grid first (all taken, no numbers yet)
   for(let i=0;i<100;i++){const c=document.createElement('div');c.className='s3-c';c.textContent=nm[i];grid.appendChild(c);}
-  setTimeout(()=>{tN.forEach((n,i)=>{const e=document.createElement('div');e.className='s3-nh';e.textContent=n;top.appendChild(e);setTimeout(()=>e.classList.add('show'),i*80);});},1200);
-  setTimeout(()=>{sN.forEach((n,i)=>{const e=document.createElement('div');e.className='s3-ns';e.textContent=n;side.appendChild(e);setTimeout(()=>e.classList.add('show'),i*80);});},2000);
+  // After a beat, start showing numbers
+  setTimeout(()=>{
+    tN.forEach((n,i)=>{const e=document.createElement('div');e.className='s3-nh';e.textContent=n;top.appendChild(e);setTimeout(()=>e.classList.add('show'),i*80);});
+  },1200);
+  setTimeout(()=>{
+    sN.forEach((n,i)=>{const e=document.createElement('div');e.className='s3-ns';e.textContent=n;side.appendChild(e);setTimeout(()=>e.classList.add('show'),i*80);});
+  },2000);
+  // Swap randomizing → success
   setTimeout(()=>{rand.style.display='none';ban.classList.add('show');},3200);
 }
 
@@ -400,7 +411,10 @@ function a4(){
   setTimeout(()=>{document.getElementById('s4a1').textContent='38';document.getElementById('s4a1').className='s4-tv fl';},1200);
   setTimeout(()=>{document.getElementById('s4b1').textContent='31';document.getElementById('s4b1').className='s4-tv fl';},2000);
   setTimeout(()=>document.getElementById('s4Sv').classList.add('show'),2600);
-  setTimeout(()=>{const w=cells.find(c=>c.row===wRow&&c.col===wCol);if(w){w.el.classList.add('win');w.el.textContent='★ '+nm[wRow*10+wCol];who.textContent='Paid to '+nm[wRow*10+wCol];}},3500);
+  setTimeout(()=>{
+    const w=cells.find(c=>c.row===wRow&&c.col===wCol);
+    if(w){w.el.classList.add('win');w.el.textContent='★ '+nm[wRow*10+wCol];who.textContent='Paid to '+nm[wRow*10+wCol];}
+  },3500);
   setTimeout(()=>toast.classList.add('show'),4200);
 }
 

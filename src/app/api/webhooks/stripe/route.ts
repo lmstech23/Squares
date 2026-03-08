@@ -14,7 +14,7 @@ import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import Stripe from "stripe";
-import { sendSms } from "@/lib/twilio";
+import { sendEmail } from "@/lib/email";
 
 // Disable body parsing — we need the raw body for signature verification
 export const runtime = "nodejs";
@@ -178,8 +178,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       select: {
         position: true,
         playerName: true,
-        playerPhone: true,
-        smsOptIn: true,
+        playerEmail: true,
         board: {
           select: { gameName: true },
         },
@@ -187,19 +186,21 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     });
 
     for (const sq of paidSquares) {
-      if (!sq.smsOptIn || !sq.playerPhone) continue;
-
+      if (!sq.playerEmail) continue;
       const squareNumber = sq.position + 1;
-      const message = `Daali Boards: Your payment is confirmed! You have Square #${squareNumber} on ${sq.board.gameName}. Good luck! Reply STOP to opt out.`;
-
       try {
-        await sendSms(sq.playerPhone, message);
-      } catch (smsErr) {
-        console.warn(`Card confirmed SMS failed for square #${squareNumber}:`, smsErr);
+        await sendEmail(
+          sq.playerEmail,
+          `Your square is confirmed — ${sq.board.gameName}`,
+          `<p>You're in! Square #${squareNumber} on <strong>${sq.board.gameName}</strong> is locked in. Good luck!</p>`
+        );
+      } catch (emailErr) {
+        console.warn(`Card confirmed email failed for square #${squareNumber}:`, emailErr);
       }
     }
+
   } catch (err) {
-    console.warn("Card confirmed SMS block failed (non-fatal):", err);
+    console.warn("Card confirmed email block failed (non-fatal):", err);
   }
 }
 

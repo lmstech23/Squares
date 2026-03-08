@@ -19,7 +19,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import { calculateWinnersFromArrays } from "@/lib/winners";
-import { sendSms } from "@/lib/twilio";
+import { sendEmail } from "@/lib/email";
 
 interface NotifyWinnerBody {
   periodLabel: string;
@@ -102,8 +102,7 @@ export async function POST(
       select: {
         squareId: true,
         paymentStatus: true,
-        playerPhone: true,
-        smsOptIn: true,
+        playerEmail: true,
         playerName: true,
         position: true,
       },
@@ -127,17 +126,10 @@ export async function POST(
       );
     }
 
-    // 6. HARD GUARD: player must have opted in
-    if (!square.smsOptIn) {
+    // 6. HARD GUARD: player must have an email
+    if (!square.playerEmail) {
       return NextResponse.json(
-        { error: "Player did not opt in to SMS notifications." },
-        { status: 400 }
-      );
-    }
-
-    if (!square.playerPhone) {
-      return NextResponse.json(
-        { error: "No phone number on file for this player." },
+        { error: "No email on file for this player." },
         { status: 400 }
       );
     }
@@ -159,30 +151,33 @@ export async function POST(
         { status: 400 }
       );
     }
+// 8. Build email
+    const emailBody = board.requirePlayerPayout
+      ? `<p>🎉 You won <strong>${periodLabel}</strong> on <strong>${board.gameName}</strong> with Square #${squareNumber}! Your host has your payout details and will send winnings soon.</p>`
+      : `<p>🎉 You won <strong>${periodLabel}</strong> on <strong>${board.gameName}</strong> with Square #${squareNumber}! Contact your host for payout.</p>`;
 
-    // 8. Build message
-    const message = board.requirePlayerPayout
-      ? `Daali Boards: You won ${periodLabel} on ${board.gameName} with Square #${squareNumber}. Your host has your payout details and will send winnings soon. Reply STOP to opt out.`
-      : `Daali Boards: You won ${periodLabel} on ${board.gameName} with Square #${squareNumber}. Contact your host for payout. Reply STOP to opt out.`;
-
-    // 9. Send SMS — wrapped in try/catch so a Twilio failure doesn't undo the lock.
+    // 9. Send email — wrapped in try/catch so a failure doesn't undo the lock.
     //    Lock is intentionally written first (see design note at top).
-    let smsSent = true;
-    let smsError: string | undefined;
+    let emailSent = true;
+    let emailError: string | undefined;
 
     try {
-      await sendSms(square.playerPhone, message);
+      await sendEmail(
+        square.playerEmail,
+        `You won ${periodLabel} on ${board.gameName}!`,
+        emailBody
+      );
     } catch (err) {
-      smsSent = false;
-      smsError = "TWILIO_SEND_FAILED";
-      console.warn("notify-winner: Twilio send failed (lock written, SMS not sent):", err);
+      emailSent = false;
+      emailError = "EMAIL_SEND_FAILED";
+      console.warn("notify-winner: email send failed (lock written, email not sent):", err);
     }
 
     return NextResponse.json({
       success: true,
       locked: true,
-      smsSent,
-      ...(smsError ? { error: smsError } : {}),
+      emailSent,
+      ...(emailError ? { error: emailError } : {}),
     });
   } catch (error) {
     console.error("notify-winner error:", error);

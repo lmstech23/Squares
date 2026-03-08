@@ -676,18 +676,7 @@ export default function PlayerBoard({
                           onMethodChange={setPlayerPayoutMethod}
                           onHandleChange={setPlayerPayoutHandle}
                         />
-                        <label className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={smsOptIn}
-                            onChange={(e) => setSmsOptIn(e.target.checked)}
-                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">Msg & data rates may apply. Reply STOP to opt out.</span>
-                          </span>
-                        </label>
+
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -780,18 +769,7 @@ export default function PlayerBoard({
                           onMethodChange={setPlayerPayoutMethod}
                           onHandleChange={setPlayerPayoutHandle}
                         />
-                        <label className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={smsOptIn}
-                            onChange={(e) => setSmsOptIn(e.target.checked)}
-                            className="mt-0.5 rounded border-gray-600 bg-gray-800 text-indigo-600 focus:ring-indigo-600"
-                          />
-                          <span className="text-xs text-gray-400">
-                            Text me updates about this board (winners + reminders)
-                            <span className="block text-[10px] text-gray-600 mt-0.5">Msg & data rates may apply. Reply STOP to opt out.</span>
-                          </span>
-                        </label>
+
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"

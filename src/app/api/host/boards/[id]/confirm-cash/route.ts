@@ -16,7 +16,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
-import { sendSms } from "@/lib/twilio";
+import { sendEmail } from "@/lib/email";
 
 interface ConfirmCashBody {
   squareId: string;
@@ -87,29 +87,29 @@ export async function POST(
       },
     });
 
-    // --- SMS: cash confirmed ---
-    // Fires after confirmation is committed. Twilio failure is non-fatal.
+     // --- Email: cash confirmed ---
+    // Fires after confirmation is committed. Send failure is non-fatal.
     try {
       const square = await prisma.square.findUnique({
         where: { squareId },
         select: {
           position: true,
           playerName: true,
-          playerPhone: true,
-          smsOptIn: true,
+          playerEmail: true,
         },
       });
-
-      if (square?.smsOptIn && square.playerPhone) {
+      if (square?.playerEmail) {
         const squareNumber = square.position + 1;
-        const message = `Daali Boards: Your cash payment is confirmed! You have Square #${squareNumber} on ${board.gameName}. Good luck! Reply STOP to opt out.`;
-
-        await sendSms(square.playerPhone, message);
+        await sendEmail(
+          square.playerEmail,
+          `Your square is confirmed — ${board.gameName}`,
+          `<p>Your cash payment is confirmed! You have Square #${squareNumber} on <strong>${board.gameName}</strong>. Good luck!</p>`
+        );
       }
     } catch (err) {
-      console.warn(`Cash confirmed SMS failed for square ${squareId}:`, err);
+      console.warn(`Cash confirmed email failed for square ${squareId}:`, err);
     }
-
+    
     return NextResponse.json({ success: true, squareId });
   } catch (error) {
     console.error("Confirm cash error:", error);
