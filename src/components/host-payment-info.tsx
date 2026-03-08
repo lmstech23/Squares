@@ -4,6 +4,7 @@ interface HostPaymentInfoProps {
   venmo: string | null;
   zelle: string | null;
   cashapp: string | null;
+  paypal: string | null;
   visibility: "public" | "pin_gated";
   pinVerified: boolean;
 }
@@ -12,10 +13,11 @@ export default function HostPaymentInfo({
   venmo,
   zelle,
   cashapp,
+  paypal,
   visibility,
   pinVerified,
 }: HostPaymentInfoProps) {
-  const hasAny = venmo || zelle || cashapp;
+  const hasAny = venmo || zelle || cashapp || paypal;
   if (!hasAny) return null;
 
   if (visibility === "pin_gated" && !pinVerified) {
@@ -32,6 +34,7 @@ export default function HostPaymentInfo({
   if (venmo) methods.push("Venmo: " + venmo);
   if (zelle) methods.push("Zelle: " + zelle);
   if (cashapp) methods.push("CashApp: " + cashapp);
+  if (paypal) methods.push("PayPal: " + paypal);
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3 mt-4 mb-4">
