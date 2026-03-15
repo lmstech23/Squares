@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>List Your Organization — Daali HBCU Initiative</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0a0f;
+    --surface:   #13131a;
+    --border:    #1e1e2a;
+    --text:      #e8e8ef;
+    --muted:     #6b6b80;
+    --green:     #4ade80;
+    --green-dim: rgba(74,222,128,0.12);
+    --amber:     #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    overflow-x: hidden;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.1rem 2.5rem;
+    background: rgba(10,10,15,0.92);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo { font-family: 'Playfair Display', serif; font-size: 1.25rem; font-weight: 900; color: var(--green); letter-spacing: -0.02em; text-decoration: none; }
+  .nav-back { color: var(--muted); font-size: 0.85rem; text-decoration: none; display: flex; align-items: center; gap: 0.4rem; transition: color 0.2s; }
+  .nav-back:hover { color: var(--text); }
+
+  /* HERO */
+  .hero {
+    min-height: 52vh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 9rem 2.5rem 4rem;
+    position: relative; overflow: hidden;
+    text-align: center;
+  }
+  .hero-glow {
+    position: absolute; width: 700px; height: 500px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(74,222,128,0.06) 0%, transparent 70%);
+    top: 0; left: 50%; transform: translateX(-50%); pointer-events: none;
+  }
+  .hero-content { position: relative; z-index: 2; max-width: 680px; margin: 0 auto; }
+
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    border: 1px solid var(--border); background: var(--surface);
+    border-radius: 20px; padding: 0.3rem 0.9rem;
+    font-size: 0.7rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 1.8rem;
+    opacity: 0; animation: fadeUp 0.6s ease forwards 0.1s;
+  }
+  .badge-dot { width: 6px; height: 6px; background: var(--green); border-radius: 50%; animation: blink 2s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  h1.hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2.4rem, 5vw, 4rem);
+    font-weight: 900; line-height: 1.05; letter-spacing: -0.03em; color: #fff;
+    margin-bottom: 1.2rem;
+    opacity: 0; animation: fadeUp 0.7s ease forwards 0.2s;
+  }
+  h1.hero-title em { font-style: italic; color: var(--green); }
+
+  .hero-sub {
+    font-size: 1.05rem; line-height: 1.75; color: var(--muted);
+    max-width: 520px; margin: 0 auto 2.2rem;
+    opacity: 0; animation: fadeUp 0.7s ease forwards 0.35s;
+  }
+  .hero-cta {
+    opacity: 0; animation: fadeUp 0.7s ease forwards 0.5s;
+  }
+  .btn-primary {
+    display: inline-block; background: var(--green); color: #0a0a0f;
+    font-size: 0.88rem; font-weight: 500; padding: 0.9rem 2.4rem;
+    border-radius: 4px; text-decoration: none; letter-spacing: 0.04em;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+
+  @keyframes fadeUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+
+  hr.divider { border: none; border-top: 1px solid var(--border); }
+
+  /* FORM SECTION */
+  #form-section { padding: 5rem 2.5rem; background: var(--bg); }
+  .form-card {
+    max-width: 620px; margin: 0 auto;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 3rem;
+  }
+  .form-card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem; font-weight: 700; color: #fff;
+    margin-bottom: 0.5rem;
+  }
+  .form-card-sub { font-size: 0.88rem; color: var(--muted); margin-bottom: 2.5rem; line-height: 1.6; }
+
+  .form-group { margin-bottom: 1.4rem; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.4rem; }
+
+  label {
+    display: block; font-size: 0.78rem; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 0.5rem;
+  }
+  label .optional {
+    font-size: 0.7rem; letter-spacing: 0; text-transform: none;
+    color: rgba(107,107,128,0.6); font-weight: 300; margin-left: 0.3rem;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0.75rem 1rem;
+    font-size: 0.92rem; font-family: 'DM Sans', sans-serif; font-weight: 300;
+    color: var(--text); outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus,
+  input[type="email"]:focus,
+  select:focus { border-color: rgba(74,222,128,0.4); }
+  input::placeholder { color: rgba(107,107,128,0.4); }
+  select { color: rgba(107,107,128,0.4); }
+  select.has-value { color: var(--text); }
+  select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b6b80' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 1rem center; }
+  select option { background: #13131a; }
+
+  /* Logo upload */
+  .logo-upload {
+    width: 100%; border: 1px dashed var(--border);
+    border-radius: 4px; padding: 1.8rem 1rem;
+    display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+    cursor: pointer; transition: border-color 0.2s, background 0.2s;
+    background: var(--bg); position: relative; text-align: center;
+  }
+  .logo-upload:hover { border-color: rgba(74,222,128,0.3); background: rgba(74,222,128,0.03); }
+  .logo-upload input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-icon { font-size: 1.5rem; }
+  .upload-text { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+  .upload-text strong { color: var(--green); font-weight: 500; }
+  .upload-hint { font-size: 0.72rem; color: rgba(107,107,128,0.6); }
+  .logo-preview { display: none; width: 64px; height: 64px; border-radius: 6px; object-fit: contain; background: var(--surface); border: 1px solid var(--border); }
+
+  /* Form divider */
+  .form-divider {
+    border: none; border-top: 1px solid var(--border);
+    margin: 2rem 0;
+  }
+  .form-section-label {
+    font-size: 0.7rem; font-weight: 500; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--green); margin-bottom: 1.4rem; display: block;
+  }
+
+  /* Submit */
+  .submit-btn {
+    width: 100%; background: var(--green); color: #0a0a0f;
+    font-size: 0.92rem; font-weight: 500; font-family: 'DM Sans', sans-serif;
+    padding: 1rem; border: none; border-radius: 4px; cursor: pointer;
+    letter-spacing: 0.04em; margin-top: 0.5rem;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .submit-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+
+  /* Success state */
+  .success-card {
+    display: none; max-width: 620px; margin: 0 auto;
+    background: var(--surface); border: 1px solid rgba(74,222,128,0.25);
+    border-radius: 10px; padding: 3rem; text-align: center;
+  }
+  .success-icon { font-size: 2.5rem; margin-bottom: 1.2rem; }
+  .success-title { font-family: 'Playfair Display', serif; font-size: 1.8rem; font-weight: 700; color: #fff; margin-bottom: 0.8rem; }
+  .success-msg { font-size: 0.95rem; color: var(--muted); line-height: 1.75; max-width: 420px; margin: 0 auto 1.5rem; }
+  .success-msg strong { color: var(--text); font-weight: 500; }
+  .success-back { display: inline-block; color: var(--green); font-size: 0.85rem; text-decoration: none; border: 1px solid rgba(74,222,128,0.25); border-radius: 4px; padding: 0.6rem 1.4rem; transition: background 0.2s; }
+  .success-back:hover { background: var(--green-dim); }
+
+  /* WHAT HAPPENS NEXT */
+  #next { padding: 5rem 2.5rem; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .next-inner { max-width: 680px; margin: 0 auto; }
+  .section-label { display: block; font-size: 0.7rem; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--green); margin-bottom: 0.9rem; }
+  .section-title { font-family: 'Playfair Display', serif; font-size: clamp(1.7rem, 3vw, 2.4rem); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; color: #fff; margin-bottom: 2.5rem; }
+  .section-title em { font-style: italic; color: var(--green); }
+
+  .next-steps { display: flex; flex-direction: column; gap: 0; }
+  .next-step {
+    display: flex; gap: 1.5rem; align-items: flex-start;
+    padding: 1.6rem 0; border-bottom: 1px solid var(--border);
+  }
+  .next-step:last-child { border-bottom: none; }
+  .next-num {
+    width: 36px; height: 36px; flex-shrink: 0;
+    background: var(--green-dim); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Playfair Display', serif; font-size: 1rem; font-weight: 900; color: var(--green);
+  }
+  .next-text { padding-top: 0.3rem; }
+  .next-title { font-size: 0.97rem; font-weight: 500; color: var(--text); margin-bottom: 0.3rem; }
+  .next-desc { font-size: 0.87rem; color: var(--muted); line-height: 1.6; }
+
+  /* TRUST */
+  #trust { padding: 5rem 2.5rem; background: var(--bg); }
+  .trust-inner { max-width: 680px; margin: 0 auto; }
+  .trust-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .trust-header {
+    background: var(--green-dim); border-bottom: 1px solid var(--border);
+    padding: 1.4rem 2rem; display: flex; align-items: center; gap: 0.8rem;
+  }
+  .trust-header-icon { font-size: 1.1rem; }
+  .trust-header-title { font-family: 'Playfair Display', serif; font-size: 1rem; font-weight: 700; color: #fff; }
+  .trust-items { padding: 0.5rem 0; }
+  .trust-item {
+    display: flex; align-items: flex-start; gap: 1rem;
+    padding: 1.2rem 2rem; border-bottom: 1px solid var(--border);
+  }
+  .trust-item:last-child { border-bottom: none; }
+  .trust-check {
+    width: 20px; height: 20px; flex-shrink: 0; margin-top: 0.1rem;
+    background: var(--green-dim); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; color: var(--green);
+  }
+  .trust-text { font-size: 0.9rem; color: var(--muted); line-height: 1.6; }
+  .trust-text strong { color: var(--text); font-weight: 500; }
+
+  /* FOOTER */
+  footer { background: var(--surface); border-top: 1px solid var(--border); padding: 2rem 2.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+  .footer-logo { font-family: 'Playfair Display', serif; font-size: 1.1rem; font-weight: 900; color: var(--green); }
+  .footer-note { font-size: 0.78rem; color: var(--muted); max-width: 420px; line-height: 1.55; }
+
+  @media (max-width: 640px) {
+    nav { padding: 1rem 1.25rem; }
+    .hero, #form-section, #next, #trust { padding-left: 1.25rem; padding-right: 1.25rem; }
+    .form-card, .success-card { padding: 2rem 1.5rem; }
+    .form-row { grid-template-columns: 1fr; }
+    footer { padding: 1.5rem 1.25rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">Daali</a>
+  <a class="nav-back" href="/hbcu">
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 7H2M6 3L2 7l4 4"/></svg>
+    Back to Initiative
+  </a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-content">
+    <div class="hero-badge"><span class="badge-dot"></span> HBCU Alumni Initiative</div>
+    <h1 class="hero-title">Start a fundraiser for<br/><em>your alumni chapter</em></h1>
+    <p class="hero-sub">Run a squares board, bring your community together, and support scholarships. Daali handles the board management — platform fees support your fundraiser.</p>
+    <div class="hero-cta">
+      <a href="#form-section" class="btn-primary">Get Started</a>
+    </div>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- FORM -->
+<section id="form-section">
+
+  <!-- Form card -->
+  <div class="form-card" id="formCard">
+    <div class="form-card-title">Your Organization</div>
+    <div class="form-card-sub">Tell us about your chapter. This is what will appear on the Daali HBCU fundraiser page.</div>
+
+    <form id="onboardForm" onsubmit="handleSubmit(event)">
+
+      <!-- Org info -->
+      <span class="form-section-label">Organization Info</span>
+
+      <div class="form-group">
+        <label for="orgName">Organization / Alumni Chapter Name</label>
+        <input type="text" id="orgName" placeholder="e.g. Hampton Alumni Atlanta Chapter" required />
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label for="school">School</label>
+          <select id="school" required>
+            <option value="" disabled selected>Select school</option>
+            <option>Howard University</option>
+            <option>Hampton University</option>
+            <option>Spelman College</option>
+            <option>Morehouse College</option>
+            <option>Florida A&M University</option>
+            <option>North Carolina A&T</option>
+            <option>Morgan State University</option>
+            <option>Clark Atlanta University</option>
+            <option>Jackson State University</option>
+            <option>Tuskegee University</option>
+            <option>Xavier University of Louisiana</option>
+            <option>Bethune-Cookman University</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div>
+          <label for="city">City / Chapter Location</label>
+          <input type="text" id="city" placeholder="e.g. Atlanta, GA" required />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="fundPurpose">What will the funds support? <span class="optional">optional</span></label>
+        <input type="text" id="fundPurpose" placeholder="e.g. Chapter Scholarship Fund" />
+      </div>
+
+      <div class="form-group">
+        <label for="logo">Organization Logo <span class="optional">optional — displayed on the fundraiser page</span></label>
+        <div class="logo-upload" id="logoUpload">
+          <input type="file" id="logo" accept="image/*" onchange="handleLogoChange(event)" />
+          <img class="logo-preview" id="logoPreview" alt="Logo preview" />
+          <div class="upload-icon" id="uploadIcon">🏫</div>
+          <div class="upload-text" id="uploadText"><strong>Click to upload</strong> or drag and drop</div>
+          <div class="upload-hint" id="uploadHint">PNG, JPG or SVG · Max 2MB</div>
+        </div>
+      </div>
+
+      <hr class="form-divider"/>
+
+      <!-- Contact info -->
+      <span class="form-section-label">Point of Contact</span>
+
+      <div class="form-row">
+        <div>
+          <label for="contactName">Contact Name</label>
+          <input type="text" id="contactName" placeholder="Full name" required />
+        </div>
+        <div>
+          <label for="contactEmail">Contact Email</label>
+          <input type="email" id="contactEmail" placeholder="you@example.com" required />
+        </div>
+      </div>
+
+      <button type="submit" class="submit-btn">List My Organization</button>
+    </form>
+  </div>
+
+  <!-- Success card -->
+  <div class="success-card" id="successCard">
+    <div class="success-icon">✅</div>
+    <div class="success-title">You're on the list.</div>
+    <p class="success-msg">Once your board is ready, we'll email <strong id="successEmail"></strong> a link to share with your alumni network.</p>
+    <a href="/hbcu" class="success-back">← Back to Initiative Page</a>
+  </div>
+
+</section>
+
+<hr class="divider"/>
+
+<!-- WHAT HAPPENS NEXT -->
+<section id="next">
+  <div class="next-inner">
+    <span class="section-label">After You Sign Up</span>
+    <h2 class="section-title">What happens <em>next</em></h2>
+    <div class="next-steps">
+      <div class="next-step">
+        <div class="next-num">1</div>
+        <div class="next-text">
+          <div class="next-title">Your organization is listed on the fundraiser page</div>
+          <div class="next-desc">Your chapter name and logo will appear on the Daali HBCU initiative page, visible to participants looking for a board to join.</div>
+        </div>
+      </div>
+      <div class="next-step">
+        <div class="next-num">2</div>
+        <div class="next-text">
+          <div class="next-title">Daali creates a board for your community</div>
+          <div class="next-desc">We handle the full setup — game selection, pricing, payout structure. No logistics on your end.</div>
+        </div>
+      </div>
+      <div class="next-step">
+        <div class="next-num">3</div>
+        <div class="next-text">
+          <div class="next-title">Share the link with your alumni network</div>
+          <div class="next-desc">Once the board is live, you'll receive an email with a shareable link. Drop it in your group chat, newsletter, or social channels — and let your network play.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider"/>
+
+<!-- TRUST -->
+<section id="trust">
+  <div class="trust-inner">
+    <span class="section-label">Transparent Fundraising</span>
+    <h2 class="section-title">How the <em>donation works</em></h2>
+    <div class="trust-card">
+      <div class="trust-header">
+        <div class="trust-header-icon">🔒</div>
+        <div class="trust-header-title">What your organization can count on</div>
+      </div>
+      <div class="trust-items">
+        <div class="trust-item">
+          <div class="trust-check">✓</div>
+          <div class="trust-text"><strong>A portion of Daali platform fees from your board go to your scholarship fund.</strong> The donation comes from platform fees — separate from what participants win.</div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-check">✓</div>
+          <div class="trust-text"><strong>Participant winnings are never touched.</strong> Every dollar a participant wins goes directly to them. The donation and the winnings are completely independent.</div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-check">✓</div>
+          <div class="trust-text"><strong>Your org has a square in every board.</strong> One square on every board is reserved with your initials. If it wins a period, those winnings go to your organization too.</div>
+        </div>
+        <div class="trust-item">
+          <div class="trust-check">✓</div>
+          <div class="trust-text"><strong>Boards are fully managed through the Daali platform.</strong> Your organization doesn't run anything — you just receive the donation and share the link.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">Daali</div>
+  <p class="footer-note">A portion of platform fees from HBCU initiative boards are donated to participating alumni organizations. Participant winnings are not affected.</p>
+</footer>
+
+<script>
+  // Make select text dim until a value is chosen
+  document.querySelectorAll('select').forEach(sel => {
+    sel.addEventListener('change', function() {
+      this.style.color = this.value ? 'var(--text)' : 'rgba(107,107,128,0.4)';
+    });
+  });
+
+  function handleLogoChange(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File too large. Please upload an image under 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const preview = document.getElementById('logoPreview');
+      const icon = document.getElementById('uploadIcon');
+      const text = document.getElementById('uploadText');
+      const hint = document.getElementById('uploadHint');
+      preview.src = e.target.result;
+      preview.style.display = 'block';
+      icon.style.display = 'none';
+      text.innerHTML = '<strong>' + file.name + '</strong>';
+      hint.textContent = (file.size / 1024).toFixed(0) + ' KB · Click to change';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    const email = document.getElementById('contactEmail').value;
+    document.getElementById('successEmail').textContent = email;
+    document.getElementById('formCard').style.display = 'none';
+    document.getElementById('successCard').style.display = 'block';
+    window.scrollTo({ top: document.getElementById('form-section').offsetTop - 80, behavior: 'smooth' });
+  }
+</script>
+
+</body>
+</html>
