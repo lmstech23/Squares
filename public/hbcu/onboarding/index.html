@@ -478,13 +478,42 @@
     reader.readAsDataURL(file);
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    const email = document.getElementById('contactEmail').value;
-    document.getElementById('successEmail').textContent = email;
-    document.getElementById('formCard').style.display = 'none';
-    document.getElementById('successCard').style.display = 'block';
-    window.scrollTo({ top: document.getElementById('form-section').offsetTop - 80, behavior: 'smooth' });
+
+    const btn = document.querySelector('.submit-btn');
+    btn.textContent = 'Submitting...';
+    btn.disabled = true;
+
+    const formData = new FormData();
+    formData.append('orgName',       document.getElementById('orgName').value);
+    formData.append('school',        document.getElementById('school').value);
+    formData.append('city',          document.getElementById('city').value);
+    formData.append('fundPurpose',   document.getElementById('fundPurpose').value);
+    formData.append('contactName',   document.getElementById('contactName').value);
+    formData.append('contactEmail',  document.getElementById('contactEmail').value);
+    const logoFile = document.getElementById('logo').files[0];
+    if (logoFile) formData.append('logo', logoFile);
+
+    try {
+      const res = await fetch('/api/hbcu/onboard', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error('Submission failed');
+
+      const email = document.getElementById('contactEmail').value;
+      document.getElementById('successEmail').textContent = email;
+      document.getElementById('formCard').style.display = 'none';
+      document.getElementById('successCard').style.display = 'block';
+      window.scrollTo({ top: document.getElementById('form-section').offsetTop - 80, behavior: 'smooth' });
+
+    } catch (err) {
+      btn.textContent = 'List My Organization';
+      btn.disabled = false;
+      alert('Something went wrong. Please try again.');
+    }
   }
 </script>
 
