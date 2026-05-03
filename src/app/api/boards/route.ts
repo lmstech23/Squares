@@ -1,31 +1,47 @@
-import { randomInt } from "crypto";
 import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { generateSlug } from "@/lib/slug";
 
-// Period labels derived from periodType
-const PERIOD_LABELS: Record<string, string[]> = {
+// ============================================================
+// Phase 1 changes:
+//   1. Accept sportType (required) — drives periodType server-side
+//   2. Accept gridType (optional, default "standard"); reject "double"
+//      until Phase 2 ships winner calc for 5×5 boards
+//   3. Server is source of truth for periodType + periodLabels.
+//      Any periodType the client sends is ignored.
+//   4. Fixed period labels: quarters now ["Q1","Q2","Q3","Final"]
+//      (was ["Q1","Q2","Q3","Q4"]; aligned with SYSTEM-FLOW.md)
+// ============================================================
+
+type SportType = "nba" | "nfl" | "cbb";
+type GridType = "standard" | "double";
+type PeriodType = "halves" | "quarters";
+
+const VALID_SPORTS: SportType[] = ["nba", "nfl", "cbb"];
+
+// Server-side derivation: sport → period structure
+const PERIOD_TYPE_BY_SPORT: Record<SportType, PeriodType> = {
+  nba: "quarters",
+  nfl: "quarters",
+  cbb: "halves",
+};
+
+const PERIOD_LABELS_BY_TYPE: Record<PeriodType, string[]> = {
   halves: ["H1", "Final"],
-  quarters: ["Q1", "Q2", "Q3", "Q4"],
+  quarters: ["Q1", "Q2", "Q3", "Final"],
 };
 
 interface CreateBoardBody {
   gameName: string;
-  squarePrice: number;
+  sportType: SportType;
+  squarePrice: number; // dollars (converted to cents)
   teamRow: string;
   teamCol: string;
-  periodType?: "halves" | "quarters";
-  hostCutPercent?: number;
-  payoutStructure: Record<string, number>;
-  // Payout coordination
-  hostVenmo?: string | null;
-  hostZelle?: string | null;
-  hostCashapp?: string | null;
-  hostPaypal?: string | null;
-  payoutVisibility?: "public" | "pin_gated";
-  requirePlayerPayout?: boolean;
+  gridType?: GridType; // optional; "standard" if omitted. "double" rejected in Phase 1.
+  hostCutPercent?: number; // 0–50, default 0
+  payoutStructure: Record<string, number>; // keyed by period label, percentages totaling 100
 }
 
 export async function POST(request: Request) {
@@ -48,6 +64,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Host not found" }, { status: 404 });
     }
 
+    // 2. Stripe readiness gate
+    if (!host.stripeChargesEnabled) {
+      return NextResponse.json(
+        { error: "Stripe account not ready. Complete onboarding first." },
+        { status: 403 }
+      );
+    }
+
+    // 2b. Credit gate — platform owner bypasses
+    if (host.id !== PLATFORM_OWNER_ID && host.boardCredits < 1) {
+      return NextResponse.json(
+        {
+          error: "No board credits remaining.",
+          needsCredits: true,
+          pricePerBoard: 900,
+        },
+        { status: 402 }
+      );
+    }
 
     // 3. Parse + validate body
     const body: CreateBoardBody = await request.json();
@@ -66,57 +101,81 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!body.squarePrice || body.squarePrice < 100) {
+    if (!body.squarePrice || body.squarePrice < 1) {
       return NextResponse.json(
         { error: "Price per square must be at least $1." },
         { status: 400 }
       );
     }
 
-    // 4. Determine period type and labels
-    const periodType = body.periodType ?? "halves";
-    const periodLabels = PERIOD_LABELS[periodType];
-
-    if (!periodLabels) {
+    // 3a. Validate sportType (required, enum)
+    if (!body.sportType || !VALID_SPORTS.includes(body.sportType)) {
       return NextResponse.json(
-        { error: "Invalid period type. Must be 'halves' or 'quarters'." },
+        { error: "Sport is required. Must be nba, nfl, or cbb." },
         { status: 400 }
       );
     }
+
+    // 3b. Validate gridType (optional; only "standard" allowed in Phase 1)
+    const gridType: GridType = body.gridType ?? "standard";
+    if (gridType !== "standard") {
+      return NextResponse.json(
+        {
+          error:
+            "Double-digit boards aren't available yet. Pick Standard for now.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // 4. Derive period type and labels server-side from sportType.
+    //    Client never sets these directly.
+    const periodType = PERIOD_TYPE_BY_SPORT[body.sportType];
+    const periodLabels = PERIOD_LABELS_BY_TYPE[periodType];
 
     // 5. Validate host cut percentage
     const hostCutPercent = body.hostCutPercent ?? 0;
-    if (!Number.isInteger(hostCutPercent) || hostCutPercent < 0 || hostCutPercent > 50) {
+    if (
+      typeof hostCutPercent !== "number" ||
+      hostCutPercent < 0 ||
+      hostCutPercent > 50
+    ) {
       return NextResponse.json(
-        { error: "Host cut must be an integer between 0 and 50." },
+        { error: "Host cut must be between 0% and 50%." },
         { status: 400 }
       );
     }
 
-    // 6. Validate payout structure
-    const payoutStructure = body.payoutStructure;
-
-    if (!payoutStructure || typeof payoutStructure !== "object") {
+    // 6. Validate payout structure — keys must match periodLabels exactly,
+    //    values must be numbers summing to 100.
+    if (
+      !body.payoutStructure ||
+      typeof body.payoutStructure !== "object"
+    ) {
       return NextResponse.json(
         { error: "Payout structure is required." },
         { status: 400 }
       );
     }
 
-    for (const label of periodLabels) {
-      if (payoutStructure[label] == null) {
-        return NextResponse.json(
-          { error: `Payout structure must include "${label}".` },
-          { status: 400 }
-        );
-      }
+    const payoutKeys = Object.keys(body.payoutStructure);
+    const expectedKeys = new Set(periodLabels);
+    if (
+      payoutKeys.length !== periodLabels.length ||
+      !payoutKeys.every((k) => expectedKeys.has(k))
+    ) {
+      return NextResponse.json(
+        {
+          error: `Payout structure keys must match period labels: ${periodLabels.join(", ")}.`,
+        },
+        { status: 400 }
+      );
     }
 
-    const values = periodLabels.map((l) => payoutStructure[l]);
-
-    if (values.some((v) => typeof v !== "number" || v < 0)) {
+    const values = Object.values(body.payoutStructure);
+    if (!values.every((v) => typeof v === "number" && v >= 0)) {
       return NextResponse.json(
-        { error: "Payout percentages cannot be negative." },
+        { error: "Payout values must be non-negative numbers." },
         { status: 400 }
       );
     }
@@ -129,7 +188,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 7. Generate unique slug
+    // 7. Generate unique slug (retry on collision)
     let slug = generateSlug();
     let attempts = 0;
     while (attempts < 5) {
@@ -139,165 +198,69 @@ export async function POST(request: Request) {
       attempts++;
     }
 
-    // 8. Determine creation path
-    const isPlatformOwner = host.id === PLATFORM_OWNER_ID;
-    const hasCredits = host.boardCredits >= 1;
-    const squarePriceCents = body.squarePrice;
+    // 8. Create Board + 100 Squares in one transaction
+    const squarePriceCents = Math.round(body.squarePrice * 100);
 
-    // --- Auto-enable cash mode for cash-only hosts ---
-
-
-    const isCashHost = host.paymentPreference === "cash";
-
-
-    const cashPin = isCashHost ? String(randomInt(1000, 10000)) : null;
-
-
-
-     // Payout coordination fields
-    const hostVenmo = body.hostVenmo?.trim() || null;
-    const hostZelle = body.hostZelle?.trim() || null;
-    const hostCashapp = body.hostCashapp?.trim() || null;
-    const hostPaypal = body.hostPaypal?.trim() || null;
-    const payoutVisibility = body.payoutVisibility === "pin_gated" ? "pin_gated" : "public";
-    const requirePlayerPayout = body.requirePlayerPayout ?? false;
-
-
-    const boardData = {
-      hostId: host.id,
-      gameName: body.gameName.trim(),
-      squarePrice: squarePriceCents,
-      totalSquares: 100,
-      slug,
-      teamRow: body.teamRow.trim(),
-      teamCol: body.teamCol.trim(),
-      periodType,
-      periodLabels,
-      payoutStructure,
-      hostCutPercent,
-      maxSquaresPerPlayer: 10,
-      currency: "USD",
-      hostPayoutResponsible: true,
-      hostVenmo,
-      hostZelle,
-      hostCashapp,
-      hostPaypal,
-      payoutVisibility: payoutVisibility as any,
-      requirePlayerPayout,
-      ...(isCashHost ? {
-        cashModeEnabled: true,
-        cashPin: cashPin,
-        cashLiabilityAccepted: true,
-      } : {}),
-    };
-
-    // --- Guard: one pending board per host at a time ---
-    const existingPending = await prisma.board.findFirst({
-      where: { hostId: host.id, status: 'pending_payment' },
-    });
-    if (existingPending) {
-      return NextResponse.json(
-        {
-          error: 'You have a pending board awaiting payment. Complete or cancel it first.',
-          pendingBoardId: existingPending.boardId,
-          redirectTo: `/host/checkout?boardId=${existingPending.boardId}`,
-        },
-        { status: 409 }
-      );
-    }
-
-    // --- Path 1: Platform owner — skip credits entirely ---
-    if (isPlatformOwner) {
-      const board = await prisma.$transaction(async (tx) => {
-
-      const newBoard = await tx.board.create({
-          data: {
-            ...boardData,
-            status: "open",
-            activatedAt: new Date(),
-          },
-        });
-
-        await tx.square.createMany({
-          data: Array.from({ length: 100 }, (_, i) => ({
-            boardId: newBoard.boardId,
-            position: i,
-            paymentStatus: "open" as const,
-          })),
-        });
-
-        return newBoard;
-      });
-
-      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
-    }
-
-    // --- Path 2: Host has credits — deduct and activate ---
-    if (hasCredits) {
-      const board = await prisma.$transaction(async (tx) => {
+    const board = await prisma.$transaction(async (tx) => {
+      // Deduct 1 credit atomically (skip for platform owner)
+      let creditsAfter = host.boardCredits;
+      if (host.id !== PLATFORM_OWNER_ID) {
         const updatedHost = await tx.host.update({
           where: { id: host.id, boardCredits: { gte: 1 } },
           data: { boardCredits: { decrement: 1 } },
         });
-
-        const newBoard = await tx.board.create({
-          data: {
-            ...boardData,
-            status: "open",
-            activatedAt: new Date(),
-          },
-        });
+        creditsAfter = updatedHost.boardCredits;
 
         await tx.creditTransaction.create({
           data: {
             hostId: host.id,
             type: "board_created",
             amount: -1,
-            balanceAfter: updatedHost.boardCredits,
-            boardId: newBoard.boardId,
+            balanceAfter: creditsAfter,
           },
         });
+      }
 
-        await tx.square.createMany({
-          data: Array.from({ length: 100 }, (_, i) => ({
-            boardId: newBoard.boardId,
-            position: i,
-            paymentStatus: "open" as const,
-          })),
-        });
-
-        return newBoard;
-      });
-
-      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
-    }
-
-    // --- Path 3: No credits — create pending_payment board ---
-    const pendingExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
-    const board = await prisma.$transaction(async (tx) => {
       const newBoard = await tx.board.create({
         data: {
-          ...boardData,
-          status: "pending_payment",
-          pendingExpiresAt,
+          hostId: host.id,
+          gameName: body.gameName.trim(),
+          squarePrice: squarePriceCents,
+          totalSquares: 100,
+          status: "open",
+          slug,
+          teamRow: body.teamRow.trim(),
+          teamCol: body.teamCol.trim(),
+          periodType,
+          periodLabels,
+          payoutStructure: body.payoutStructure,
+          hostCutPercent,
+          maxSquaresPerPlayer: 10,
+          currency: "USD",
+          hostPayoutResponsible: true,
+          // Phase 1 new fields
+          sportType: body.sportType,
+          gridType,
+          // rowPairs / colPairs stay NULL — only used for gridType="double" in Phase 2
         },
       });
 
-      // No squares created — board is not shareable until paid
+      // Create 100 squares (positions 0–99)
+      await tx.square.createMany({
+        data: Array.from({ length: 100 }, (_, i) => ({
+          boardId: newBoard.boardId,
+          position: i,
+          paymentStatus: "open" as const,
+        })),
+      });
+
       return newBoard;
     });
 
-    return NextResponse.json(
-      {
-        boardId: board.boardId,
-        slug: board.slug,
-        status: "pending_payment",
-        pendingExpiresAt: board.pendingExpiresAt,
-        redirectTo: `/host/checkout?boardId=${board.boardId}`,
-      },
-      { status: 402 }
-    );
+    return NextResponse.json({
+      boardId: board.boardId,
+      slug: board.slug,
+    });
   } catch (error) {
     console.error("Board creation error:", error);
     return NextResponse.json(

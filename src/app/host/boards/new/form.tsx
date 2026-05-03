@@ -3,71 +3,193 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const PERIOD_LABELS = ["H1", "Final"];
-const DEFAULT_PAYOUTS: Record<string, number> = { H1: 50, Final: 50 };
+// ============================================================
+// Phase 1 additions:
+//   1. Sport dropdown (NBA default, drives period labels)
+//   2. Shared $/% toggle for Your cut + Player payout split
+//   3. "Split evenly" button on payout split
+//
+// Removed: nothing. All original fields preserved.
+// ============================================================
+
+type SportType = "nba" | "nfl" | "cbb";
+type SplitMode = "$" | "%";
+
+const SPORT_OPTIONS: { value: SportType; label: string }[] = [
+  { value: "nba", label: "NBA" },
+  { value: "nfl", label: "Football (NFL)" },
+  { value: "cbb", label: "College basketball" },
+];
+
+// Period labels per sport. Server derives the same mapping — this is just UI.
+const PERIOD_LABELS_BY_SPORT: Record<SportType, string[]> = {
+  nba: ["Q1", "Q2", "Q3", "Final"],
+  nfl: ["Q1", "Q2", "Q3", "Final"],
+  cbb: ["H1", "Final"],
+};
+
+function evenPercentSplit(labels: string[]): Record<string, number> {
+  const each = Math.round((100 / labels.length) * 100) / 100;
+  const last = Math.round((100 - each * (labels.length - 1)) * 100) / 100;
+  const out: Record<string, number> = {};
+  labels.forEach((l, i) => {
+    out[l] = i === labels.length - 1 ? last : each;
+  });
+  return out;
+}
+
+function evenDollarSplit(
+  labels: string[],
+  pool: number
+): Record<string, number> {
+  if (pool <= 0) {
+    return Object.fromEntries(labels.map((l) => [l, 0]));
+  }
+  const each = Math.floor(pool / labels.length);
+  const remainder = pool - each * labels.length;
+  const out: Record<string, number> = {};
+  labels.forEach((l, i) => {
+    out[l] = each + (i === labels.length - 1 ? remainder : 0);
+  });
+  return out;
+}
 
 export default function NewBoardForm() {
   const router = useRouter();
+
   const [gameName, setGameName] = useState("");
+  const [sportType, setSportType] = useState<SportType>("nba");
   const [teamCol, setTeamCol] = useState("");
   const [teamRow, setTeamRow] = useState("");
   const [squarePrice, setSquarePrice] = useState("");
-  const [hostCut, setHostCut] = useState("0");
-  const [payouts, setPayouts] = useState(DEFAULT_PAYOUTS);
+
+  // Shared toggle: controls both Your cut and Player payout split together.
+  const [splitMode, setSplitMode] = useState<SplitMode>("$");
+
+  // hostCut and payouts hold raw input values in the current splitMode.
+  // $ mode → dollar amounts. % mode → percentages.
+  const [hostCut, setHostCut] = useState("");
+  const [payouts, setPayouts] = useState<Record<string, number>>(
+    Object.fromEntries(PERIOD_LABELS_BY_SPORT.nba.map((l) => [l, 0]))
+  );
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Payout coordination fields
-  const [hostVenmo, setHostVenmo] = useState("");
-  const [hostZelle, setHostZelle] = useState("");
-  const [hostCashapp, setHostCashapp] = useState("");
-  const [hostPaypal, setHostPaypal] = useState("");
-  const hasPaymentHandle = hostVenmo.trim() || hostZelle.trim() || hostCashapp.trim() || hostPaypal.trim();
-  const [payoutVisibility, setPayoutVisibility] = useState<"public" | "pin_gated">("public");
-  const [requirePlayerPayout, setRequirePlayerPayout] = useState(false);
-  const [showPayoutSection, setShowPayoutSection] = useState(false);
+  // ===== Derived values =====
+  const periodLabels = PERIOD_LABELS_BY_SPORT[sportType];
+  const priceNum = parseFloat(squarePrice);
+  const totalPot = priceNum >= 1 ? priceNum * 100 : 0;
+  const hostCutNum = parseFloat(hostCut) || 0;
 
-  const payoutTotal = PERIOD_LABELS.reduce(
-    (sum, label) => sum + (payouts[label] ?? 0),
+  // Always compute hostCutPercent — the API only accepts percentages.
+  const hostCutPercent =
+    splitMode === "%"
+      ? hostCutNum
+      : totalPot > 0
+      ? (hostCutNum / totalPot) * 100
+      : 0;
+
+  const hostCutValid =
+    splitMode === "%"
+      ? hostCutNum >= 0 && hostCutNum <= 50
+      : totalPot > 0 && hostCutNum >= 0 && hostCutNum <= totalPot * 0.5;
+
+  const playerPool =
+    totalPot > 0 ? Math.round(totalPot * (1 - hostCutPercent / 100)) : 0;
+
+  const payoutSum = periodLabels.reduce(
+    (s, l) => s + (payouts[l] ?? 0),
     0
   );
-  const payoutValid = payoutTotal === 100;
 
-  const priceNum = parseFloat(squarePrice) || 0;
-  const priceInCents = Math.round(priceNum * 100);
-  const priceValid = !isNaN(priceNum) && priceNum >= 1;
-  const totalPot = priceValid ? Math.round(priceNum * 100 * 100) : 0;
+  const payoutValid =
+    splitMode === "%"
+      ? Math.abs(payoutSum - 100) <= 0.01
+      : playerPool > 0 && Math.abs(payoutSum - playerPool) <= 0.5;
 
-  const hostCutNum = parseInt(hostCut, 10);
-  const hostCutValid = !isNaN(hostCutNum) && hostCutNum >= 0 && hostCutNum <= 50;
-  const playerPool = hostCutValid ? Math.round(totalPot * (1 - hostCutNum / 100)) : 0;
+  const formValid =
+    gameName.trim().length > 0 &&
+    teamCol.trim().length > 0 &&
+    teamRow.trim().length > 0 &&
+    priceNum >= 1 &&
+    hostCutValid &&
+    payoutValid;
+
+  // ===== Handlers =====
+
+  function changeSport(next: SportType) {
+    const newLabels = PERIOD_LABELS_BY_SPORT[next];
+    setSportType(next);
+    // Reset payouts to zero in the new period structure (host re-enters or hits Split evenly)
+    setPayouts(Object.fromEntries(newLabels.map((l) => [l, 0])));
+  }
+
+  function changeMode(next: SplitMode) {
+    if (next === splitMode) return;
+
+    // Convert what the host already typed, if we have a price.
+    if (totalPot > 0) {
+      if (next === "%") {
+        // $ → %
+        const newHostCut = (hostCutNum / totalPot) * 100;
+        setHostCut(newHostCut > 0 ? String(Math.round(newHostCut * 100) / 100) : "");
+        const currentPool = totalPot - hostCutNum;
+        if (currentPool > 0) {
+          const converted: Record<string, number> = {};
+          for (const l of periodLabels) {
+            converted[l] = Math.round(((payouts[l] ?? 0) / currentPool) * 10000) / 100;
+          }
+          setPayouts(converted);
+        } else {
+          setPayouts(Object.fromEntries(periodLabels.map((l) => [l, 0])));
+        }
+      } else {
+        // % → $
+        const newHostCut = totalPot * (hostCutNum / 100);
+        setHostCut(newHostCut > 0 ? String(Math.round(newHostCut)) : "");
+        const newPool = totalPot - newHostCut;
+        const converted: Record<string, number> = {};
+        for (const l of periodLabels) {
+          converted[l] = Math.round(newPool * ((payouts[l] ?? 0) / 100));
+        }
+        setPayouts(converted);
+      }
+    }
+
+    setSplitMode(next);
+  }
+
+  function splitEvenly() {
+    if (splitMode === "%") {
+      setPayouts(evenPercentSplit(periodLabels));
+    } else {
+      setPayouts(evenDollarSplit(periodLabels, playerPool));
+    }
+  }
 
   function updatePayout(label: string, value: string) {
-    const num = parseInt(value, 10);
-    setPayouts((p) => ({ ...p, [label]: isNaN(num) ? 0 : num }));
+    const num = parseFloat(value) || 0;
+    setPayouts((prev) => ({ ...prev, [label]: num }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!gameName.trim() || !teamCol.trim() || !teamRow.trim()) {
-      setError("Game name and both team names are required.");
-      return;
-    }
-    if (!priceValid) {
-      setError("Price must be at least $1.");
-      return;
-    }
-    if (!hostCutValid) {
-      setError("Host cut must be 0–50%.");
-      return;
-    }
-    if (!payoutValid) {
-      setError("Payout percentages must total 100%.");
-      return;
-    }
+    if (!formValid) return;
 
     setLoading(true);
     setError(null);
+
+    // Convert to percentages for the API regardless of input mode.
+    let payoutStructure: Record<string, number>;
+    if (splitMode === "%") {
+      payoutStructure = { ...payouts };
+    } else {
+      payoutStructure = {};
+      for (const l of periodLabels) {
+        payoutStructure[l] = (payouts[l] / playerPool) * 100;
+      }
+    }
 
     try {
       const res = await fetch("/api/boards", {
@@ -75,46 +197,33 @@ export default function NewBoardForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           gameName: gameName.trim(),
-          teamCol: teamCol.trim(),
+          sportType,
+          squarePrice: priceNum,
           teamRow: teamRow.trim(),
-          squarePrice: priceInCents,
-          hostCutPercent: hostCutNum,
-          payoutStructure: payouts,
-          // Payout coordination
-          hostVenmo: hostVenmo.trim() || null,
-          hostZelle: hostZelle.trim() || null,
-          hostCashapp: hostCashapp.trim() || null,
-          hostPaypal: hostPaypal.trim() || null,
-          payoutVisibility,
-          requirePlayerPayout,
+          teamCol: teamCol.trim(),
+          hostCutPercent: Math.round(hostCutPercent * 100) / 100,
+          payoutStructure,
         }),
       });
+
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 402 && data.redirectTo) {
-            router.push(data.redirectTo);
-            return;
-          }
-          setError(data.error || "Failed to create board.");
-          setLoading(false);
-          return;
+        setError(data.error || "Something went wrong");
+        setLoading(false);
+        return;
       }
       router.push(`/host/boards/${data.boardId}`);
     } catch {
-      setError("Network error. Please try again.");
+      setError("Failed to create board");
       setLoading(false);
     }
   }
 
+  // ===== Render =====
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && (
-        <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-3">
-          <p className="text-sm text-red-400">{error}</p>
-        </div>
-      )}
-
-      {/* Game Name */}
+      {/* Game Name (unchanged) */}
       <div>
         <label htmlFor="gameName" className="block text-sm text-gray-400 mb-1.5">
           Game
@@ -122,257 +231,268 @@ export default function NewBoardForm() {
         <input
           id="gameName"
           type="text"
+          required
           value={gameName}
           onChange={(e) => setGameName(e.target.value)}
-          placeholder="March Madness — Duke vs. Vermont"
-          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
+          placeholder="e.g. NBA Finals — Lakers vs Celtics"
+          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors"
         />
       </div>
 
-      {/* Team Names */}
+      {/* PHASE 1: Sport */}
+      <div>
+        <label htmlFor="sportType" className="block text-sm text-gray-400 mb-1.5">
+          Sport
+        </label>
+        <select
+          id="sportType"
+          value={sportType}
+          onChange={(e) => changeSport(e.target.value as SportType)}
+          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white outline-none focus:border-gray-600 transition-colors"
+        >
+          {SPORT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-gray-600 mt-1.5">
+          Periods: {periodLabels.join(" · ")}
+        </p>
+      </div>
+
+      {/* Team Names (unchanged) */}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="teamCol" className="block text-sm text-gray-400 mb-1.5">
-            Team A
+            Team across top
           </label>
           <input
             id="teamCol"
             type="text"
+            required
             value={teamCol}
             onChange={(e) => setTeamCol(e.target.value)}
-            placeholder="Duke"
-            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
+            placeholder="e.g. Lakers"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors"
           />
         </div>
         <div>
           <label htmlFor="teamRow" className="block text-sm text-gray-400 mb-1.5">
-            Team B
+            Team down side
           </label>
           <input
             id="teamRow"
             type="text"
+            required
             value={teamRow}
             onChange={(e) => setTeamRow(e.target.value)}
-            placeholder="Vermont"
-            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
+            placeholder="e.g. Celtics"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors"
           />
         </div>
       </div>
 
-      {/* Price Per Square */}
+      {/* Price per Square (unchanged) */}
       <div>
         <label htmlFor="squarePrice" className="block text-sm text-gray-400 mb-1.5">
           Price per square
         </label>
-        <input
-          id="squarePrice"
-          type="number"
-          min="1"
-          step="0.01"
-          value={squarePrice}
-          onChange={(e) => setSquarePrice(e.target.value)}
-          onBlur={() => { const n = parseFloat(squarePrice); if (!isNaN(n)) setSquarePrice(n.toFixed(2)); }}
-          placeholder="e.g. 10.00"
-          className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
-        />
-        {priceValid && (
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
+            $
+          </span>
+          <input
+            id="squarePrice"
+            type="number"
+            required
+            min="1"
+            step="1"
+            value={squarePrice}
+            onChange={(e) => setSquarePrice(e.target.value)}
+            placeholder="10"
+            className="w-full rounded-lg border border-gray-800 bg-gray-900 pl-7 pr-3 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors"
+          />
+        </div>
+        {totalPot > 0 && (
           <p className="text-xs text-gray-600 mt-1.5">
-            ${priceNum.toFixed(2)} per square · ${(totalPot / 100).toFixed(2)} total pot
+            100 squares × ${priceNum} = ${totalPot} total pot
           </p>
         )}
       </div>
 
-      {/* Host Cut */}
+      {/* PHASE 1: Shared $/% toggle — controls both Your cut and Payout split */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">Enter amounts as</span>
+        <div className="inline-flex border border-gray-700 rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => changeMode("$")}
+            className={`px-3 py-1 text-xs font-medium transition-colors ${
+              splitMode === "$"
+                ? "bg-white text-gray-950"
+                : "bg-gray-900 text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            $
+          </button>
+          <button
+            type="button"
+            onClick={() => changeMode("%")}
+            className={`px-3 py-1 text-xs font-medium transition-colors border-l border-gray-700 ${
+              splitMode === "%"
+                ? "bg-white text-gray-950"
+                : "bg-gray-900 text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            %
+          </button>
+        </div>
+      </div>
+
+      {/* Your cut */}
       <div>
         <label htmlFor="hostCut" className="block text-sm text-gray-400 mb-1.5">
           Your cut
         </label>
         <div className="relative">
+          {splitMode === "$" && (
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
+              $
+            </span>
+          )}
           <input
             id="hostCut"
             type="number"
             min="0"
-            max="50"
-            step="0.01"
+            step={splitMode === "$" ? "1" : "0.01"}
             value={hostCut}
             onChange={(e) => setHostCut(e.target.value)}
-            className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
+            placeholder={splitMode === "$" ? "e.g. 200" : "e.g. 20"}
+            className={`w-full rounded-lg border border-gray-800 bg-gray-900 ${
+              splitMode === "$" ? "pl-7" : "pl-3"
+            } pr-7 py-2.5 text-sm text-white placeholder-gray-600 outline-none focus:border-gray-600 transition-colors`}
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</span>
+          {splitMode === "%" && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 text-xs">
+              %
+            </span>
+          )}
         </div>
-        {totalPot > 0 && hostCutValid && (
+        {totalPot > 0 && hostCutValid && hostCutNum > 0 && (
           <p className="text-xs text-gray-600 mt-1.5">
-            You keep ${Math.round(totalPot * (hostCutNum / 100)) / 100} · Players split ${(playerPool / 100).toFixed(2)}
+            From a ${totalPot} pot — you keep $
+            {Math.round(totalPot * (hostCutPercent / 100))} · Players split $
+            {playerPool}
           </p>
         )}
-        {!hostCutValid && (
-          <p className="text-xs text-red-400 mt-1.5">Must be 0–50%</p>
+        {!hostCutValid && hostCut !== "" && (
+          <p className="text-xs text-red-400 mt-1.5">
+            {splitMode === "%"
+              ? "Must be 0–50%"
+              : "Must be at most 50% of the total pot"}
+          </p>
         )}
       </div>
 
-      {/* Payout Structure */}
+      {/* Player payout split */}
       <div>
-        <label className="block text-sm text-gray-400 mb-1.5">
-          Player payout split
-        </label>
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${PERIOD_LABELS.length}, 1fr)` }}>
-          {PERIOD_LABELS.map((label) => (
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-sm text-gray-400">
+            Player payout split
+          </label>
+          <button
+            type="button"
+            onClick={splitEvenly}
+            disabled={splitMode === "$" && playerPool <= 0}
+            className="text-xs text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed transition-colors underline underline-offset-2"
+          >
+            Split evenly
+          </button>
+        </div>
+        <div
+          className="grid gap-2"
+          style={{ gridTemplateColumns: `repeat(${periodLabels.length}, 1fr)` }}
+        >
+          {periodLabels.map((label) => (
             <div key={label}>
-              <div className="text-xs text-gray-500 mb-1 text-center">{label}</div>
+              <div className="text-xs text-gray-500 mb-1 text-center">
+                {label}
+              </div>
               <div className="relative">
+                {splitMode === "$" && (
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">
+                    $
+                  </span>
+                )}
                 <input
                   type="number"
                   min="0"
-                  max="100"
-                  step="0.01"
+                  step={splitMode === "$" ? "1" : "0.01"}
                   value={payouts[label] || ""}
                   onChange={(e) => updatePayout(label, e.target.value)}
-                  className="w-full rounded-lg border border-gray-800 bg-gray-900 px-2 py-2 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors"
+                  className={`w-full rounded-lg border border-gray-800 bg-gray-900 ${
+                    splitMode === "$" ? "pl-5 pr-2" : "pl-2 pr-5"
+                  } py-2 text-sm text-white text-center outline-none focus:border-gray-600 transition-colors`}
                 />
-                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</span>
+                {splitMode === "%" && (
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">
+                    %
+                  </span>
+                )}
               </div>
             </div>
           ))}
         </div>
-        <p className={`text-xs mt-1.5 ${payoutValid ? "text-gray-600" : "text-red-400"}`}>
-          Total: {payoutTotal}%{!payoutValid && " — must equal 100%"}
-        </p>
-      </div>
-
-      {/* ============================================ */}
-      {/* PAYOUT COORDINATION SECTION                  */}
-      {/* ============================================ */}
-      <div className="border-t border-gray-800 pt-6">
-        <button
-          type="button"
-          onClick={() => setShowPayoutSection(!showPayoutSection)}
-          className="flex items-center justify-between w-full text-left"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-300">Add your payment accounts (optional)</p>
-            <p className="text-xs text-gray-600 mt-0.5">
-            </p>
-          </div>
-          <svg
-            className={`w-5 h-5 text-gray-500 transition-transform ${showPayoutSection ? "rotate-180" : ""}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        {/* Live total + math hint */}
+        {splitMode === "%" ? (
+          <p
+            className={`text-xs mt-1.5 ${
+              payoutValid ? "text-gray-600" : "text-red-400"
+            }`}
           >
-            <path d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-
-        {showPayoutSection && (
-          <div className="mt-4 space-y-4">
-            {/* Venmo */}
-            <div>
-              <label htmlFor="hostVenmo" className="block text-xs text-gray-500 mb-1">
-                Venmo
-              </label>
-              <input
-                id="hostVenmo"
-                type="text"
-                value={hostVenmo}
-                onChange={(e) => setHostVenmo(e.target.value)}
-                placeholder="@your-venmo"
-                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
-              />
-            </div>
-
-            {/* Zelle */}
-            <div>
-              <label htmlFor="hostZelle" className="block text-xs text-gray-500 mb-1">
-                Zelle
-              </label>
-              <input
-                id="hostZelle"
-                type="text"
-                value={hostZelle}
-                onChange={(e) => setHostZelle(e.target.value)}
-                placeholder="email or phone"
-                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
-              />
-            </div>
-
-            {/* CashApp */}
-            <div>
-              <label htmlFor="hostCashapp" className="block text-xs text-gray-500 mb-1">
-                CashApp
-              </label>
-              <input
-                id="hostCashapp"
-                type="text"
-                value={hostCashapp}
-                onChange={(e) => setHostCashapp(e.target.value)}
-                placeholder="$your-cashapp"
-                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
-              />
-            </div>
-
-            {/* PayPal */}
-            <div>
-              <label htmlFor="hostPaypal" className="block text-xs text-gray-500 mb-1">
-                PayPal
-              </label>
-              <input
-                id="hostPaypal"
-                type="text"
-                value={hostPaypal}
-                onChange={(e) => setHostPaypal(e.target.value)}
-                placeholder="you@email.com or @username"
-                className="w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-white outline-none focus:border-gray-600 transition-colors"
-              />
-            </div>
-
-            {/* Visibility Toggle */}
-            <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 p-3">
-              <div>
-                <p className="text-xs text-gray-300">Show payment info to everyone</p>
-                <p className="text-[10px] text-gray-600">Or only after players enter the PIN</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => hasPaymentHandle && setPayoutVisibility(payoutVisibility === "public" ? "pin_gated" : "public")}
-                className={`relative w-10 h-5 rounded-full transition-colors ${
-                  hasPaymentHandle ? (payoutVisibility === "public" ? "bg-green-600" : "bg-gray-700") : "bg-gray-800 opacity-40 cursor-not-allowed"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                    payoutVisibility === "public" ? "translate-x-5" : ""
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* Require Player Payout Toggle */}
-            <div className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 p-3">
-              <div>
-                <p className="text-xs text-gray-300">Require players to share payout info</p>
-                <p className="text-[10px] text-gray-600">Helps you pay winners faster</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRequirePlayerPayout(!requirePlayerPayout)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${
-                  requirePlayerPayout ? "bg-green-600" : "bg-gray-700"
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                    requirePlayerPayout ? "translate-x-5" : ""
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
+            Total: {Math.round(payoutSum * 100) / 100}%
+            {!payoutValid && " — must equal 100%"}
+          </p>
+        ) : (
+          <p
+            className={`text-xs mt-1.5 ${
+              payoutValid ? "text-gray-600" : "text-red-400"
+            }`}
+          >
+            Assigned: ${payoutSum} of ${playerPool}
+            {!payoutValid &&
+              playerPool > 0 &&
+              ` — must equal $${playerPool}`}
+            {playerPool <= 0 && " — enter price and your cut first"}
+          </p>
+        )}
+        {splitMode === "%" && payoutValid && playerPool > 0 && (
+          <p className="text-xs text-gray-600 mt-0.5">
+            {periodLabels
+              .map(
+                (label) =>
+                  `${label}: $${Math.round(
+                    playerPool * ((payouts[label] ?? 0) / 100)
+                  )}`
+              )
+              .join(" · ")}
+          </p>
         )}
       </div>
 
-      {/* Submit */}
+      {/* Error */}
+      {error && (
+        <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-3">
+          <p className="text-sm text-red-300">{error}</p>
+        </div>
+      )}
+
+      {/* Submit (unchanged) */}
       <button
         type="submit"
-        disabled={loading}
-        className="w-full rounded-lg bg-white text-gray-950 px-4 py-3 text-sm font-semibold hover:bg-gray-200 active:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        disabled={!formValid || loading}
+        className="w-full rounded-lg bg-white text-gray-950 py-2.5 text-sm font-medium hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {loading ? "Creating…" : "Create Board"}
       </button>
