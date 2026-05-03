@@ -42,3 +42,8 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# Local backups and connection strings — never commit
+*.sql
+Direct_URL*
+*connection*.txt

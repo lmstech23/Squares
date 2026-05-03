@@ -47,6 +47,10 @@ model Board {
   teamCol                   String?     @map("team_col")
   periodType                PeriodType  @default(halves) @map("period_type")
   periodLabels              String[]    @default(["H1", "Final"]) @map("period_labels")
+  sportType                 SportType   @default(cbb)       @map("sport_type")
+  gridType                  GridType    @default(standard)  @map("grid_type")
+  rowPairs                  Json?       @map("row_pairs")
+  colPairs                  Json?       @map("col_pairs") 
   scoresTeamA               Int[]       @map("scores_team_a")
   scoresTeamB               Int[]       @map("scores_team_b")
   hostCutPercent            Int         @default(0) @map("host_cut_percent")
@@ -188,6 +192,18 @@ enum PeriodType {
   halves
   quarters
 }
+
+enum SportType {
+  cbb
+  nba
+  nfl
+}
+
+enum GridType {
+  standard
+  double
+}
+
 
 enum credit_tx_type {
   signup_grant
