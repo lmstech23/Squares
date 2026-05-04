@@ -58,7 +58,7 @@ export default function NewBoardForm() {
   const [splitMode, setSplitMode] = useState<SplitMode>("$");
 
   const [payouts, setPayouts] = useState<Record<string, number>>(
-    defaultPayoutsForSport("nba")
+    Object.fromEntries(PERIOD_LABELS_BY_SPORT.nba.map((l) => [l, 0]))
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
