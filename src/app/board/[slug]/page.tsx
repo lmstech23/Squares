@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
-import { calculateWinnersFromArrays } from "@/lib/winners";
+import { calculateWinners } from "@/lib/winners";
 import type { Metadata } from "next";
 import HostPaymentInfo from "@/components/host-payment-info";
 export const dynamic = "force-dynamic";
@@ -48,7 +48,8 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       },
     },
   });
-
+ 
+  if (!board) notFound();
   if (!board) notFound();
 
   // Inline cleanup: release expired pending squares on page load
@@ -77,16 +78,10 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
   const payout = board.payoutStructure as Record<string, number> | null;
 
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
+  const playerPool = totalPot * (1 - (board.hostCutPercent ?? 0) / 100);
 
   // Calculate winners from typed arrays
-  const winners = calculateWinnersFromArrays(
-    board.periodLabels,
-    board.scoresTeamA,
-    board.scoresTeamB,
-    board.rowNumbers,
-    board.colNumbers
-  );
-
+  const winners = calculateWinners(board);
 
 
 
@@ -160,7 +155,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
                   {label}
                 </div>
                 <div className="text-xs font-medium mt-0.5">
-                  ${Math.round(totalPot * (pct / 100))}
+                  ${Math.round(playerPool * (pct / 100))}
                 </div>
               </div>
             )})}
@@ -174,7 +169,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
               const sq = clientSquares[w.position];
               const quarterPct =
                 payout?.[w.label as keyof typeof payout] ?? 0;
-              const prize = Math.round(totalPot * (quarterPct / 100));
+              const prize = Math.round(playerPool * (quarterPct / 100));
 
               return (
                 <div
@@ -215,6 +210,9 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           status={board.status}
           rowNumbers={board.rowNumbers ?? undefined}
           colNumbers={board.colNumbers ?? undefined}
+          rowPairs={(board.rowPairs as number[][] | null) ?? undefined}
+          colPairs={(board.colPairs as number[][] | null) ?? undefined}
+          gridType={board.gridType}
           teamCol={board.status === "open" ? "Team A" : (board.teamCol ?? undefined)}
           teamRow={board.status === "open" ? "Team B" : (board.teamRow ?? undefined)}
           winnerPositions={winnerPositions}

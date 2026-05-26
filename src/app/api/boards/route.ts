@@ -108,17 +108,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // PHASE 1: Validate gridType (optional; only "standard" allowed in Phase 1)
+    // PHASE 2: gridType determines square count
     const gridType: GridType = body.gridType ?? "standard";
-    if (gridType !== "standard") {
+    if (gridType !== "standard" && gridType !== "double") {
       return NextResponse.json(
-        {
-          error:
-            "Double-digit boards aren't available yet. Pick Standard for now.",
-        },
+        { error: "Invalid grid type. Must be standard or double." },
         { status: 400 }
       );
     }
+    const totalSquares = gridType === "double" ? 25 : 100;
 
     // 4. Derive period type and labels server-side from sportType
     const periodType = PERIOD_TYPE_BY_SPORT[body.sportType];
@@ -207,7 +205,7 @@ export async function POST(request: Request) {
       hostId: host.id,
       gameName: body.gameName.trim(),
       squarePrice: squarePriceCents,
-      totalSquares: 100,
+      totalSquares,
       slug,
       teamRow: body.teamRow.trim(),
       teamCol: body.teamCol.trim(),
@@ -262,7 +260,7 @@ export async function POST(request: Request) {
         });
 
         await tx.square.createMany({
-          data: Array.from({ length: 100 }, (_, i) => ({
+          data: Array.from({ length: totalSquares }, (_, i) => ({
             boardId: newBoard.boardId,
             position: i,
             paymentStatus: "open" as const,
@@ -302,7 +300,7 @@ export async function POST(request: Request) {
         });
 
         await tx.square.createMany({
-          data: Array.from({ length: 100 }, (_, i) => ({
+          data: Array.from({ length: totalSquares }, (_, i) => ({
             boardId: newBoard.boardId,
             position: i,
             paymentStatus: "open" as const,

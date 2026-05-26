@@ -18,7 +18,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
-import { calculateWinnersFromArrays } from "@/lib/winners";
+import { calculateWinners } from "@/lib/winners";
 import { sendEmail } from "@/lib/email";
 
 interface NotifyWinnerBody {
@@ -57,6 +57,9 @@ export async function POST(
         scoresTeamB: true,
         rowNumbers: true,
         colNumbers: true,
+        gridType: true,
+        rowPairs: true,
+        colPairs: true,
         requirePlayerPayout: true,
         winnerNotifiedByPeriod: true,
       },
@@ -75,13 +78,7 @@ export async function POST(
     }
 
     // 3. Calculate winning position for this period
-    const winners = calculateWinnersFromArrays(
-      board.periodLabels,
-      board.scoresTeamA,
-      board.scoresTeamB,
-      board.rowNumbers,
-      board.colNumbers
-    );
+   const winners = calculateWinners(board);
 
     const winner = winners.find((w) => w.label === periodLabel);
     if (!winner) {

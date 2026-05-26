@@ -9,7 +9,7 @@ import ScoreEntry from "./score-entry";
 import CashModeToggle from "./cash-mode-toggle";
 import CashReservePanel from "./cash-reserve-panel";
 import SquareList from "./square-list";
-import { calculateWinnersFromArrays } from "@/lib/winners";
+import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 export const dynamic = "force-dynamic";
 
@@ -82,15 +82,10 @@ export default async function HostBoardPage({ params }: Props) {
   const payout = board.payoutStructure as Record<string, number> | null;
 
   const totalPot = (board.squarePrice / 100) * board.totalSquares;
+  const playerPool = totalPot * (1 - (board.hostCutPercent ?? 0) / 100);
 
-  // Calculate winners from typed arrays
-  const winners = calculateWinnersFromArrays(
-    board.periodLabels,
-    board.scoresTeamA,
-    board.scoresTeamB,
-    board.rowNumbers,
-    board.colNumbers
-  );
+  // Calculate winners — dispatcher picks standard or double strategy based on gridType
+  const winners = calculateWinners(board);
 
 
 
@@ -228,7 +223,7 @@ export default async function HostBoardPage({ params }: Props) {
             const sq = board.squares[w.position];
             const quarterPct =
               payout?.[w.label as keyof typeof payout] ?? 0;
-            const prize = Math.round(totalPot * (quarterPct / 100));
+            const prize = Math.round(playerPool * (quarterPct / 100));
 
             return (
               <div
@@ -285,7 +280,7 @@ export default async function HostBoardPage({ params }: Props) {
               <div className="text-sm font-medium mt-0.5">
                 {pct}%
                 <span className="text-xs text-gray-600 ml-1">
-                  ${Math.round(totalPot * (pct / 100))}
+                  ${Math.round(playerPool * (pct / 100))}
                 </span>
               </div>
             </div>
@@ -299,6 +294,9 @@ export default async function HostBoardPage({ params }: Props) {
         squares={board.squares}
         rowNumbers={board.rowNumbers ?? undefined}
         colNumbers={board.colNumbers ?? undefined}
+        rowPairs={(board.rowPairs as number[][] | null) ?? undefined}
+        colPairs={(board.colPairs as number[][] | null) ?? undefined}
+        gridType={board.gridType}
         teamCol={board.status === "open" ? "Team A" : (board.teamCol ?? undefined)}
         teamRow={board.status === "open" ? "Team B" : (board.teamRow ?? undefined)}
         winnerPositions={winnerPositions}

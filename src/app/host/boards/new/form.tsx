@@ -45,7 +45,11 @@ function defaultPayoutsForSport(sport: SportType): Record<string, number> {
   return out;
 }
 
-export default function NewBoardForm() {
+interface NewBoardFormProps {
+  gridType: "standard" | "double";
+}
+
+export default function NewBoardForm({ gridType }: NewBoardFormProps) {
   const router = useRouter();
   const [gameName, setGameName] = useState("");
   const [sportType, setSportType] = useState<SportType>("nba");
@@ -79,7 +83,8 @@ export default function NewBoardForm() {
   const priceNum = parseFloat(squarePrice) || 0;
   const priceInCents = Math.round(priceNum * 100);
   const priceValid = !isNaN(priceNum) && priceNum >= 1;
-  const totalPot = priceValid ? Math.round(priceNum * 100 * 100) : 0; // cents
+  const squareCount = gridType === "double" ? 25 : 100;
+  const totalPot = priceValid ? Math.round(priceNum * 100 * squareCount) : 0; // cents
   const totalPotDollars = totalPot / 100;
 
   // hostCut interpretation depends on splitMode
@@ -264,8 +269,10 @@ export default function NewBoardForm() {
           hostPaypal: hostPaypal.trim() || null,
           payoutVisibility,
           requirePlayerPayout,
-        }),
-      });
+          gridType,
+      
+      }),
+    });
       const data = await res.json();
       if (!res.ok) {
         if (res.status === 402 && data.redirectTo) {
@@ -290,6 +297,13 @@ export default function NewBoardForm() {
           <p className="text-sm text-red-400">{error}</p>
         </div>
       )}
+      {/* Board type chip — set by picker, read-only here */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-900 border border-gray-800 text-xs">
+        <span className="text-gray-500">Board type:</span>
+        <span className="font-medium">
+          {gridType === "standard" ? "Standard · 100 squares" : "Double · 25 squares"}
+        </span>
+      </div>
 
       {/* Game Name */}
       <div>

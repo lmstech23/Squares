@@ -1,6 +1,6 @@
 import { getHost } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import NewBoardForm from "./form";
+import NewBoardFlow from "./new-board-flow";
 import Link from "next/link";
 
 export default async function NewBoardPage() {
@@ -22,7 +22,7 @@ export default async function NewBoardPage() {
         Set the game, price, and payout split. You can share the link
         immediately after.
       </p>
-      <NewBoardForm />
+      <NewBoardFlow />
     </div>
   );
 }

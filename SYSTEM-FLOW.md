@@ -1,6 +1,6 @@
 # Squares — System Flow Document
 
-Last updated: Mar 2, 2026
+Last updated: May 4, 2026
 
 This is the single source of truth for how the application works. Every screen, every redirect, every conditional. If it's not in this document, it doesn't exist. If this document says one thing and the code says another, fix the code.
 
@@ -12,11 +12,11 @@ This is the single source of truth for how the application works. Every screen, 
 
 **Dashboard:** Shows their boards, credit balance, and a "New Board" button that's always tappable. Cash hosts see an optional Stripe banner at the top until they connect. Credits show for new hosts (starts at 2). Platform owner sees "Unlimited."
 
-**Board Creation:** Host fills out a short form (game, teams, price, payout split). Cash hosts get cash mode auto-enabled with a random PIN. If the host has credits, the board goes live immediately. If no credits, the board is saved as a draft and they're sent to buy more ($19 for 1, $45 for 3). Unpaid drafts expire after 48 hours.
+**Board Creation:** Host taps "New Board," picks a board type (Standard 100-square or Double 25-square), then fills out a short form (game, teams, price, payout split). Cash hosts get cash mode auto-enabled with a random PIN. If the host has credits, the board goes live immediately. If no credits, the board is saved as a draft and they're sent to buy more ($19 for 1, $45 for 3). Unpaid drafts expire after 48 hours.
 
 **Board Management:** Host sees their grid, fill progress, share link. They can close the board (triggers number randomization), toggle cash mode, reserve squares for cash players, confirm cash received, enter scores, and see winners.
 
-**Player Experience:** Player opens a link, sees the grid, taps a square. They only see payment options that work — card if Stripe is set up, cash if cash mode is on, both if both exist. No mention of what's missing. Card goes through Stripe. Cash requires the host's PIN. Pending squares are tappable — players can resume an interrupted checkout by entering the email they used.
+**Player Experience:** Player opens a link, sees the grid, taps a square. They only see payment options that work — card if Stripe is set up, cash if cash mode is on, both if both exist. No mention of what's missing. Card goes through Stripe. Cash requires the host's PIN.
 
 **Payment Processing:** Stripe webhooks handle payment confirmations and expirations. A cron job runs every 5 minutes to clean up abandoned checkouts and unconfirmed cash reservations.
 
@@ -120,9 +120,33 @@ When a host opens the "New Board" page, the system checks whether they can accep
 - **Host chose Stripe during onboarding AND finished Stripe setup** — go straight to the form.
 - **Host chose Stripe during onboarding but has NOT finished Stripe setup** — redirect to the Stripe setup page. They need to finish so players can actually pay by card.
 
-### 3B. The Form
+### 3B. Board Type Picker
+
+Before the form opens, the host sees a popup asking which kind of board they want.
+
+**Trigger:** Tapping "New Board" from the dashboard (after the Access Gate passes).
+
+**What the host sees:**
+
+- Title: **"Pick your board type"**
+- Subtitle: "You can't switch after players start buying squares."
+- Two cards side by side, equal weight (no recommendation, no default selection):
+
+  | | **Standard** | **Double** |
+  |---|---|---|
+  | Visual | 10×10 grid preview | 5×5 grid preview |
+  | Headline | "100 squares" | "25 squares" |
+  | Description | "Each row and column covers one number. The classic format." | "Each row and column covers two numbers. Smaller pool, bigger chance to win per square." |
+
+- A "Continue" button at the bottom, disabled until a card is tapped. Tapping a card highlights it; the Continue button label updates to "Continue with Standard" or "Continue with Double" so the host always sees what they're about to commit to.
+- A "Cancel" button that returns the host to the dashboard. **No X button in the corner** — the host either picks a type or cancels back to the dashboard.
+
+**On Continue:** The popup closes and the host lands on the create-board form (3C). The chosen `gridType` is carried into the form and shown read-only at the top so the host can see it before submitting.
+
+### 3C. The Form
 
 Fields:
+- **Board type** (read-only, set by 3B picker — shown as a chip at the top of the form, e.g. "Standard · 100 squares" or "Double · 25 squares")
 - Game name (required)
 - Team names — row and column (required)
 - Price per square in dollars (minimum $1)
@@ -130,7 +154,9 @@ Fields:
 - Period type (halves or quarters, default halves)
 - Payout structure per period (must total 100%)
 
-### 3C. What Happens on Submit
+The form should also display the resulting total pot (price × N where N = 100 for Standard, 25 for Double) so the host sees what the players are competing for before submitting.
+
+### 3D. What Happens on Submit
 
 **API:** `POST /api/boards`
 
@@ -149,16 +175,16 @@ Fields:
 
 **Path 2: Host Has Credits (boardCredits > 0)**
 - Deduct 1 credit (atomic, in same transaction)
-- Create board with `status = open`
-- Create 100 squares (`paymentStatus: open`)
+- Create board with `status = open` and the chosen `gridType` from 3B
+- Create N squares (`paymentStatus: open`) where **N = 100 for Standard, 25 for Double**
 - Generate slug
 - Redirect to `/host/boards/[id]`
 - Board is immediately shareable
 
 **Path 3: Host Has No Credits (boardCredits = 0)**
 - Check for existing `pending_payment` board — if one exists, redirect to complete that checkout first
-- Create board with `status = pending_payment`
-- Create 100 squares (board is NOT shareable)
+- Create board with `status = pending_payment` and the chosen `gridType` from 3B
+- Create N squares where **N = 100 for Standard, 25 for Double** (board is NOT shareable)
 - Set `pendingExpiresAt = NOW() + 48 hours`
 - Redirect to credit purchase page
 - Purchase options: 1 board ($19) or 3 boards ($45)
@@ -184,9 +210,9 @@ Fields:
 ### What the Host Sees
 
 - **Share link** with copy button (always accessible)
-- **Fill tracker:** X / 100 squares filled (progress bar)
+- **Fill tracker:** X / N squares filled (progress bar) — N = 100 for Standard boards, 25 for Double boards
 - **Pending indicator:** "X squares pending payment"
-- **Grid** showing all 100 squares with status colors:
+- **Grid** showing all squares with status colors (10×10 layout for Standard, 5×5 for Double):
   - 🟢 Green = paid (card or confirmed cash)
   - 🟡 Yellow = pending (Stripe checkout in progress) or reserved_cash (awaiting host confirmation)
   - Empty/gray = open
@@ -194,7 +220,9 @@ Fields:
 ### Close Board
 - Button visible when `status = open`
 - Confirmation required
-- On close: Fisher-Yates shuffle assigns random 0–9 to rows and columns
+- On close: Fisher-Yates shuffle assigns digits to rows and columns:
+  - **Standard:** each of 10 rows gets one digit 0–9, each of 10 columns gets one digit 0–9. Stored in `rowNumbers` / `colNumbers`.
+  - **Double:** each of 5 rows gets a pair of digits (e.g. `[0, 5]`), each of 5 columns gets a pair. All 10 digits used exactly once per axis. Stored in `rowPairs` / `colPairs`.
 - Status flips to `closed`
 - If `reserved_cash` squares exist: prompt to confirm all, release unconfirmed, or cancel
 
@@ -211,7 +239,9 @@ Fields:
 
 ### Enter Scores (when board is closed)
 - Enter scores per period for each team
-- Winners auto-calculated based on last digit of score matching row/column numbers
+- Winners auto-calculated:
+  - **Standard:** the last digit of each team's score matches one row/column number — that single square wins.
+  - **Double:** the last digit of each team's score falls inside a row's/column's digit pair — that single square (covering both possible digits per axis) wins.
 - Payout amounts displayed
 
 ---
@@ -223,11 +253,10 @@ Fields:
 ### What the Player Sees
 
 - Game name, team names
-- 10×10 grid with open/taken squares
-- Fill progress: "X / 100 squares filled"
+- Grid with open/taken squares — 10×10 for Standard boards, 5×5 for Double boards
+- Fill progress: "X / N squares filled" (N = 100 for Standard, 25 for Double)
 - "Pick a square. Numbers randomize when the board closes."
 - Square price
-- **Open squares display their number (1–100) in dim gray.** This helps players identify and reference specific squares before the board closes. Once selected, the number is replaced with ✓. Once paid, it shows the player's initials. Pending shows …
 
 ### Tapping an Open Square
 
@@ -255,42 +284,8 @@ Fields:
 5. Host confirms on dashboard → square becomes `paid` (green)
 6. Unconfirmed cash reservations auto-expire after TTL (default 20 min)
 
-### Tapping a Pending Square
-
-Pending squares (yellow) are tappable. Tapping one opens a sheet asking for the
-email used at checkout. This allows players who left mid-checkout to resume without
-losing their square. No account required — identity is verified by email matching only.
-
-**Resume flow:**
-1. Player taps a pending (yellow) square
-2. Sheet slides up: "This square has an active checkout"
-3. Player enters the email used when they originally claimed the square
-4. Taps "Resume Checkout"
-5. Backend validates email and session state via `POST /api/checkout/resume`
-6. If valid: player is redirected to the existing Stripe Checkout URL (same session, no new lock)
-7. If invalid or expired: player sees an appropriate message (see states below)
-
-**Possible outcomes:**
-
-| Outcome | What happened | Player sees |
-|---------|--------------|-------------|
-| Email matches, session live | Normal resume | Redirected to existing Stripe Checkout |
-| Email does not match | Wrong email or someone else's square | "This square is reserved by someone else." |
-| TTL expired (DB or Stripe) | Cron hasn't run yet | "This square just freed up — tap it again to claim it." Grid updates within seconds via polling. |
-| Payment already completed | Webhook hasn't fired yet | Sheet closes. Square turns green within seconds via polling. |
-
-**Security:**
-- Email mismatch and "belongs to someone else" return the same generic message — no email enumeration possible.
-- The TTL expiry check runs before the email check so timing differences cannot leak ownership.
-- No rate limiting in V1. Rate limiting (5 attempts / squareId / 5 min) is on the post-launch backlog.
-
-**What this does NOT affect:**
-- `reserved_cash` squares are not resumable via this flow. Cash reservations have their own TTL and are managed by the host.
-- The claim flow for open squares is unchanged.
-- No schema changes. No new database fields.
-
 ### Closed Board View
-- Row/column numbers visible
+- Row/column numbers visible — single digits for Standard, digit pairs (e.g. "0, 5") for Double
 - Winners highlighted per period
 - Payout amounts displayed
 - No more square selection
@@ -340,6 +335,10 @@ All operations are idempotent.
 | Field | Purpose |
 |-------|---------|
 | `status` | `open`, `closed`, `pending_payment`, `expired` |
+| `gridType` | `standard` (10×10, 100 squares) or `double` (5×5, 25 squares). Set at creation, immutable once squares are sold. |
+| `totalSquares` | 100 for Standard, 25 for Double. Derived from `gridType` on creation. |
+| `rowNumbers` / `colNumbers` | Used for Standard boards. Single digits 0–9 assigned at close. |
+| `rowPairs` / `colPairs` | Used for Double boards. Each is an array of 5 digit-pairs assigned at close. |
 | `cashModeEnabled` | Boolean, auto-set for cash hosts |
 | `cashPin` | 4-digit string, auto-generated for cash hosts |
 | `cashLiabilityAccepted` | Boolean |
@@ -362,5 +361,6 @@ All operations are idempotent.
 4. **Cash mode auto-enables for cash hosts.** PIN auto-generates. No extra steps.
 5. **Board creation is never blocked.** Credits determine the path (instant vs. pending_payment), not whether it's allowed.
 6. **The host is the trust layer for cash.** No email required. PIN gates access. Host confirms receipt.
-7. **Every change gets documented here first, then coded.**
-8. **Before pushing ANY code change, check this document.** Walk through every section affected by the change. If the change would break any part of this flow — stop. Fix the approach first. This rule exists because on Feb 26, 2026, working code was destroyed by changes that ignored the existing flow. That cannot happen again.
+7. **Grid type is set at creation and locked once squares are sold.** Hosts pick Standard or Double in a popup before the form opens. Once any square is `paid`, `pending`, or `reserved_cash`, the board's grid type cannot change.
+8. **Every change gets documented here first, then coded.**
+9. **Before pushing ANY code change, check this document.** Walk through every section affected by the change. If the change would break any part of this flow — stop. Fix the approach first. This rule exists because on Feb 26, 2026, working code was destroyed by changes that ignored the existing flow. That cannot happen again.

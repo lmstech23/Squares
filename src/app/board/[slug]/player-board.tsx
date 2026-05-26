@@ -20,6 +20,9 @@ interface PlayerBoardProps {
   status: string;
   rowNumbers?: number[];
   colNumbers?: number[];
+  rowPairs?: number[][];
+  colPairs?: number[][];
+  gridType?: "standard" | "double";
   teamCol?: string;
   teamRow?: string;
   winnerPositions?: number[];
@@ -54,6 +57,9 @@ export default function PlayerBoard({
   status,
   rowNumbers,
   colNumbers,
+  rowPairs,
+  colPairs,
+  gridType = "standard",
   teamCol,
   teamRow,
   winnerPositions: winnerPositionsArr,
@@ -66,7 +72,7 @@ export default function PlayerBoard({
   payoutVisibility,
   requirePlayerPayout = false,
 }: PlayerBoardProps) {
-
+  
   const [squares, setSquares] = useState(initialSquares);
 
   // Multi-select: Map of squareId → SquareData
@@ -100,7 +106,22 @@ export default function PlayerBoard({
   const [resumeFreedUp, setResumeFreedUp] = useState(false);
 
   const isOpen = status === "open";
-  const hasNumbers = !!(rowNumbers?.length && colNumbers?.length);
+  const isDouble = gridType === "double";
+  const dim = isDouble ? 5 : 10;
+  const cellSize = isDouble ? 44 : 28;
+  const rowHeaderWidth = isDouble ? 36 : 24;
+  const colHeaderHeight = isDouble ? 24 : 20;
+  const hasNumbers = isDouble
+    ? !!(rowPairs?.length && colPairs?.length)
+    : !!(rowNumbers?.length && colNumbers?.length);
+  const renderColLabel = (i: number): string | number => {
+    if (isDouble) return colPairs?.[i]?.join(", ") ?? "";
+    return colNumbers?.[i] ?? "";
+  };
+  const renderRowLabel = (i: number): string | number => {
+    if (isDouble) return rowPairs?.[i]?.join(", ") ?? "";
+    return rowNumbers?.[i] ?? "";
+  };
   const hasBoth = stripeConnected && cashModeEnabled;
   const priceDisplay = `$${squarePrice / 100}`;
   const winnerSet = new Set(winnerPositionsArr ?? []);
@@ -373,39 +394,39 @@ export default function PlayerBoard({
             className="grid"
             style={{
               gridTemplateColumns: hasNumbers
-                ? '24px 28px repeat(10, 28px)'
-                : 'repeat(10, 28px)',
+                ? `24px ${rowHeaderWidth}px repeat(${dim}, ${cellSize}px)`
+                : `repeat(${dim}, ${cellSize}px)`,
               gridTemplateRows: hasNumbers
-                ? 'auto 20px repeat(10, 28px)'
-                : 'repeat(10, 28px)',
+                ? `auto ${colHeaderHeight}px repeat(${dim}, ${cellSize}px)`
+                : `repeat(${dim}, ${cellSize}px)`,
               gap: '2px',
             }}
           >
             {/* Team A label */}
             {hasNumbers && teamCol && (
               <div
-                style={{ gridColumn: '3 / 13', gridRow: 1 }}
+                style={{ gridColumn: `3 / ${3 + dim}`, gridRow: 1 }}
                 className="flex items-center justify-center text-[10px] uppercase tracking-wider text-indigo-400 font-medium h-6"
               >
                 {teamCol}
               </div>
             )}
 
-            {/* Column numbers */}
-            {hasNumbers && colNumbers!.map((num, i) => (
+            {/* Column headers */}
+            {hasNumbers && Array.from({ length: dim }, (_, i) => (
               <div
                 key={`col-${i}`}
                 style={{ gridColumn: i + 3, gridRow: 2 }}
                 className="flex items-center justify-center text-[10px] font-bold text-gray-500"
               >
-                {num}
+                {renderColLabel(i)}
               </div>
             ))}
 
             {/* Team B label */}
             {hasNumbers && teamRow && (
               <div
-                style={{ gridColumn: 1, gridRow: '3 / 13' }}
+                style={{ gridColumn: 1, gridRow: `3 / ${3 + dim}` }}
                 className="flex items-center justify-center"
               >
                 <span
@@ -417,8 +438,8 @@ export default function PlayerBoard({
               </div>
             )}
 
-            {/* Row numbers + squares */}
-            {Array.from({ length: 10 }, (_, row) => {
+            {/* Row headers + squares */}
+            {Array.from({ length: dim }, (_, row) => {
               const gridRow = hasNumbers ? row + 3 : row + 1;
               const colOffset = hasNumbers ? 3 : 1;
               return (
@@ -428,12 +449,12 @@ export default function PlayerBoard({
                       style={{ gridColumn: 2, gridRow }}
                       className="flex items-center justify-center text-[10px] font-bold text-gray-500"
                     >
-                      {rowNumbers![row]}
+                      {renderRowLabel(row)}
                     </div>
                   )}
 
-                  {Array.from({ length: 10 }, (_, col) => {
-                    const position = row * 10 + col;
+                  {Array.from({ length: dim }, (_, col) => {
+                    const position = row * dim + col;
                     const sq = squares[position];
                     if (!sq) return null;
 
@@ -484,18 +505,17 @@ export default function PlayerBoard({
                             : isPending
                               ? "…"
                               : isSelected
-                               ? "✓"
-                               : <span className="text-gray-700">{position + 1}</span>}
-                               </button>
-                               );
-                            })}
+                                ? "✓"
+                                : <span className="text-gray-700">{position + 1}</span>}
+                      </button>
+                    );
+                  })}
                 </React.Fragment>
               );
             })}
           </div>
-        </div>
-      </div>
-
+         </div>
+        </div>   
       {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-[10px] text-gray-600">
         <span className="flex items-center gap-1.5">

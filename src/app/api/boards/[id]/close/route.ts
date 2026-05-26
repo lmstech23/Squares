@@ -18,6 +18,21 @@ function shuffleArray(): number[] {
   return arr;
 }
 
+/**
+ * For Double boards: shuffle [0-9] and group into 5 pairs of 2.
+ * Each pair becomes one row or column. All 10 digits used exactly once per axis.
+ */
+function shufflePairs(): number[][] {
+  const shuffled = shuffleArray();
+  return [
+    [shuffled[0], shuffled[1]],
+    [shuffled[2], shuffled[3]],
+    [shuffled[4], shuffled[5]],
+    [shuffled[6], shuffled[7]],
+    [shuffled[8], shuffled[9]],
+  ];
+}
+
 export async function POST(request: Request, { params }: Props) {
   try {
     const { id } = await params;
@@ -27,7 +42,6 @@ export async function POST(request: Request, { params }: Props) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -35,7 +49,6 @@ export async function POST(request: Request, { params }: Props) {
     const host = await prisma.host.findUnique({
       where: { supabaseUserId: user.id },
     });
-
     if (!host) {
       return NextResponse.json({ error: "Host not found" }, { status: 404 });
     }
@@ -44,7 +57,6 @@ export async function POST(request: Request, { params }: Props) {
     const board = await prisma.board.findUnique({
       where: { boardId: id },
     });
-
     if (!board || board.hostId !== host.id) {
       return NextResponse.json({ error: "Board not found" }, { status: 404 });
     }
@@ -57,40 +69,63 @@ export async function POST(request: Request, { params }: Props) {
       );
     }
 
-    // 4. Atomic transition: open → closed with numbers assigned
+    // 4. 50/50 coin flip: randomly swap which team is on which axis
+    const swapTeams = Math.random() < 0.5;
+    const finalTeamRow =
+      swapTeams && board.teamRow && board.teamCol ? board.teamCol : board.teamRow;
+    const finalTeamCol =
+      swapTeams && board.teamRow && board.teamCol ? board.teamRow : board.teamCol;
+
+    // 5. Atomic transition: open → closed with numbers assigned, branched by gridType
     //    Single write with optimistic lock on status = "open".
     //    Race condition: two concurrent close requests → only one succeeds.
-    const rowNumbers = shuffleArray();
-    const colNumbers = shuffleArray();
+    if (board.gridType === "double") {
+      const rowPairs = shufflePairs();
+      const colPairs = shufflePairs();
 
-    // 50/50 coin flip: randomly swap which team is on which axis
-    const swapTeams = Math.random() < 0.5;
-    const finalTeamRow = swapTeams && board.teamRow && board.teamCol ? board.teamCol : board.teamRow;
-    const finalTeamCol = swapTeams && board.teamRow && board.teamCol ? board.teamRow : board.teamCol;
+      const { count } = await prisma.board.updateMany({
+        where: { boardId: id, status: "open" },
+        data: {
+          status: "closed",
+          rowPairs,
+          colPairs,
+          teamRow: finalTeamRow,
+          teamCol: finalTeamCol,
+        },
+      });
 
-    const { count } = await prisma.board.updateMany({
-      where: { boardId: id, status: "open" },
-      data: {
-        status: "closed",
-        rowNumbers,
-        colNumbers,
-        teamRow: finalTeamRow,
-        teamCol: finalTeamCol,
-      },
-    });
+      if (count === 0) {
+        return NextResponse.json(
+          { error: "Board was already closed by another request." },
+          { status: 409 }
+        );
+      }
 
-    if (count === 0) {
-      return NextResponse.json(
-        { error: "Board was already closed by another request." },
-        { status: 409 }
-      );
+      return NextResponse.json({ status: "closed", rowPairs, colPairs });
+    } else {
+      const rowNumbers = shuffleArray();
+      const colNumbers = shuffleArray();
+
+      const { count } = await prisma.board.updateMany({
+        where: { boardId: id, status: "open" },
+        data: {
+          status: "closed",
+          rowNumbers,
+          colNumbers,
+          teamRow: finalTeamRow,
+          teamCol: finalTeamCol,
+        },
+      });
+
+      if (count === 0) {
+        return NextResponse.json(
+          { error: "Board was already closed by another request." },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json({ status: "closed", rowNumbers, colNumbers });
     }
-
-    return NextResponse.json({
-      status: "closed",
-      rowNumbers,
-      colNumbers,
-    });
   } catch (error) {
     console.error("Close board error:", error);
     return NextResponse.json(

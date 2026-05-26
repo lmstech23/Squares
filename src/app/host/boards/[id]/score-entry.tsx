@@ -29,18 +29,16 @@ export default function ScoreEntry({
 
   // Track input values as strings so empty fields work cleanly
   const [inputsA, setInputsA] = useState<string[]>(() =>
-    periodLabels.map((_, i) =>
-      existingScoresA?.[i] !== undefined && existingScoresA?.[i] !== null
-        ? String(existingScoresA[i])
-        : ""
-    )
+    periodLabels.map((_, i) => {
+      const v = existingScoresA?.[i];
+      return v !== undefined && v !== null && v >= 0 ? String(v) : "";
+    })
   );
   const [inputsB, setInputsB] = useState<string[]>(() =>
-    periodLabels.map((_, i) =>
-      existingScoresB?.[i] !== undefined && existingScoresB?.[i] !== null
-        ? String(existingScoresB[i])
-        : ""
-    )
+    periodLabels.map((_, i) => {
+      const v = existingScoresB?.[i];
+      return v !== undefined && v !== null && v >= 0 ? String(v) : "";
+    })
   );
 
   function updateInput(
@@ -72,22 +70,24 @@ export default function ScoreEntry({
   }
 
   async function saveScores() {
-    // Build arrays — fill incomplete periods with existing values or 0
+    // Empty input → -1 sentinel ("not entered"). Filled input → the integer.
     const scoresA = periodLabels.map((_, i) => {
+      if (inputsA[i].trim() === "") return -1;
       const val = parseInt(inputsA[i], 10);
-      return isNaN(val) ? (existingScoresA?.[i] ?? 0) : val;
+      return isNaN(val) ? -1 : val;
     });
     const scoresB = periodLabels.map((_, i) => {
+      if (inputsB[i].trim() === "") return -1;
       const val = parseInt(inputsB[i], 10);
-      return isNaN(val) ? (existingScoresB?.[i] ?? 0) : val;
+      return isNaN(val) ? -1 : val;
     });
 
-    // Validate all values are non-negative
-    if (scoresA.some((v) => v < 0) || scoresB.some((v) => v < 0)) {
+    // Validate non-sentinel values are non-negative (-1 is the "not entered" sentinel)
+    if (scoresA.some((v) => v < -1) || scoresB.some((v) => v < -1)) {
       setError("Scores must be non-negative.");
       return;
     }
-
+    
     setSaving(true);
     setError("");
 

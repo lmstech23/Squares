@@ -50,17 +50,33 @@ export async function POST(request: Request, { params }: Props) {
       );
     }
 
-    // 3b. Belt-and-suspenders: numbers must actually exist
-    if (
-      !board.rowNumbers ||
-      !board.colNumbers ||
-      board.rowNumbers.length !== 10 ||
-      board.colNumbers.length !== 10
-    ) {
-      return NextResponse.json(
-        { error: "Board numbers have not been assigned yet." },
-        { status: 409 }
-      );
+    // 3b. Belt-and-suspenders: numbers must actually exist (varies by gridType)
+    if (board.gridType === "double") {
+      const rowPairs = board.rowPairs as number[][] | null;
+      const colPairs = board.colPairs as number[][] | null;
+      if (
+        !rowPairs ||
+        !colPairs ||
+        rowPairs.length !== 5 ||
+        colPairs.length !== 5
+      ) {
+        return NextResponse.json(
+          { error: "Board numbers have not been assigned yet." },
+          { status: 409 }
+        );
+      }
+    } else {
+      if (
+        !board.rowNumbers ||
+        !board.colNumbers ||
+        board.rowNumbers.length !== 10 ||
+        board.colNumbers.length !== 10
+      ) {
+        return NextResponse.json(
+          { error: "Board numbers have not been assigned yet." },
+          { status: 409 }
+        );
+      }
     }
 
     // 4. Parse + validate — arrays must match periodLabels length
@@ -86,14 +102,14 @@ export async function POST(request: Request, { params }: Props) {
       const a = body.scoresTeamA[i];
       const b = body.scoresTeamB[i];
 
-      if (!Number.isInteger(a) || a < 0 || !Number.isInteger(b) || b < 0) {
+      if (!Number.isInteger(a) || a < -1 || !Number.isInteger(b) || b < -1) {
         return NextResponse.json(
-          { error: `Invalid score at index ${i}. Scores must be non-negative integers.` },
+          { error: `Invalid score at index ${i}. Scores must be integers (-1 = not entered).` },
           { status: 400 }
         );
       }
     }
-
+    
     // 5. Save
     const updated = await prisma.board.update({
       where: { boardId: id },

@@ -15,6 +15,9 @@ interface BoardGridProps {
   squares: SquareData[];
   rowNumbers?: number[];
   colNumbers?: number[];
+  rowPairs?: number[][];
+  colPairs?: number[][];
+  gridType?: "standard" | "double";
   teamCol?: string;
   teamRow?: string;
   winnerPositions?: Set<number>;
@@ -24,73 +27,101 @@ export default function BoardGrid({
   squares,
   rowNumbers,
   colNumbers,
+  rowPairs,
+  colPairs,
+  gridType = "standard",
   teamCol,
   teamRow,
   winnerPositions,
 }: BoardGridProps) {
-  const hasNumbers = (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
+  const isDouble = gridType === "double";
+  const dim = isDouble ? 5 : 10;
+  const headerColWidth = isDouble ? "44px" : "32px";
+  const rowHeaderClass = isDouble ? "w-11" : "w-7";
+  const cellMinWidth = isDouble ? "min-w-[44px]" : "min-w-[28px]";
+
+  const hasNumbers = isDouble
+    ? (rowPairs?.length ?? 0) === 5 && (colPairs?.length ?? 0) === 5
+    : (rowNumbers?.length ?? 0) === 10 && (colNumbers?.length ?? 0) === 10;
+
+  // Render the label for a row or column header
+  const renderRowLabel = (i: number) => {
+    if (isDouble) {
+      const pair = rowPairs?.[i];
+      return pair ? pair.join(", ") : "";
+    }
+    return rowNumbers?.[i] ?? "";
+  };
+
+  const renderColLabel = (i: number) => {
+    if (isDouble) {
+      const pair = colPairs?.[i];
+      return pair ? pair.join(", ") : "";
+    }
+    return colNumbers?.[i] ?? "";
+  };
 
   return (
     <div className="overflow-x-auto w-fit mx-auto">
       {/* Team col label — above the grid */}
-        {teamCol && (
-          <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-8" : ""}`}>
+      {teamCol && (
+        <div className={`text-[10px] uppercase tracking-wider text-indigo-400 font-medium text-center mb-1 ${hasNumbers ? "ml-8" : ""}`}>
           {teamCol}
         </div>
       )}
 
       <div className="flex">
         {/* Team row label — rotated left of grid */}
-          {teamRow && (
-            <div className="flex flex-col mr-1">
-              {hasNumbers && <div className="h-6 mb-[3px]" />}
-              <div className="flex items-center justify-center flex-1">
-                <span
-                  className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
-                  style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
-                >
-                  {teamRow}
-                </span>
-              </div>
+        {teamRow && (
+          <div className="flex flex-col mr-1">
+            {hasNumbers && <div className="h-6 mb-[3px]" />}
+            <div className="flex items-center justify-center flex-1">
+              <span
+                className="text-[10px] uppercase tracking-wider text-indigo-400 font-medium"
+                style={{ writingMode: "vertical-lr", transform: "rotate(180deg)" }}
+              >
+                {teamRow}
+              </span>
             </div>
-          )}
+          </div>
+        )}
 
         <div
           className="inline-grid gap-1"
           style={{
             gridTemplateColumns: hasNumbers
-              ? `32px repeat(10, 1fr)`
-              : `repeat(10, 1fr)`,
+              ? `${headerColWidth} repeat(${dim}, 1fr)`
+              : `repeat(${dim}, 1fr)`,
           }}
         >
           {/* Column headers */}
           {hasNumbers && (
             <>
               <div />
-              {colNumbers?.map((num, i) => (
+              {Array.from({ length: dim }, (_, i) => (
                 <div
                   key={`col-${i}`}
                   className="flex items-center justify-center text-xs font-bold text-gray-400 h-7"
                 >
-                  {num}
+                  {renderColLabel(i)}
                 </div>
               ))}
             </>
           )}
 
           {/* Grid rows */}
-          {Array.from({ length: 10 }, (_, row) => (
+          {Array.from({ length: dim }, (_, row) => (
             <div key={`row-${row}`} className="contents">
               {/* Row header */}
               {hasNumbers && (
-                <div className="flex items-center justify-center text-xs font-bold text-gray-400 w-7">
-                  {rowNumbers?.[row]}
+                <div className={`flex items-center justify-center text-xs font-bold text-gray-400 ${rowHeaderClass}`}>
+                  {renderRowLabel(row)}
                 </div>
               )}
 
               {/* Squares in this row */}
-              {Array.from({ length: 10 }, (_, col) => {
-                const position = row * 10 + col;
+              {Array.from({ length: dim }, (_, col) => {
+                const position = row * dim + col;
                 const sq = squares[position];
                 if (!sq) return null;
 
@@ -101,7 +132,7 @@ export default function BoardGrid({
                 return (
                   <div
                     key={sq.squareId}
-                    className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-colors min-w-[28px] ${
+                    className={`aspect-square rounded-md flex items-center justify-center text-[10px] font-medium transition-colors ${cellMinWidth} ${
                       isWinner && isPaid
                         ? "bg-yellow-500/20 border-2 border-yellow-400 text-yellow-300 ring-1 ring-yellow-400/30"
                         : isPaid
