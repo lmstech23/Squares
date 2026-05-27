@@ -25,12 +25,9 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // ✅ Use getSession instead of getUser (critical fix)
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  const user = session?.user ?? null;
+ const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   // Protect /host routes
   if (!user && request.nextUrl.pathname.startsWith("/host")) {
