@@ -89,6 +89,12 @@ export default function NewBoardForm({ gridType }: NewBoardFormProps) {
 
   // hostCut interpretation depends on splitMode
   const hostCutRaw = parseFloat(hostCut);
+  const hostCutDollars =
+    splitMode === "$"
+      ? !isNaN(hostCutRaw)
+        ? hostCutRaw
+        : 0
+      : totalPotDollars * ((!isNaN(hostCutRaw) ? hostCutRaw : 0) / 100);
   const hostCutPercent =
     splitMode === "%"
       ? Math.round(hostCutRaw) || 0
@@ -99,10 +105,15 @@ export default function NewBoardForm({ gridType }: NewBoardFormProps) {
   const hostCutValid =
     splitMode === "%"
       ? !isNaN(hostCutRaw) && hostCutRaw >= 0 && hostCutRaw <= 50
-      : !isNaN(hostCutRaw) && hostCutRaw >= 0 && hostCutPercent <= 50;
+      : !isNaN(hostCutRaw) &&
+        hostCutRaw >= 0 &&
+        hostCutRaw <= totalPotDollars &&
+        hostCutPercent <= 50;
 
-  const playerPool = hostCutValid ? Math.round(totalPot * (1 - hostCutPercent / 100)) : 0; // cents
-  const playerPoolDollars = playerPool / 100;
+  const playerPoolDollars = hostCutValid
+    ? Math.max(0, totalPotDollars - hostCutDollars)
+    : 0;
+  const playerPool = Math.round(playerPoolDollars * 100); // cents
 
   // Payout total (sum of inputs in current mode)
   const payoutSum = periodLabels.reduce(
@@ -115,10 +126,31 @@ export default function NewBoardForm({ gridType }: NewBoardFormProps) {
       : playerPoolDollars > 0 && Math.abs(payoutSum - playerPoolDollars) <= 0.5;
 
   function updatePayout(label: string, value: string) {
-    const num = parseFloat(value);
-    setPayouts((p) => ({ ...p, [label]: isNaN(num) ? 0 : num }));
-  }
+    const parsed = parseFloat(value);
+    const requested = isNaN(parsed) ? 0 : Math.max(0, parsed);
 
+    if (splitMode === "$") {
+      const sumOtherPeriods = periodLabels.reduce(
+        (sum, period) => sum + (period === label ? 0 : payouts[period] ?? 0),
+        0
+      );
+      const maxForThisPeriod = Math.max(0, totalPotDollars - sumOtherPeriods);
+      const nextAmount = Math.min(requested, maxForThisPeriod);
+      const nextPayouts = { ...payouts, [label]: nextAmount };
+      const nextPayoutSum = periodLabels.reduce(
+        (sum, period) => sum + (nextPayouts[period] ?? 0),
+        0
+      );
+      const nextHostCut = Math.max(0, totalPotDollars - nextPayoutSum);
+
+      setPayouts(nextPayouts);
+      setHostCut(String(Math.round(nextHostCut * 100) / 100));
+      setError(requested > maxForThisPeriod ? "Payouts exceed total pot." : null);
+    } else {
+      setPayouts({ ...payouts, [label]: requested });
+    }
+  }
+  
   // PHASE 1: change sport — reset payouts to even split for new period structure
   function changeSport(next: SportType) {
     setSportType(next);
@@ -196,15 +228,19 @@ export default function NewBoardForm({ gridType }: NewBoardFormProps) {
       setPayouts(defaultPayoutsForSport(sportType));
     } else if (playerPoolDollars > 0) {
       const each = Math.floor(playerPoolDollars / periodLabels.length);
-      const last = playerPoolDollars - each * (periodLabels.length - 1);
       const out: Record<string, number> = {};
-      periodLabels.forEach((l, i) => {
-        out[l] = i === periodLabels.length - 1 ? last : each;
+      periodLabels.forEach((l) => {
+        out[l] = each;
       });
+
+      const assigned = each * periodLabels.length;
+      const nextHostCut = totalPotDollars - assigned;
+
       setPayouts(out);
+      setHostCut(String(Math.round(nextHostCut * 100) / 100));
     }
   }
-
+  
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!gameName.trim() || !teamCol.trim() || !teamRow.trim()) {
@@ -508,6 +544,7 @@ export default function NewBoardForm({ gridType }: NewBoardFormProps) {
             Assigned: ${payoutSum.toFixed(2)} of ${playerPoolDollars.toFixed(2)}
             {!payoutValid && playerPoolDollars > 0 && ` — must equal $${playerPoolDollars.toFixed(2)}`}
             {playerPoolDollars <= 0 && " — set price and your cut first"}
+            {payoutValid && " · editing payouts updates your cut"}
           </p>
         )}
       </div>
