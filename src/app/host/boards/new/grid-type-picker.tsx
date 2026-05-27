@@ -20,7 +20,7 @@ export default function GridTypePicker({ onContinue, onCancel }: Props) {
           You can&apos;t switch after players start buying squares.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+        <div className="grid grid-cols-2 gap-3 mb-5">
           {/* Standard */}
           <button
             type="button"
@@ -32,7 +32,7 @@ export default function GridTypePicker({ onContinue, onCancel }: Props) {
             }`}
           >
             <div className="text-sm font-medium mb-2">Standard</div>
-            <div className="grid grid-cols-10 gap-px p-1.5 bg-gray-800 rounded mb-3">
+            <div className="grid grid-cols-10 gap-px p-1.5 bg-gray-800 rounded mb-3 w-32 mx-auto">
               {Array.from({ length: 100 }).map((_, i) => (
                 <div key={i} className="aspect-square bg-gray-700/40 rounded-sm" />
               ))}
@@ -54,7 +54,7 @@ export default function GridTypePicker({ onContinue, onCancel }: Props) {
             }`}
           >
             <div className="text-sm font-medium mb-2">Double</div>
-            <div className="grid grid-cols-5 gap-0.5 p-1.5 bg-gray-800 rounded mb-3">
+            <div className="grid grid-cols-5 gap-0.5 p-1.5 bg-gray-800 rounded mb-3 w-32 mx-auto">
               {Array.from({ length: 25 }).map((_, i) => (
                 <div key={i} className="aspect-square bg-gray-700/40 rounded-sm" />
               ))}
