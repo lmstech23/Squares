@@ -11,6 +11,7 @@ import CashReservePanel from "./cash-reserve-panel";
 import SquareList from "./square-list";
 import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
+import EditDetailsButton from "./edit-details-button";
 export const dynamic = "force-dynamic";
 
 
@@ -111,12 +112,21 @@ export default async function HostBoardPage({ params }: Props) {
           <p className="text-sm text-gray-500 mt-0.5">
             ${board.squarePrice / 100} per square · ${totalPot} total pot
           </p>
-          {(board.teamCol || board.teamRow) && (
+         {(board.teamCol || board.teamRow) && (
             <p className="text-xs text-gray-600 mt-0.5">
               {board.teamCol} vs {board.teamRow}
             </p>
           )}
+          <div className="mt-2">
+            <EditDetailsButton
+              boardId={board.boardId}
+              gameName={board.gameName}
+              teamCol={board.teamCol ?? ""}
+              teamRow={board.teamRow ?? ""}
+            />
+          </div>
         </div>
+        
         <span
           className={`text-xs px-2.5 py-1 rounded-full font-medium ${
             isOpen
