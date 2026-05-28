@@ -2,14 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // ============================================================
-// CRON: Release expired squares (Stripe + Cash)
+// CRON: Release expired Stripe checkouts
 //
-// Handles TWO expiration scenarios:
-// 1. Stripe checkouts: pending squares where checkout_expires_at has passed
-// 2. Cash reservations: reserved_cash squares where checkout_expires_at has passed
-//
-// Both use the same checkout_expires_at field. The TTL is set at
-// reservation time based on the board's cashReservationTtlMins.
+// Releases pending card squares where checkout_expires_at has passed.
+// Cash reservations no longer auto-expire — hosts release them at their discretion.
 //
 // Runs every 5 minutes via Vercel Cron.
 //
@@ -51,33 +47,14 @@ export async function GET(request: Request) {
       },
     });
 
-    // 2. Release expired cash reservations (reserved_cash → open)
-    //    "Earl said he'd bring the cash... 20 minutes ago."
-    const { count: cashReleased } = await prisma.square.updateMany({
-      where: {
-        paymentStatus: "reserved_cash",
-        checkoutExpiresAt: { lt: now },
-      },
-      data: {
-        paymentStatus: "open",
-        paymentMethod: "stripe", // reset to default
-        playerName: null,
-        playerEmail: null,
-        stripePaymentId: null,
-        checkoutExpiresAt: null,
-        releaseReason: "expired",
-      },
-    });
-
-    if (stripeReleased > 0 || cashReleased > 0) {
+    if (stripeReleased > 0) {
       console.log(
-        `Cron: released ${stripeReleased} expired Stripe checkout(s), ${cashReleased} expired cash reservation(s)`
+        `Cron: released ${stripeReleased} expired Stripe checkout(s)`
       );
     }
-
+    
     return NextResponse.json({
       stripeReleased,
-      cashReleased,
       timestamp: now.toISOString(),
     });
   } catch (error) {

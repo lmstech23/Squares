@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 //
 // Reserves all selected squares. Skips any no longer available.
 // Host must still tap "Mark Cash Received" to confirm each one.
-// Auto-expires after board.cashReservationTtlMins if host doesn't confirm.
+// No auto-expiry — hosts release reservations at their discretion.
 // ============================================================
 
 interface CashReserveBody {
@@ -56,7 +56,7 @@ export async function POST(
         cashModeEnabled: true,
         cashPin: true,
         squarePrice: true,
-        cashReservationTtlMins: true,
+
       },
     });
 
@@ -84,12 +84,7 @@ export async function POST(
         { status: 403 }
       );
     }
-
-    const expiresAt = new Date(
-      Date.now() + board.cashReservationTtlMins * 60 * 1000
-    );
-
-    const reserved: string[] = [];
+      const reserved: string[] = [];
     const unavailable: string[] = [];
 
     // Reserve each square — skip any that are no longer open
@@ -110,7 +105,7 @@ export async function POST(
           playerPayoutHandle: body.playerPayoutHandle?.trim() || null,
           smsOptIn: body.smsOptIn ?? false,
           stripePaymentId: null,
-          checkoutExpiresAt: expiresAt,
+          checkoutExpiresAt: null,
           releaseReason: null,
         },
       });
@@ -134,11 +129,11 @@ export async function POST(
       reserved,
       unavailable,
       playerName: name,
-      expiresAt: expiresAt.toISOString(),
+      
       message:
         unavailable.length > 0
           ? `${reserved.length} square(s) reserved. ${unavailable.length} were already taken.`
-          : "Squares reserved! Send the amount owed to the host to secure your square. Unpaid squares will be released.",
+          : "Squares reserved! Send payment to your host — your square locks once host confirms.",
     });
   } catch (error) {
     console.error("Cash reserve error:", error);

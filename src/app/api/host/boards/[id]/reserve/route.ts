@@ -10,7 +10,7 @@ import { getHost } from "@/lib/auth";
 //
 // Sets square to reserved_cash (NOT paid).
 // Host must separately confirm cash received via /confirm-cash.
-// Auto-expires after board.cashReservationTtlMins if unconfirmed.
+// No auto-expiry — host releases reservations at their discretion.
 // ============================================================
 
 interface ReserveBody {
@@ -47,8 +47,7 @@ export async function POST(
         hostId: true,
         status: true,
         squarePrice: true,
-        cashReservationTtlMins: true,
-      },
+       },
     });
 
     if (!board || board.hostId !== host.id) {
@@ -61,11 +60,6 @@ export async function POST(
         { status: 409 }
       );
     }
-
-    // Set TTL for cash reservation auto-expiry
-    const expiresAt = new Date(
-      Date.now() + board.cashReservationTtlMins * 60 * 1000
-    );
 
     // Atomic lock: only reserve if square is currently open
     const { count } = await prisma.square.updateMany({
@@ -80,7 +74,7 @@ export async function POST(
         playerName: name,
         playerEmail: null,
         stripePaymentId: null,
-        checkoutExpiresAt: expiresAt,
+        checkoutExpiresAt: null,
         releaseReason: null,
       },
     });
@@ -96,9 +90,7 @@ export async function POST(
       success: true,
       squareId,
       playerName: name,
-      expiresAt: expiresAt.toISOString(),
-      ttlMinutes: board.cashReservationTtlMins,
-    });
+     });
   } catch (error) {
     console.error("Host reserve error:", error);
     return NextResponse.json(

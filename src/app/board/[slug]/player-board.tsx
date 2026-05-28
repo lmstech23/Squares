@@ -541,6 +541,103 @@ export default function PlayerBoard({
       </div>
 
       {/* ============================================================
+          PAYMENT & PAYOUTS SECTION
+          ============================================================ */}
+      {(stripeConnected || cashModeEnabled || hostVenmo || hostZelle || hostCashapp || hostPaypal) && (
+        <div className="mt-6 rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-800 bg-gray-900/60">
+            <h3 className="text-sm font-medium text-gray-200">Payment & Payouts</h3>
+          </div>
+
+          <div className="p-4">
+            {/* Buying a square — only when board is open and at least one method */}
+            {isOpen && (stripeConnected || cashModeEnabled) && (
+              <>
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium mb-2.5">
+                  Buying a square
+                </p>
+
+                {stripeConnected && (
+                  <div className="flex gap-2.5 items-start mb-3">
+                    <span className="text-base leading-tight mt-0.5">💳</span>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      <span className="text-gray-200 font-medium">Pay with card.</span>{" "}
+                      Tap any open square, fill in your info, and check out securely with a credit or debit card. Your square locks instantly.
+                    </p>
+                  </div>
+                )}
+
+                {cashModeEnabled && (
+                  <div className="flex gap-2.5 items-start">
+                    <span className="text-base leading-tight mt-0.5">💵</span>
+                    <p className="text-xs text-gray-400 leading-relaxed">
+                      <span className="text-gray-200 font-medium">Pay the host directly.</span>{" "}
+                      This does not have to be physical cash. It may include Zelle, CashApp, Venmo, PayPal, Apple Cash, or cash in person. Tap a square, choose the Cash / Direct Pay option, enter the 4-digit PIN your host gave you, then send payment using the host&apos;s instructions. Your square is locked once the host confirms payment.
+                    </p>
+                  </div>
+                )}
+
+                {cashModeEnabled && (hostVenmo || hostZelle || hostCashapp || hostPaypal) && (
+                  <div className="mt-2.5 ml-7 flex flex-wrap gap-1.5">
+                    {hostZelle && (
+                      <span className="inline-flex gap-1 text-xs bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+                        <span className="text-indigo-400">Zelle</span>
+                        <span className="text-gray-200 font-medium">{hostZelle}</span>
+                      </span>
+                    )}
+                    {hostCashapp && (
+                      <span className="inline-flex gap-1 text-xs bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+                        <span className="text-indigo-400">CashApp</span>
+                        <span className="text-gray-200 font-medium">{hostCashapp}</span>
+                      </span>
+                    )}
+                    {hostVenmo && (
+                      <span className="inline-flex gap-1 text-xs bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+                        <span className="text-indigo-400">Venmo</span>
+                        <span className="text-gray-200 font-medium">{hostVenmo}</span>
+                      </span>
+                    )}
+                    {hostPaypal && (
+                      <span className="inline-flex gap-1 text-xs bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+                        <span className="text-indigo-400">PayPal</span>
+                        <span className="text-gray-200 font-medium">{hostPaypal}</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* If you win */}
+            <div className={isOpen && (stripeConnected || cashModeEnabled) ? "mt-4 pt-3 border-t border-gray-800/60" : ""}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-medium mb-2">
+                If you win
+              </p>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Your host sends your payout using the payment preference you selected when buying your square.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
+          HOW 5×5 WORKS SECTION — only for Double boards
+          ============================================================ */}
+      {isDouble && (
+        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-800 bg-gray-900/60">
+            <h3 className="text-sm font-medium text-gray-200">How 5×5 works</h3>
+          </div>
+          <div className="p-4">
+            <p className="text-xs text-gray-400 leading-relaxed">
+              This board has 25 squares instead of 100. Each row and column covers two numbers. After the board closes, the host reveals the number pairs. If the final digit of each team&apos;s score lands in your row and column, your square wins.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================
           FLOATING CHECKOUT BAR — appears when squares selected, before modal
           ============================================================ */}
       {selectedCount > 0 && !showModal && isOpen && (
@@ -591,7 +688,7 @@ export default function PlayerBoard({
                 <div className="text-center py-4">
                   <div className="text-3xl mb-2">✓</div>
                   <p className="text-sm font-medium text-green-300">Square reserved!</p>
-                  <p className="text-xs text-gray-500 mt-1">Hand your cash to the host to confirm.</p>
+                  <p className="text-xs text-gray-500 mt-1">Send payment to your host. Your square locks once they confirm.</p>
                   <button
                     onClick={() => window.location.reload()}
                     className="mt-4 rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
@@ -641,7 +738,7 @@ export default function PlayerBoard({
                         onClick={() => { setPaymentMode("cash"); setError(""); }}
                         className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${paymentMode === "cash" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
                       >
-                        💵 Cash
+                        💵 Cash / Direct Pay
                       </button>
                     </div>
                   )}
