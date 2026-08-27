@@ -53,11 +53,11 @@ export default async function HostBoardPage({ params }: Props) {
     notFound();
   }
 
-  // Inline cleanup: release expired pending squares on page load
+  // Inline cleanup: release expired Stripe checkouts on page load (cash reservations stay until host acts)
   await prisma.square.updateMany({
     where: {
       boardId: board.boardId,
-      paymentStatus: { in: ["pending", "reserved_cash"] },
+      paymentStatus: "pending",
       checkoutExpiresAt: { lt: new Date() },
     },
     data: {

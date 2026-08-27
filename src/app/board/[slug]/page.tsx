@@ -54,7 +54,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
   await prisma.square.updateMany({
     where: {
       boardId: board.boardId,
-      paymentStatus: { in: ["pending", "reserved_cash"] },
+      paymentStatus: "pending",
       checkoutExpiresAt: { lt: new Date() },
     },
     data: {

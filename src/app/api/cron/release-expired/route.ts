@@ -25,22 +25,7 @@ export async function GET(request: Request) {
     },
   });
 
-  // 2. Release unconfirmed cash reservations
-  const releasedCash = await prisma.square.updateMany({
-    where: {
-      paymentStatus: "reserved_cash",
-      checkoutExpiresAt: { lt: now },
-    },
-    data: {
-      paymentStatus: "open",
-      playerName: null,
-      playerEmail: null,
-      checkoutExpiresAt: null,
-      releaseReason: "expired",
-    },
-  });
-
-  // 3. Expire unpaid boards past their TTL
+  // 2. Expire unpaid boards past their TTL
   const expiredBoards = await prisma.board.updateMany({
     where: {
       status: "pending_payment",
@@ -54,7 +39,6 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     releasedStripe: releasedStripe.count,
-    releasedCash: releasedCash.count,
     expiredBoards: expiredBoards.count,
   });
 }
