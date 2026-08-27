@@ -1,8 +1,8 @@
 # Squares — System Flow Document
 
-Last updated: May 4, 2026
+Last updated: Aug 27, 2026
 
-This is the single source of truth for how the application works. Every screen, every redirect, every conditional. If it's not in this document, it doesn't exist. If this document says one thing and the code says another, fix the code.
+This is the single source of truth for how **Game Day** works. Every screen, every redirect, every conditional. If it's not in this document, it doesn't exist. If this document says one thing and the code says another, fix the code.
 
 ---
 
@@ -18,11 +18,15 @@ This is the single source of truth for how the application works. Every screen, 
 
 **Player Experience:** Player opens a link, sees the grid, taps a square. They only see payment options that work — card if Stripe is set up, cash if cash mode is on, both if both exist. No mention of what's missing. Card goes through Stripe. Cash requires the host's PIN.
 
-**Payment Processing:** Stripe webhooks handle payment confirmations and expirations. A cron job runs every 5 minutes to clean up abandoned checkouts and unconfirmed cash reservations.
+**Payment Processing:** Stripe webhooks handle payment confirmations and expirations. A cron job runs every 5 minutes to clean up abandoned card checkouts. Cash reservations do not expire — the host releases them.
 
 **Database Fields:** Key fields on Host (payment preference, credits, Stripe status), Board (status, cash mode, PIN), and Square (payment status, payment method).
 
 **Rules:** Stripe is optional. Cash is first-class. Players see what's available. Board creation is never blocked. Document first, code second.
+
+**Fundraiser boards:** A second board type with its own flow, specified in `fundraiser-board-v2.md`. Money and drawing eligibility are governed by `fundraiser-money-state-machine.md`. Optional event admission is governed by `fundraiser-admission-addendum.md`.
+
+**This document does not cover fundraiser flows, and the document-first rule is satisfied for fundraiser work by writing in v2 first.** See v2 §17. The backfill of fundraiser flows into this document is a deferred ticket and blocks nothing. This document remains the authority for Game Day.
 
 ---
 
@@ -237,6 +241,16 @@ The form should also display the resulting total pot (price × N where N = 100 f
 - Host can confirm cash received (reserved_cash → paid)
 - Host can release cash squares back to open
 
+**On a fundraiser board with an event attached, confirming does three things in one transaction, not one:**
+
+```
+square              -> paid          (drawing eligibility follows from this)
+event supporter     -> active
+admission passes    -> minted (N = declaredCount)
+```
+
+Drawing eligibility is derived from the square being `paid`, not a separate write — see `fundraiser-money-state-machine.md` §5. A developer who reads "confirm sets paid" and implements exactly that ships a gate that admits nobody. See `fundraiser-admission-addendum.md` §4. Game Day boards are unaffected.
+
 ### Enter Scores (when board is closed)
 - Enter scores per period for each team
 - Winners auto-calculated:
@@ -313,8 +327,9 @@ The form should also display the resulting total pot (price × N where N = 100 f
 
 **What it does:**
 1. Release squares where `payment_status = pending` AND `checkout_expires_at < NOW()` (Stripe abandonment)
-2. Release squares where `payment_status = reserved_cash` AND `checkout_expires_at < NOW()` (cash never confirmed)
-3. Expire boards where `status = pending_payment` AND `pending_expires_at < NOW()`
+2. Expire boards where `status = pending_payment` AND `pending_expires_at < NOW()`
+
+**Cash reservations are never auto-released.** They stay reserved until the host confirms or releases them. The same applies to the inline cleanup on the player and host board pages, which sweeps `pending` only.
 
 All operations are idempotent.
 
@@ -350,6 +365,13 @@ All operations are idempotent.
 |-------|---------|
 | `paymentStatus` | `open`, `pending`, `paid`, `reserved_cash` |
 | `paymentMethod` | `stripe` or `cash` |
+
+### Fundraiser and admission tables
+
+Not duplicated here. `Board` and `Square` gain **no** admission columns, and there is no `Ticket` table — a drawing ticket is derived (money doc §5).
+
+Fundraiser: see `fundraiser-board-v2.md` §3.
+Admission: `Event`, `EventSupporter`, `AdmissionGrant`, `AdmissionPass`, `CheckInLog`, `VolunteerAccess`, `AttendanceAccessToken` — see `fundraiser-admission-addendum.md` §2.
 
 ---
 
