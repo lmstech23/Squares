@@ -126,31 +126,28 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
     if (sp.success === "true" && sp.session_id) {
       const purchased = await prisma.square.findMany({
         where: { boardId: board.boardId, checkoutSessionId: sp.session_id },
-        select: { position: true, paymentStatus: true, batchId: true },
+        select: { squareId: true, position: true, paymentStatus: true },
         orderBy: { position: "asc" },
       });
 
       if (purchased.length > 0) {
         // One confirmed square mints one admission pass — addendum v2.0 §1.
-        // No passes exist until A8, so the count comes from the confirmed
-        // squares in this purchase rather than from AdmissionPass rows.
-        const confirmedHere = purchased.filter(
-          (sq) => sq.paymentStatus === "paid"
-        );
-
-        let donated = false;
-        const batchId = purchased[0].batchId;
-        if (board.event && batchId) {
-          const grant = await prisma.admissionGrant.findUnique({
-            where: { squareBatchId: batchId },
-            select: { donateAdmissions: true },
-          });
-          donated = grant?.donateAdmissions ?? false;
-        }
+        // Counted from the passes that actually exist rather than inferred
+        // from square count, so the receipt can never name something the
+        // supporter does not hold. A donated purchase mints none and the
+        // count is naturally zero.
+        const passes = board.event
+          ? await prisma.admissionPass.count({
+              where: {
+                squareId: { in: purchased.map((sq) => sq.squareId) },
+                status: { in: ["active", "used"] },
+              },
+            })
+          : 0;
 
         confirmation = {
           positions: purchased.map((sq) => sq.position + 1),
-          admissionPasses: donated ? 0 : confirmedHere.length,
+          admissionPasses: passes,
           hasEvent: board.event != null,
         };
       }

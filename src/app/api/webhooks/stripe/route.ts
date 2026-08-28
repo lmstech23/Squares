@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { confirmSquares } from "@/lib/confirm-square";
 import Stripe from "stripe";
 import { sendEmail } from "@/lib/email";
 
@@ -133,20 +134,16 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   try {
     await prisma.$transaction(async (tx) => {
       // Update all squares in this session
-      const { count } = await tx.square.updateMany({
-        where: {
-          squareId: { in: squareIds },
-          paymentStatus: "pending",
-          stripePaymentId: session.id,
-        },
-        data: {
-          paymentStatus: "paid",
-          checkoutExpiresAt: null,
-          releaseReason: null,
-        },
-      });
+      // Shared with the cash confirm route and the hold-resolution cron.
+      // Minting lives inside this call, so no path can confirm without it.
+      const { confirmedSquareIds } = await confirmSquares(
+        tx,
+        squareIds,
+        "pending",
+        { stripePaymentId: session.id }
+      );
 
-      if (count === 0) {
+      if (confirmedSquareIds.length === 0) {
         throw new Error("STATE_MISMATCH");
       }
 

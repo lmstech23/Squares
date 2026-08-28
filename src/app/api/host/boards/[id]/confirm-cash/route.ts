@@ -15,6 +15,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { confirmSquares } from "@/lib/confirm-square";
 import { getHost } from "@/lib/auth";
 import { sendEmail } from "@/lib/email";
 
@@ -52,20 +53,18 @@ export async function POST(
       return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
 
-    // Atomic: only confirm if still reserved_cash
-    const { count } = await prisma.square.updateMany({
-      where: {
-        squareId,
+    // Atomic: only confirm if still reserved_cash. Shared with the Stripe
+    // webhook and the cron, so a direct payment mints passes exactly as a card
+    // payment does — the failure this prevents is card contributors getting
+    // passes and cash contributors not.
+    const { confirmedSquareIds } = await prisma.$transaction((tx) =>
+      confirmSquares(tx, [squareId], "reserved_cash", {
         boardId,
-        paymentStatus: "reserved_cash",
         paymentMethod: "cash",
-      },
-      data: {
-        paymentStatus: "paid",
-        checkoutExpiresAt: null,
-        releaseReason: null,
-      },
-    });
+      })
+    );
+
+    const count = confirmedSquareIds.length;
 
     if (count === 0) {
       return NextResponse.json(

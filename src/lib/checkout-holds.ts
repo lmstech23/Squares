@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { releaseAdmissionForBatch } from "@/lib/admission";
+import { confirmSquares } from "@/lib/confirm-square";
 
 // Resolve-then-release — fundraiser-money-state-machine.md §3, invariants 18–20.
 //
@@ -182,15 +183,16 @@ export async function resolveHoldBatch(
     }
 
     if (paid) {
-      // Confirm the full batch. Idempotent: if the webhook already flipped
-      // these, the updateMany matches nothing and nothing happens.
-      //
-      // A8 adds admission minting to confirmation. When it does, this and
-      // the webhook must call one shared function rather than two that drift.
-      await prisma.square.updateMany({
-        where: { batchId, paymentStatus: "pending" },
-        data: { paymentStatus: "paid", holdExpiresAt: null },
-      });
+      // Confirm the full batch through the shared path, so minting happens
+      // here exactly as it does in the webhook. Idempotent: if the webhook
+      // already flipped these, nothing is confirmed and nothing is minted.
+      await prisma.$transaction((tx) =>
+        confirmSquares(
+          tx,
+          squares.map((sq) => sq.squareId),
+          "pending"
+        )
+      );
       return { ...nil, confirmed: true };
     }
 
