@@ -191,8 +191,7 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Fundraising goal | Optional. Min $1 → `fundraisingGoalCents`. Shows a progress bar when set |
 | Early bird price | Optional. Min $1, must be below the standard price |
 | Early bird ends | Required if an early bird price is set. Date + time |
-| **Campaign closes** | **Required.** Date + time → `campaignEndsAt` |
-| Timezone | **Required.** IANA. One per board, covering all dated fields → `timezone` |
+| **Campaign closes** | **Required. Date only** → `campaignEndsAt`, stored as 11:59:59 PM Eastern |
 | Payment window | Default 7 days. Always shown on fundraiser boards — direct payment is always available. See §6C |
 | Payment handles | Venmo, Zelle, CashApp, PayPal. **At least one required** — this is how most contributors pay. §6C |
 
@@ -220,17 +219,35 @@ Helper text under the field, guidance only:
 
 `cashHoldDays` caps at close (invariant 6), so a close date sitting right against the event squeezes the window for confirming Zelle payments. **No validation enforces a gap.** The host decides.
 
-### One timezone per board
+### Dates, times, and the timezone
 
-A single selector covers early bird, campaign close, draw date, and event. Stored as `Board.timezone`; `Event.timezone` reads from it.
+**Two of the three dated fields are date-only. Only the event asks for a time.**
 
-The field was previously called `drawTimezone`, which was never accurate — it always described the board, and on a Phase A no-prize board there is no draw for it to belong to. Renamed before either migration is applied.
+| Field | Input | Stored as |
+|---|---|---|
+| Early bird ends | Date only | 11:59:59 PM Eastern on that date |
+| Campaign closes | Date only | 11:59:59 PM Eastern on that date |
+| Event date and time | Date **and** time | The time given, Eastern |
 
-**A separate event timezone is not supported.** A school fundraiser and its tailgate are in the same place. If a national organization ever needs otherwise, that is a second field and a doc change, not an assumption to build in now.
+A close date means the **end** of that day. Pick Oct 9 and a contributor clicking through at 4pm on the 9th makes it. That is the answer a host would give if asked, and it removes the midnight-boundary ambiguity that a bare date otherwise carries.
+
+The event keeps a time because a tailgate has a kickoff. 11:59 PM is meaningless for it.
+
+### Timezone: `America/New_York`, hardcoded
+
+No selector on the form. Phase A is a single-region product.
+
+**`America/New_York`, never a fixed −5 offset.** "EST" as a literal offset is wrong from March through November, and Hampton homecoming is in October — EDT, −4. A fixed offset would be an hour off for the entire season this runs in. The IANA zone handles the switch, which is what the conversion helper already takes.
+
+**Keep the `timezone` column**, defaulted to `America/New_York`. It exists, nothing writes to it if the form does not ask, and leaving it means adding a selector later is a form change rather than a migration.
+
+**Known limit:** a host outside Eastern gets close times shifted. Acceptable for Hampton. The fix is the selector this column is already waiting for.
 
 **`datetime-local` gives wall-clock time with no zone.** Parsing it on a UTC server silently shifts it — a 7pm New York close becomes 2pm. Conversion must be explicit and zone-aware. `campaignEndsAt` gates money and `cashHoldDays` caps against it, so this is not cosmetic.
 
 ### DST disambiguation
+
+Still required. Date-only fields resolve to 11:59:59 PM, which never lands in a DST gap or an ambiguous hour — but the event field takes an arbitrary time, and a fall campaign crosses a boundary. The helper stays as written.
 
 Two wall-clock times per year are not a single instant, and both must be resolved deliberately.
 
@@ -840,12 +857,22 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A4b | **Fundraiser host dashboard** (§9) + contributor confirmation page (§6) | ✅ |
 | A5 | Claim flow: quantity, picker, batching, `pricePaidCents`, **admission preparation** | ✅ |
 | A6 | Hold timer + resolve-then-release cron | ✅ |
+| A8 | **Admission activation** — shared `confirmSquare`, minting, backfill | — |
 | A7 | CLOSING + finalization — `finalRaisedCents` only | — |
-| A8 | Admission activation in the confirmation transaction | — |
 | A9 | Passes screen, host donate-flag toggle | — |
 | A10 | Volunteer surface, QR, roster, search, check-in, undo | — |
 
 **A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
+
+### A8 moved ahead of A7
+
+Minting happens at confirmation, and confirmation never runs again for a square. Every square confirmed before A8 ships is `paid`, carries a grant, and has no pass.
+
+Ship A8 after launch and you inherit three things: a backfill against live contributor money, a "here are your passes" email that would otherwise be unnecessary, and temporary receipt copy to unwind. Ship it before and none of them exist — the first contributor gets passes the moment they pay.
+
+A7 is not needed until the campaign closes weeks later, so it loses nothing by moving behind.
+
+**Until A8, the confirmation page says nothing about admission.** Not a promise of passes arriving later — a receipt that names something the person cannot see or click is worse than one that stays quiet, and temporary copy describing a delay would still be there in October, describing a delay that no longer exists.
 
 ### A4b was missing from this table
 

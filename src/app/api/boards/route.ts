@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { parseZoned } from "@/lib/zoned-time";
+import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { generateSlug } from "@/lib/slug";
 
 // ============================================================
@@ -52,6 +52,9 @@ type BoardType = "game" | "fundraiser";
 
 const VALID_SQUARE_COUNTS = [25, 50, 75, 100];
 
+/** Phase A is single-region — v2 §5. IANA, never a fixed offset. */
+const BOARD_TIMEZONE = "America/New_York";
+
 interface CreateBoardBody {
   gameName: string;
   sportType: SportType;
@@ -73,7 +76,6 @@ interface CreateBoardBody {
   causeDescription?: string | null;
   totalSquares?: number;
   fundraisingGoalCents?: number | null;
-  timezone?: string;
   campaignEndsAt?: string;
   earlyBirdPriceCents?: number | null;
   earlyBirdEndsAt?: string | null;
@@ -247,19 +249,19 @@ export async function POST(request: Request) {
         );
       }
 
-      const timezone = body.timezone?.trim();
-      if (!timezone) {
-        return NextResponse.json(
-          { error: "A timezone is required." },
-          { status: 400 }
-        );
-      }
+      // Phase A is single-region. Hardcoded rather than selected, and stored
+      // as an IANA zone rather than a fixed offset: "EST" as a literal -5
+      // would be an hour wrong from March through November, and homecoming is
+      // in October. The column stays, so adding a selector later is a form
+      // change rather than a migration. v2 §5.
+      const timezone = BOARD_TIMEZONE;
 
       // Campaign close is required on every fundraiser board, prize or not —
       // drawDate no longer doubles as the backstop (v2 §5).
-      // Deadline: the later occurrence, so nobody loses an hour they thought
-      // they had. v2 §5.
-      const campaignEndsAt = parseZoned(body.campaignEndsAt, timezone, "later");
+      // Date only. A close date means the end of that day, so it lands at
+      // 11:59:59 PM local — pick Oct 9 and someone clicking through at 4pm on
+      // the 9th makes it. v2 §5.
+      const campaignEndsAt = endOfDayZoned(body.campaignEndsAt, timezone);
       if (!campaignEndsAt) {
         return NextResponse.json(
           { error: "A campaign close date is required." },
@@ -285,7 +287,8 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        earlyBirdEndsAt = parseZoned(body.earlyBirdEndsAt, timezone, "later"); // deadline
+        // Date only, same end-of-day rule as campaign close.
+        earlyBirdEndsAt = endOfDayZoned(body.earlyBirdEndsAt, timezone);
         if (!earlyBirdEndsAt) {
           return NextResponse.json(
             { error: "Set a date for the early bird price to end." },

@@ -1,6 +1,6 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { parseZoned, tzOffsetMs, type Ambiguity } from "./zoned-time.ts";
+import { parseZoned, tzOffsetMs, endOfDayZoned, type Ambiguity } from "./zoned-time.ts";
 
 const NY = "America/New_York";
 const HOUR = 60 * 60 * 1000;
@@ -136,8 +136,12 @@ describe("parseZoned", () => {
     expectUtc("2026-10-24T19:00", "Pacific/Honolulu", "2026-10-25T05:00:00.000Z");
   });
 
-  test("seconds in the input are ignored, not misread", () => {
-    expectUtc("2026-07-01T12:00:45", NY, "2026-07-01T16:00:00.000Z");
+  test("seconds in the input are carried, not truncated", () => {
+    // They used to be discarded. endOfDayZoned needs 23:59:59 to mean exactly
+    // that, so seconds are now parsed. A datetime-local field never sends
+    // them, so nothing else changes.
+    expectUtc("2026-07-01T12:00:45", NY, "2026-07-01T16:00:45.000Z");
+    expectUtc("2026-07-01T12:00", NY, "2026-07-01T16:00:00.000Z");
   });
 
   test("returns null rather than a wrong date for bad input", () => {
@@ -163,5 +167,39 @@ describe("tzOffsetMs", () => {
     // offset comes out a full day wrong.
     const midnightUtc = new Date("2026-07-01T00:00:00Z");
     assert.equal(tzOffsetMs(midnightUtc, "UTC"), 0);
+  });
+});
+
+describe("endOfDayZoned", () => {
+  test("a date resolves to 11:59:59 PM local, not midnight", () => {
+    // Pick Oct 9 and someone clicking through at 4pm on the 9th makes it.
+    const d = parseZoned("2026-10-09T23:59:59", NY, "later")!;
+    assert.equal(endOfDayZoned("2026-10-09", NY)!.getTime(), d.getTime());
+    assert.equal(endOfDayZoned("2026-10-09", NY)!.toISOString(), "2026-10-10T03:59:59.000Z");
+  });
+
+  test("seconds are carried, not truncated to :00", () => {
+    const d = endOfDayZoned("2026-10-09", NY)!;
+    assert.equal(d.getUTCSeconds(), 59);
+  });
+
+  test("uses EDT in October and EST in December", () => {
+    // Homecoming is October — EDT, UTC-4. A fixed -5 offset would be an hour
+    // off for the entire season this runs in.
+    assert.equal(endOfDayZoned("2026-10-09", NY)!.toISOString(), "2026-10-10T03:59:59.000Z");
+    assert.equal(endOfDayZoned("2026-12-09", NY)!.toISOString(), "2026-12-10T04:59:59.000Z");
+  });
+
+  test("both DST transition days resolve cleanly", () => {
+    // 23:59:59 never falls in a gap or an ambiguous hour.
+    assert.ok(endOfDayZoned("2026-03-08", NY));
+    assert.ok(endOfDayZoned("2026-11-01", NY));
+  });
+
+  test("rejects anything that is not a bare date", () => {
+    assert.equal(endOfDayZoned("", NY), null);
+    assert.equal(endOfDayZoned(null, NY), null);
+    assert.equal(endOfDayZoned("2026-10-09T12:00", NY), null);
+    assert.equal(endOfDayZoned("10/09/2026", NY), null);
   });
 });

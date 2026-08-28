@@ -14,28 +14,9 @@ import { useRouter } from "next/navigation";
 
 const SQUARE_COUNTS = [25, 50, 75, 100];
 
-const TIMEZONES = [
-  { value: "America/New_York", label: "Eastern" },
-  { value: "America/Chicago", label: "Central" },
-  { value: "America/Denver", label: "Mountain" },
-  { value: "America/Phoenix", label: "Arizona" },
-  { value: "America/Los_Angeles", label: "Pacific" },
-  { value: "America/Anchorage", label: "Alaska" },
-  { value: "Pacific/Honolulu", label: "Hawaii" },
-];
-
 const inputClass =
   "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
 const labelClass = "block text-sm text-gray-400 mb-1.5";
-
-function detectTimezone(): string {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return TIMEZONES.some((t) => t.value === tz) ? tz : "America/New_York";
-  } catch {
-    return "America/New_York";
-  }
-}
 
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -60,7 +41,6 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   const [earlyBirdPrice, setEarlyBirdPrice] = useState("");
   const [earlyBirdEndsAt, setEarlyBirdEndsAt] = useState("");
   const [campaignEndsAt, setCampaignEndsAt] = useState("");
-  const [timezone, setTimezone] = useState(detectTimezone);
   const [cashHoldDays, setCashHoldDays] = useState("7");
 
   const [hasEvent, setHasEvent] = useState(false);
@@ -148,7 +128,6 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           totalSquares,
           squarePrice: priceCents,
           fundraisingGoalCents: goalCents,
-          timezone,
           campaignEndsAt,
           earlyBirdPriceCents: earlyCents,
           earlyBirdEndsAt: earlyBirdEndsAt || null,
@@ -321,11 +300,14 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
             </label>
             <input
               id="earlyBirdEndsAt"
-              type="datetime-local"
+              type="date"
               value={earlyBirdEndsAt}
               onChange={(e) => setEarlyBirdEndsAt(e.target.value)}
               className={inputClass}
             />
+            <p className="text-xs text-gray-600 mt-1.5">
+              The early price applies through 11:59 PM Eastern on this date.
+            </p>
           </div>
         )}
       </div>
@@ -337,32 +319,15 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         </label>
         <input
           id="campaignEndsAt"
-          type="datetime-local"
+          type="date"
           value={campaignEndsAt}
           onChange={(e) => setCampaignEndsAt(e.target.value)}
           className={inputClass}
         />
         <p className="text-xs text-gray-600 mt-1.5">
-          Cash reservations must be confirmed before this date.
+          Closes at 11:59 PM Eastern on this date. Direct payments must be
+          marked received before then.
         </p>
-      </div>
-
-      <div>
-        <label htmlFor="timezone" className={labelClass}>
-          Timezone
-        </label>
-        <select
-          id="timezone"
-          value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-          className={inputClass}
-        >
-          {TIMEZONES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
       </div>
 
       {isCashHost && (
@@ -426,7 +391,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
 
             <div>
               <label htmlFor="eventStartsAt" className={labelClass}>
-                Date and time
+                Date and time <span className="text-gray-600">(Eastern)</span>
               </label>
               <input
                 id="eventStartsAt"

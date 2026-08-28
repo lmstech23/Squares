@@ -87,11 +87,20 @@ export function parseZoned(
 ): Date | null {
   if (!value) return null;
 
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(value);
   if (!m) return null;
 
-  const [year, month, day, hour, minute] = m.slice(1).map(Number);
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) {
+  const [year, month, day, hour, minute] = m.slice(1, 6).map(Number);
+  const second = m[6] ? Number(m[6]) : 0;
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
     return null;
   }
 
@@ -99,7 +108,7 @@ export function parseZoned(
   // zone's offset. Which offset, though, is the whole question near a
   // transition, so both candidates are built and tested rather than guessed at
   // and corrected once.
-  const guess = Date.UTC(year, month - 1, day, hour, minute);
+  const guess = Date.UTC(year, month - 1, day, hour, minute, second);
 
   let offsetBefore: number;
   let offsetAfter: number;
@@ -138,4 +147,27 @@ export function parseZoned(
   }
 
   return Number.isNaN(result.getTime()) ? null : result;
+}
+
+/**
+ * The last instant of a calendar date in `timeZone` — 11:59:59 PM local.
+ *
+ * A close date means the end of that day. Pick October 9 and someone clicking
+ * through at 4pm on the 9th makes it, which is what a host would say if asked
+ * and removes the midnight-boundary ambiguity a bare date otherwise carries.
+ *
+ * `input` is "YYYY-MM-DD" from a `type="date"` field.
+ *
+ * DST is not a concern at this hour: 23:59:59 has never fallen inside a
+ * transition gap or an ambiguous repeated hour in any IANA zone, so the
+ * policy argument is inert here. It is passed as "later" anyway because these
+ * are deadlines, and because that stays correct if the input ever changes.
+ */
+export function endOfDayZoned(
+  input: string | null | undefined,
+  timeZone: string
+): Date | null {
+  if (!input) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return null;
+  return parseZoned(`${input}T23:59:59`, timeZone, "later");
 }
