@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
 // Admission — fundraiser-admission-addendum.md v2.0.
 //
@@ -111,4 +112,59 @@ export async function prepareAdmission(
     donateAdmissions,
   });
   return supporter;
+}
+
+/**
+ * Abandoned-claim cleanup — addendum §4.
+ *
+ * When a batch is released: if its grant has no remaining live squares, delete
+ * the grant; if the supporter is then `pending` with no grants left, delete the
+ * supporter. **Active supporters are never touched** — an active supporter owns
+ * passes, and passes outlive the campaign.
+ *
+ * Without this, every abandoned claim sits in the host's unpaid forecast
+ * permanently and she orders food for people who never paid.
+ *
+ * Keyed on "this grant has no live squares" rather than on the release event
+ * itself, because a batch can lose its squares without being released: the
+ * checkout merge path re-batches earlier squares onto a new id, which strips
+ * the old grant of squares while nothing is ever released. A cleanup that only
+ * fires on release would never reach those.
+ */
+export async function releaseAdmissionForBatch(
+  squareBatchId: string
+): Promise<{ grantsDeleted: number; supportersDeleted: number }> {
+  const grant = await prisma.admissionGrant.findUnique({
+    where: { squareBatchId },
+    select: { id: true, eventSupporterId: true },
+  });
+
+  if (!grant) return { grantsDeleted: 0, supportersDeleted: 0 };
+
+  // A square is "live" if it still exists in a state that could become paid,
+  // or already is. Released squares have had their batchId cleared, so this
+  // count naturally falls to zero once the batch is released.
+  const liveSquares = await prisma.square.count({
+    where: {
+      batchId: squareBatchId,
+      paymentStatus: { in: ["pending", "reserved_cash", "paid"] },
+    },
+  });
+
+  if (liveSquares > 0) return { grantsDeleted: 0, supportersDeleted: 0 };
+
+  await prisma.admissionGrant.delete({ where: { id: grant.id } });
+
+  const supporter = await prisma.eventSupporter.findUnique({
+    where: { id: grant.eventSupporterId },
+    select: { id: true, status: true, _count: { select: { grants: true } } },
+  });
+
+  // Active means she has passes. Never delete her, whatever else is true.
+  if (!supporter || supporter.status !== "pending" || supporter._count.grants > 0) {
+    return { grantsDeleted: 1, supportersDeleted: 0 };
+  }
+
+  await prisma.eventSupporter.delete({ where: { id: supporter.id } });
+  return { grantsDeleted: 1, supportersDeleted: 1 };
 }

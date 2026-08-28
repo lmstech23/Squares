@@ -469,7 +469,19 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ checkoutUrl: session.url });
+    return NextResponse.json({
+      checkoutUrl: session.url,
+      // The client renders its countdown against this server timestamp, never
+      // a local counter (money doc §3).
+      ...(isFundraiser
+        ? {
+            holdExpiresAt: expiresAt.toISOString(),
+            batchId,
+            positions: squares.map((sq) => sq.position).sort((a, b) => a - b),
+            squareIds,
+          }
+        : {}),
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "SQUARE_TAKEN") {
       return NextResponse.json(

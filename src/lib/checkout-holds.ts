@@ -1,0 +1,166 @@
+import { prisma } from "@/lib/prisma";
+import { stripe } from "@/lib/stripe";
+import { releaseAdmissionForBatch } from "@/lib/admission";
+
+// Resolve-then-release — fundraiser-money-state-machine.md §3, invariants 18–20.
+//
+// THE CRON DOES NOT RELEASE SQUARES. When a Daali hold expires it queues the
+// batch for resolution and runs this sequence:
+//
+//   hold expires → query the Stripe session
+//     complete / paid  → confirm the full batch, release nothing
+//     open / unpaid    → expire the Stripe session, THEN release the batch
+//
+// The ordering is the guarantee, not a nicety. Stripe's minimum session
+// lifetime is 30 minutes and the Daali hold is 10, so between minute 10 and
+// minute 30 a session is still capable of taking a payment. Releasing on
+// timestamp alone hands the square to someone else while the first
+// contributor's card can still succeed — and then two people own it and one of
+// them paid. Expiring the session first makes a released batch incapable of
+// producing a late payment, which is why there is no late-success recovery
+// path anywhere in this codebase (invariant 20).
+//
+// Game Day is untouched: it keeps releasing on timestamp, which is correct for
+// it because its hold and its Stripe session expire together.
+
+/** How many batches one cron pass will resolve. Keeps the run bounded. */
+const MAX_BATCHES_PER_RUN = 25;
+
+export interface ResolveResult {
+  batchesExamined: number;
+  batchesConfirmed: number;
+  batchesReleased: number;
+  squaresReleased: number;
+  grantsDeleted: number;
+  supportersDeleted: number;
+  errors: number;
+}
+
+/**
+ * Resolve every fundraiser card hold whose `holdExpiresAt` has passed.
+ *
+ * Safe to run concurrently with itself in the sense that it cannot double-pay
+ * or double-release: every write is a conditional `updateMany` that matches
+ * only squares still in the state it expects.
+ */
+export async function resolveExpiredHolds(now = new Date()): Promise<ResolveResult> {
+  const result: ResolveResult = {
+    batchesExamined: 0,
+    batchesConfirmed: 0,
+    batchesReleased: 0,
+    squaresReleased: 0,
+    grantsDeleted: 0,
+    supportersDeleted: 0,
+    errors: 0,
+  };
+
+  const expired = await prisma.square.findMany({
+    where: {
+      paymentStatus: "pending",
+      holdExpiresAt: { lt: now },
+      batchId: { not: null },
+      board: { boardType: "fundraiser" },
+    },
+    select: {
+      squareId: true,
+      batchId: true,
+      checkoutSessionId: true,
+      board: {
+        select: {
+          boardId: true,
+          host: { select: { stripeAccountId: true } },
+          event: { select: { id: true } },
+        },
+      },
+    },
+  });
+
+  // Group by batch. A batch confirms or releases together — partial
+  // confirmation is impossible on card (money doc §3).
+  const batches = new Map<string, typeof expired>();
+  for (const sq of expired) {
+    const list = batches.get(sq.batchId!) ?? [];
+    list.push(sq);
+    batches.set(sq.batchId!, list);
+  }
+
+  for (const [batchId, squares] of Array.from(batches).slice(0, MAX_BATCHES_PER_RUN)) {
+    result.batchesExamined++;
+    const first = squares[0];
+    const sessionId = squares.find((s) => s.checkoutSessionId)?.checkoutSessionId;
+    const stripeAccount = first.board.host.stripeAccountId;
+
+    try {
+      // No session recorded means checkout never got that far. There is
+      // nothing that could still pay, so the batch is safe to release.
+      let paid = false;
+
+      if (sessionId && stripeAccount) {
+        const session = await stripe.checkout.sessions.retrieve(sessionId, {
+          stripeAccount,
+        });
+        paid = session.status === "complete" || session.payment_status === "paid";
+
+        if (!paid) {
+          // Expire BEFORE releasing. If this throws we leave the squares held
+          // and try again next pass — a stuck hold is recoverable, a
+          // double-sold square is not.
+          if (session.status === "open") {
+            await stripe.checkout.sessions.expire(sessionId, { stripeAccount });
+          }
+        }
+      }
+
+      if (paid) {
+        // Confirm the full batch. Idempotent: if the webhook already flipped
+        // these, the updateMany matches nothing and nothing happens.
+        //
+        // A8 adds admission minting to confirmation. When it does, this and
+        // the webhook must call one shared function rather than two that drift.
+        await prisma.square.updateMany({
+          where: { batchId, paymentStatus: "pending" },
+          data: { paymentStatus: "paid", holdExpiresAt: null },
+        });
+        result.batchesConfirmed++;
+        continue;
+      }
+
+      // Release the whole batch, conditionally on it still being pending.
+      const released = await prisma.square.updateMany({
+        where: { batchId, paymentStatus: "pending" },
+        data: {
+          paymentStatus: "open",
+          playerName: null,
+          playerEmail: null,
+          playerPhone: null,
+          stripePaymentId: null,
+          checkoutSessionId: null,
+          checkoutExpiresAt: null,
+          holdExpiresAt: null,
+          batchId: null,
+          pricePaidCents: null,
+          releaseReason: "expired",
+        },
+      });
+
+      if (released.count > 0) {
+        result.batchesReleased++;
+        result.squaresReleased += released.count;
+      }
+
+      // Abandoned-claim cleanup — addendum §4.
+      if (first.board.event) {
+        const cleaned = await releaseAdmissionForBatch(batchId);
+        result.grantsDeleted += cleaned.grantsDeleted;
+        result.supportersDeleted += cleaned.supportersDeleted;
+      }
+    } catch (error) {
+      // One bad batch must not stop the rest. Its squares stay held and the
+      // next pass tries again.
+      console.error(`Hold resolution failed for batch ${batchId}:`, error);
+      result.errors++;
+    }
+  }
+
+  return result;
+}

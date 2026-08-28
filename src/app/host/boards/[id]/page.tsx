@@ -59,6 +59,10 @@ export default async function HostBoardPage({ params }: Props) {
       boardId: board.boardId,
       paymentStatus: "pending",
       checkoutExpiresAt: { lt: new Date() },
+      // Game Day only. A fundraiser hold must be resolved against Stripe
+      // before release (invariant 18), which the cron does — a page render is
+      // the wrong place to be expiring payment sessions.
+      board: { boardType: "game" },
     },
     data: {
       paymentStatus: "open",

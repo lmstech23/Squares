@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import FundraiserGrid from "./fundraiser-grid";
 import ClaimSheet from "./claim-sheet";
+import HoldTimer from "./hold-timer";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
 //
@@ -82,6 +83,45 @@ export default function FundraiserView({
   stripeConnected,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
+  const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
+
+  // A hold this browser started, remembered at claim time. The server
+  // timestamp is the truth; this is only how we know to show a countdown to
+  // someone who came back from Stripe without paying.
+  const [hold, setHold] = useState<{
+    holdExpiresAt: string;
+    squareIds: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(`daali-hold-${slug}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      // Drop a hold that expired long enough ago that the cron has certainly
+      // resolved it — showing a stale countdown is worse than showing none.
+      if (new Date(parsed.holdExpiresAt).getTime() < Date.now() - 15 * 60_000) {
+        sessionStorage.removeItem(`daali-hold-${slug}`);
+        return;
+      }
+      // sessionStorage cannot be read during SSR or from a state initializer
+      // without risking a hydration mismatch, so a one-shot read after mount
+      // is the only correct option here. Runs once per slug, sets state once.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHold(parsed);
+    } catch {
+      // Unreadable or disabled storage — no countdown, nothing broken.
+    }
+  }, [slug]);
+
+  function clearHold() {
+    try {
+      sessionStorage.removeItem(`daali-hold-${slug}`);
+    } catch {
+      // Nothing to do — the banner is dismissed either way.
+    }
+    setHold(null);
+  }
   // The schedule line renders only while the early bird price is still in
   // effect. Once the changeover has passed there is one price again, and
   // saying "through Sept 15, then $30" about a date in the past is noise.
@@ -150,6 +190,20 @@ export default function FundraiserView({
           {openCount} {openCount === 1 ? "square" : "squares"} left
         </p>
 
+        {hold && (
+          <div className="mt-5">
+            <HoldTimer
+              expiresAt={hold.holdExpiresAt}
+              onReclaim={() => {
+                setReclaim(hold.squareIds);
+                clearHold();
+                setClaiming(true);
+              }}
+              onDismiss={clearHold}
+            />
+          </div>
+        )}
+
         {/* What do I do */}
         <div className="mt-5">
           <button
@@ -180,7 +234,15 @@ export default function FundraiserView({
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
             slug={slug}
-            onClose={() => setClaiming(false)}
+            initialPicked={reclaim?.filter((id) =>
+              squares.some(
+                (sq) => sq.squareId === id && sq.paymentStatus === "open"
+              )
+            )}
+            onClose={() => {
+              setClaiming(false);
+              setReclaim(undefined);
+            }}
           />
         )}
       </div>

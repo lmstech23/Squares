@@ -28,6 +28,8 @@ interface Props {
   cashModeEnabled: boolean;
   stripeConnected: boolean;
   slug: string;
+  /// Squares to preselect — used when re-claiming after a hold expired.
+  initialPicked?: string[];
   onClose: () => void;
 }
 
@@ -49,11 +51,12 @@ export default function ClaimSheet({
   cashModeEnabled,
   stripeConnected,
   slug,
+  initialPicked,
   onClose,
 }: Props) {
   const [quantity, setQuantity] = useState(1);
-  const [picking, setPicking] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
+  const [picking, setPicking] = useState((initialPicked?.length ?? 0) > 0);
+  const [picked, setPicked] = useState<string[]>(initialPicked ?? []);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -139,6 +142,23 @@ export default function ClaimSheet({
       }
 
       if (method === "card" && data.checkoutUrl) {
+        // Remember the hold so the board can show the countdown if they come
+        // back without paying. Per-browser and disposable — never state we
+        // rely on, since the server timestamp is the truth.
+        if (data.holdExpiresAt) {
+          try {
+            sessionStorage.setItem(
+              `daali-hold-${slug}`,
+              JSON.stringify({
+                holdExpiresAt: data.holdExpiresAt,
+                squareIds: data.squareIds ?? selected,
+              })
+            );
+          } catch {
+            // Private browsing or storage disabled — the countdown is a
+            // convenience, so losing it must not block checkout.
+          }
+        }
         window.location.href = data.checkoutUrl;
         return;
       }
