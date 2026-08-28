@@ -68,7 +68,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | *existing cash confirm route* | Same activation call. Locate it; do not guess the path |
 | `src/lib/cron/release-expired.ts` | Clean up orphaned pending grants |
 | `src/app/host/boards/new/fundraiser-form.tsx` | Optional event block — §5 |
-| `src/app/board/[slug]/claim-sheet.tsx` | Attendance step, first purchase only — §6 |
+| `src/app/board/[slug]/claim-sheet.tsx` | Donate checkbox, `pricePaidCents` at claim — §6 |
 | `src/app/board/[slug]/passes/page.tsx` | **NEW** — passes screen |
 | `src/app/api/host/events/[id]/donate-flag/route.ts` | **NEW** — host toggles a grant's donate setting |
 | `src/app/host/boards/[id]/event-panel.tsx` | **NEW** — roster, volunteer links, forecast |
@@ -98,6 +98,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `titleHistory` | Json? | Array of `{previousTitle, changedAt}` |
 | `earlyBirdPriceCents` | Int? | Null = flat pricing. Money doc §8B |
 | `campaignEndsAt` | DateTime? | **Required for fundraiser**, null for game. See CHECK constraints below |
+| `fundraisingGoalCents` | Int? | Optional, host-entered. Null = no progress bar. Editable after launch |
 | `earlyBirdEndsAt` | DateTime? | Changeover, in the board's `timezone` |
 
 ### Conditional constraints
@@ -186,6 +187,7 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Tell people what it's for | Optional, 2 lines → `causeDescription` |
 | Number of squares | 25 / 50 / 75 / 100. Segmented. Default 100. |
 | Contribution per square | Min $1 → `squarePrice` |
+| Fundraising goal | Optional. Min $1 → `fundraisingGoalCents`. Shows a progress bar when set |
 | Early bird price | Optional. Min $1, must be below the standard price |
 | Early bird ends | Required if an early bird price is set. Date + time |
 | **Campaign closes** | **Required.** Date + time → `campaignEndsAt` |
@@ -379,6 +381,12 @@ Or pick your own
 
 Maximum 10 per transaction (money doc §12) — mechanical, not a policy cap. When someone hits 10, the copy reads **"claim more squares"** after checkout, never "limit reached." There is no limit on how many squares a person may contribute to overall.
 
+### Contact fields are a hard requirement
+
+**Name and email are both required** on a board with an event. `EventSupporter.name` and `.email` are `NOT NULL` with no default, and `resolveSupporter` runs inside the claim transaction — an email-only sheet fails on the first claim, not at A8.
+
+`phone` is nullable, matching how `squares.player_phone` already behaves.
+
 ### Admission — boards with an event only
 
 **One square equals one admission pass.** No picker, no ceiling, no math. Buy 4 squares and 4 people get in.
@@ -530,6 +538,8 @@ No row or column meaning, so no axis math and no digit assignment.
 
 Do not reuse the game grid component. Do not try to make 75 a rectangle.
 
+**Branch before computing, not after.** The fundraiser path should return before reaching any Game Day calculation, so the list below is absent by construction rather than by omission. That is what keeps it true when someone later edits the Game Day header without reading this document.
+
 ### Must not appear on a fundraiser board
 
 Enumerated because these leak through whenever a Game Day component is reused rather than replaced. Every item below was observed on a real fundraiser board before A4.
@@ -547,17 +557,51 @@ Enumerated because these leak through whenever a Game Day component is reused ra
 
 ### The header
 
-Where Game Day shows pot, a fundraiser shows progress toward the goal:
+Where Game Day shows pot, a fundraiser shows what has been raised.
+
+**With a goal set:**
 
 ```
 Hampton Homecoming Tailgate
-$25 per square through Sept 15, then $30
-$0 raised of $2,500
+$25 per square through Oct 3, then $30
+$1,850 raised of $2,000
+[==================----]
 ```
 
-Price line reflects the schedule when one is set, and collapses to `$30 per square` when it isn't. The raised figure is the **sum of `pricePaidCents`** on confirmed squares (invariant 43), never a count multiplied by a price.
+**Without one:**
 
-On a Phase A no-prize board, no prize pool line renders at all.
+```
+Hampton Homecoming Tailgate
+$30 per square
+$1,850 raised
+```
+
+No bar, no denominator. This is why §6's above-the-fold block shows a bare raised figure and this section shows one with a goal — they are the same block in two states, not two specifications.
+
+The raised figure is the **sum of `pricePaidCents`** on confirmed squares (invariant 43), never a count multiplied by a price.
+
+On a Phase A no-prize board, no prize pool line renders.
+
+### The goal is host-entered, not derived
+
+`fundraisingGoalCents` on Board. Optional.
+
+**No derivation from square count works once early bird exists.** `squares × standard` is unreachable, so the bar can never fill. `squares × early` overfills. And both are the `squares × price` arithmetic this section warns against, applied to the denominator instead of the numerator.
+
+A host-entered goal sidesteps it and is better anyway — "we need $2,000 for new uniforms" is a real target, and a derived ceiling is not.
+
+**Not locked by invariant 16.** A goal is aspirational, not a term of the deal: raising it changes nothing about what anyone already bought, and blowing past a goal and setting a stretch target is normal fundraiser behavior. The host may edit it any time.
+
+Clamp the bar at 100% when raised exceeds the goal, and keep showing the real raised figure above it.
+
+### After the changeover
+
+Once the early bird date has passed, the price line collapses to the single current price. Naming a date that is already behind you is noise on a public board.
+
+```
+before   $25 per square through Oct 3, then $30
+after    $30 per square
+```
 
 ---
 
