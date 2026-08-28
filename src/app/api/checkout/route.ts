@@ -4,6 +4,7 @@ import { stripe } from "@/lib/stripe";
 import { randomUUID } from "crypto";
 import { currentPriceCents } from "@/lib/claim-price";
 import { prepareAdmission } from "@/lib/admission";
+import { baseUrlFromRequest } from "@/lib/base-url";
 
 interface CheckoutBody {
   squareIds: string[];
@@ -390,10 +391,11 @@ export async function POST(request: Request) {
     }
 
     // 7. Create Stripe Checkout session
-    const baseUrl =
-      process.env.NEXT_PUBLIC_URL ||
-      request.headers.get("origin") ||
-      "http://localhost:3000";
+    // The origin the contributor is actually on — never the configured
+    // production URL, which would redirect them out of this deployment after
+    // paying. Applies to Game Day too, and on production resolves to the same
+    // value it always did.
+    const baseUrl = baseUrlFromRequest(request);
     const boardUrl = `${baseUrl}/board/${board.slug}`;
 
     const positions = squares

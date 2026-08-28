@@ -222,14 +222,23 @@ export default function FundraiserView({
                     .map((p) => `#${p}`)
                     .join(" · ")} are yours.`}
             </p>
-            {confirmation.hasEvent && confirmation.admissionPasses > 0 && (
+            {/* Entry lines only on a prize board — "Entry #23" means nothing
+                when there is no drawing. Gated on the prize, not board type. */}
+            {hasPrize && (
               <p className="text-sm text-green-200/80 mt-2">
+                {confirmation.positions.length === 1 ? "Entry" : "Entries"}{" "}
+                {confirmation.positions.map((p) => `#${p}`).join(" · ")}
+              </p>
+            )}
+            {confirmation.hasEvent && confirmation.admissionPasses > 0 && (
+              <p className="text-sm text-green-200/80 mt-1">
                 {confirmation.admissionPasses}{" "}
                 {confirmation.admissionPasses === 1 ? "Ticket" : "Tickets"}
               </p>
             )}
             <p className="text-xs text-green-200/60 mt-2">
-              You just moved this {money(currentPrice * confirmation.positions.length)} closer.
+              You just moved this{" "}
+              {money(currentPrice * confirmation.positions.length)} closer.
             </p>
           </div>
         )}

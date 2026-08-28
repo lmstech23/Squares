@@ -13,6 +13,7 @@ import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
+import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
 
@@ -80,7 +81,9 @@ export default async function HostBoardPage({ params }: Props) {
   // at creation and the toggle never renders: switching it off would make card
   // the only way to contribute, and direct payment is how most people will pay.
   const isFundraiser = board.boardType === "fundraiser";
-  const boardUrl = `${process.env.NEXT_PUBLIC_URL}/board/${board.slug}`;
+  // Built from this deployment's own host, so a preview's share panel and QR
+  // point at the preview rather than at production.
+  const boardUrl = `${await baseUrlFromHeaders()}/board/${board.slug}`;
 
   // ---- Fundraiser host dashboard — v2 §9 ----
   //
