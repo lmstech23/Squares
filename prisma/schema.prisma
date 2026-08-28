@@ -139,6 +139,9 @@ model Square {
 
   payment           PaymentReference?
   board             Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
+  /// Back-relation only. The foreign key lives on admission_passes; the
+  /// squares table gains no column. Addendum: admission adds none to Square.
+  admissionPasses   AdmissionPass[]
 
   @@unique([boardId, position])
   @@index([boardId, playerEmail], map: "idx_squares_board_email")
@@ -181,7 +184,10 @@ model Event {
   endsAt                   DateTime? @map("ends_at") @db.Timestamptz(6)
   timezone                 String
   venue                    String?
-  maxAttendeesPerSupporter Int       @map("max_attendees_per_supporter")
+  /// Unused since addendum v2.0 — one square mints one pass, there is no
+  /// ceiling. Retained rather than dropped; nullable so event creation does
+  /// not have to invent a value.
+  maxAttendeesPerSupporter Int?      @map("max_attendees_per_supporter")
   /// Reserved — never read in Phase A. See addendum §5.
   gateAllowanceTotal       Int       @default(0) @map("gate_allowance_total")
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -235,7 +241,11 @@ model AdmissionGrant {
   /// Only FUNDRAISER is populated now. The rest exist so adding them later is
   /// a code path, not a migration.
   source             AdmissionGrantSource @default(FUNDRAISER)
-  declaredAtPurchase Int                  @map("declared_at_purchase")
+  /// True mints no passes for this purchase and excludes the supporter from
+  /// the headcount — the "I'm not attending" checkbox. Addendum v2.0 §1.
+  donateAdmissions   Boolean              @default(false) @map("donate_admissions")
+  /// Unused since v2.0 removed the declaration model. Retained, nullable.
+  declaredAtPurchase Int?                 @map("declared_at_purchase")
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
   event     Event          @relation(fields: [eventId], references: [id], onUpdate: NoAction)
@@ -253,6 +263,9 @@ model AdmissionPass {
   id                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   eventSupporterId              String              @map("event_supporter_id") @db.Uuid
   /// Internal, not the displayed ordinal. Drawn from passSequenceCursor.
+  /// The square that minted this pass. Audit only. Nullable because deferred
+  /// non-square sources (STANDALONE, GATE_ALLOWANCE, HOST_APPROVED) mint none.
+  squareId                      String?             @map("square_id") @db.Uuid
   sequenceNumber                Int                 @map("sequence_number")
   token                         String              @unique
   label                         String?
@@ -263,6 +276,7 @@ model AdmissionPass {
   createdAt                     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
   supporter       EventSupporter   @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
+  square          Square?          @relation(fields: [squareId], references: [squareId], onUpdate: NoAction)
   checkedInBy     VolunteerAccess? @relation(fields: [checkedInByVolunteerAccessId], references: [id], onUpdate: NoAction)
   checkInLogs     CheckInLog[]
 

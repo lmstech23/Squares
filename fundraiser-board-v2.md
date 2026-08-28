@@ -70,9 +70,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `src/app/host/boards/new/fundraiser-form.tsx` | Optional event block — §5 |
 | `src/app/board/[slug]/claim-sheet.tsx` | Attendance step, first purchase only — §6 |
 | `src/app/board/[slug]/passes/page.tsx` | **NEW** — passes screen |
-| `src/app/board/[slug]/attendance/page.tsx` | **NEW** — Manage attendance, token-gated |
-| `src/app/api/attendance/request-link/route.ts` | **NEW** — §6A |
-| `src/app/api/attendance/route.ts` | **NEW** — declare / adjust, token-gated |
+| `src/app/api/host/events/[id]/donate-flag/route.ts` | **NEW** — host toggles a grant's donate setting |
 | `src/app/host/boards/[id]/event-panel.tsx` | **NEW** — roster, volunteer links, forecast |
 | `src/app/gate/[token]/page.tsx` | **NEW** — volunteer surface — §6B |
 | `src/app/api/gate/[token]/checkin/route.ts` | **NEW** — scan, search, undo |
@@ -248,7 +246,21 @@ Two wall-clock times per year are not a single instant, and both must be resolve
 | `earlyBirdEndsAt` | **Later** occurrence | Same. A deadline |
 | `Event.startsAt` | **Earlier** occurrence | A start time. Doors open at the first 1:30am, not the second |
 
-The conversion helper takes the policy as an explicit argument rather than defaulting. A generic helper cannot know whether it is resolving a deadline or a start time, and picking one convention silently makes it wrong half the time.
+### How it resolves
+
+Enumerate the candidate instants for the entered wall clock, then count how many are real:
+
+| Real candidates | Meaning | Behavior |
+|---|---|---|
+| 0 | The gap. That local time does not exist | Take the later instant, **under both policies** |
+| 1 | Ordinary time | Policy is inert |
+| 2 | Genuine ambiguity | Policy decides |
+
+**The policy applies only to the two-candidate case.** The gap is not a choice between real instants, so `"earlier"` must never be able to drag 2:30am back to 1:30am. A correction-pass implementation — one that only knows "corrected" versus "uncorrected" — cannot express this distinction and will get one of the two cases wrong.
+
+Call sites read `parseZoned(value, timezone, "later")`, so the kind of timestamp is stated where a reader needs it.
+
+Tests must cover: both policies across the fall boundary differing by exactly an hour, the gap resolving identically under both, the policy leaving unambiguous times untouched, and **a southern-hemisphere zone** — DST ends in April and begins in October there, so the gap and the ambiguity land on opposite months from the US. That last one is what catches a northern-hemisphere assumption in the candidate search.
 
 Practical impact is one hour, twice a year, in the small hours. The reason to be explicit anyway is that the call site then states which kind of timestamp it is, which is the thing a reader needs to know.
 
@@ -308,15 +320,14 @@ Collapsed by default. A fundraiser without an event is unchanged in every respec
 ```
 [ ] This fundraiser includes event admission
 
-    Event name                    [defaults to campaign title]
-    Date and time                 [required]
-    Venue                         [optional]
-    Max attendees per supporter   [1-10, default 4]
+    Event name       [defaults to campaign title]
+    Date and time    [required]
+    Venue            [optional]
 ```
 
 **Independent of the drawing date.** No validation relates the two. The event may fall before, on, or after the draw, and admission stays valid after the board reaches CLOSED and DRAWN (admission invariant 36).
 
-Per supporter, not per purchase. A second square bought later draws from the same allowance and never re-asks (admission invariant 28).
+**No attendance cap.** One confirmed square mints one admission pass (admission invariant 24). Buy 20 squares, bring 20 people. A purchaser who is not attending checks the donate box at checkout.
 
 **Not on this form:** sport, teams, periods, payout split grid, host cut. If any of these render, the form is wrong.
 
@@ -368,30 +379,19 @@ Or pick your own
 
 Maximum 10 per transaction (money doc §12) — mechanical, not a policy cap. When someone hits 10, the copy reads **"claim more squares"** after checkout, never "limit reached." There is no limit on how many squares a person may contribute to overall.
 
-### Attendance step — boards with an event only
+### Admission — boards with an event only
 
-Rendered **after** the contact fields, because identity resolves on normalized email.
+**One square equals one admission pass.** No picker, no ceiling, no math. Buy 4 squares and 4 people get in.
 
-**First purchase** — one number, no names:
-
-```
-How many people are attending?
-0 · 1 · 2 · 3 · 4
-```
-
-Zero is a real answer. A supporter three states away is not driving down, and a picker that starts at 1 inflates the host's headcount by every remote contributor — the one number this feature exists to produce.
-
-**Returning supporter** — no picker, ever:
+One checkbox, after the contact fields:
 
 ```
-You're attending with 2 people.
-Your event limit is 4.
-[ Manage attendance ]
+[ ] I'm not attending - donate my admissions
 ```
 
-Existence of an `EventSupporter` row is the test, not its status. Someone whose first purchase is still an unconfirmed cash reservation is a returning supporter and sees the status line.
+Default unchecked. Checked, the purchase mints no passes and the supporter is excluded from the host's headcount. People buying squares purely to support the cause are a real and expected group, and this is the whole cost of handling them.
 
-A second square means one thing: another drawing chance. Admission is untouched by it.
+Changing it later is a host action from the event panel, not a self-service screen. See addendum §6.
 
 ### Hold timer
 
@@ -449,7 +449,7 @@ Multi-square confirmation lists every square: *"Your drawing tickets: #23 · #52
 Square #23 is yours.
 
 Drawing Ticket #23
-3 Admission Passes
+1 Admission Pass
 
 [ View your passes ]
 ```
@@ -461,10 +461,13 @@ Never call an admission pass a ticket. A drawing ticket keeps its existing meani
 One row per pass, each independently shareable. Naming is optional and most supporters will skip it.
 
 ```
-Pass 1 of 3    [ Keep ]   [ Share ]
-Pass 2 of 3    [ Keep ]   [ Share ]
-Pass 3 of 3    [ Keep ]   [ Share ]
+Pass 1 of 4    [ Keep ]   [ Share ]
+Pass 2 of 4    [ Keep ]   [ Share ]
+Pass 3 of 4    [ Keep ]   [ Share ]
+Pass 4 of 4    [ Keep ]   [ Share ]
 ```
+
+A four-square purchase yields four passes. A donated purchase yields none, and no admission line renders on the confirmation.
 
 Pass display ordinals are derived from the supporter's current usable passes in sequence order. `AdmissionPass.sequenceNumber` is internal, monotonic, never reused, and never shown to the supporter. The QR encodes an opaque token, never a URL — see §6B.
 
@@ -472,33 +475,7 @@ Pass display ordinals are derived from the supporter's current usable passes in 
 
 Same URL, same page. The meter has moved, the prizes have grown. That growth is the reason to come back and the reason to send the link on.
 
-On a board with an event, a returning supporter also sees their attendance state and a Manage attendance entry point.
-
----
-
-## 6A. Manage attendance — authentication
-
-**A new auth path. Not the shipped Player Resume Checkout flow**, which matches on email alone.
-
-That match is fine where it lives: the only thing it unlocks is the right to pay for your own abandoned square. It is not fine here. Knowing an address must not let a stranger void a family's passes an hour before the event.
-
-### Flow
-
-1. Supporter taps **Manage attendance**, enters their email
-2. `POST /api/attendance/request-link` — **always the same response**, matched or not. No enumeration.
-3. If matched, an email carries a raw single-use token
-4. Following the link consumes the token and opens a session scoped to **that one supporter on that one event**, 30 minutes
-5. Inside that session: raise attendance to the ceiling, lower it, label passes, re-send passes
-
-### Rules
-
-- Token stored hashed. The raw value exists only in the email.
-- 20-minute TTL, single use. A new request invalidates outstanding ones.
-- Rate limit by email and by IP. This endpoint sends mail on request.
-- The session grants nothing outside that supporter's own attendance. No squares, no money, no other supporters.
-- **Decrease** is free any time before the event and voids `active` passes only — a `used` pass is never voidable.
-- **Increase** is free up to the ceiling. That is claiming entitlement already granted, not creating new entitlement.
-- Every path closes at the event start time. At the gate it becomes a volunteer or host action.
+On a board with an event, a returning supporter also sees their passes. A second purchase mints its own passes on top of the existing ones - no allowance to check, nothing to re-ask.
 
 ---
 
@@ -553,6 +530,35 @@ No row or column meaning, so no axis math and no digit assignment.
 
 Do not reuse the game grid component. Do not try to make 75 a rectangle.
 
+### Must not appear on a fundraiser board
+
+Enumerated because these leak through whenever a Game Day component is reused rather than replaced. Every item below was observed on a real fundraiser board before A4.
+
+| Game Day element | Why it's wrong here |
+|---|---|
+| `TEAM A` / `TEAM B` axis labels | No teams. No axes. Nothing is being competed over |
+| Axis digit assignment or randomization | No digit match. Numbers are positions, not draws |
+| "Numbers will randomize immediately" on close | Close means CLOSING → finalization. Nothing randomizes |
+| "Numbers are set. Board is live for game day" | There is no game day |
+| "$3,000 total pot" | **Two errors.** There is no pot on a Phase A board, and `squares × price` is wrong arithmetic once early bird pricing exists |
+| Score entry, period selection, winner-by-quarter | Money doc §2 — a fundraiser has no scores |
+
+**Shared and correct:** cash mode, the cash PIN, cash reservations, the share panel and QR, and the square-claim flow. Those are board-agnostic and should not be duplicated.
+
+### The header
+
+Where Game Day shows pot, a fundraiser shows progress toward the goal:
+
+```
+Hampton Homecoming Tailgate
+$25 per square through Sept 15, then $30
+$0 raised of $2,500
+```
+
+Price line reflects the schedule when one is set, and collapses to `$30 per square` when it isn't. The raised figure is the **sum of `pricePaidCents`** on confirmed squares (invariant 43), never a count multiplied by a price.
+
+On a Phase A no-prize board, no prize pool line renders at all.
+
 ---
 
 ## 8. Prize presentation
@@ -597,13 +603,15 @@ Replaces score entry on fundraiser boards.
 **Event panel (boards with an event only):**
 
 ```
-126 expected · 12 declared but unpaid
-74 checked in · 52 remaining
+84 expected · 9 reserved but unpaid
+51 checked in · 33 remaining
 
-[ Volunteer links ]   [ Roster ]
+[ Volunteer links ]   [ Roster ]   [ Donate flags ]
 ```
 
-Expected counts **active** supporters only. The unpaid line is a chase list before she orders food, mirroring the amber/green split she already reads on the grid. It is a forecast, never a headcount, and it never reaches the volunteer roster.
+Expected counts `active` and `used` passes on active supporters. Donated purchases contribute zero, which is the point of the checkbox. The unpaid line counts admissions that would exist if outstanding cash reservations confirm - a chase list before she orders food, mirroring the amber/green split she already reads on the grid. It is a forecast, never a headcount, and never reaches the volunteer roster.
+
+**Donate flags** lets her toggle a purchase's setting after the fact, for the supporter who decides to come after all or the one who cannot. Toggling to donate voids that grant's unused passes; toggling back mints new ones with new tokens. A `used` pass is never voidable.
 
 Volunteer links are created, labeled ("Renee — main gate"), and revoked individually here. Each is scoped to one event and grants roster read and check-in only — never money, never the grid. The link is shown once at creation and stored hashed.
 
@@ -714,7 +722,7 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | # | Step | Live-next-week? |
 |---|---|---|
 | A1 | Schema migration 1 — fundraiser columns, `FreeEntry`, backfill `boardType = "game"` | ✅ |
-| A1b | Schema migration 2 — admission tables (addendum §2) | ✅ |
+| A1b | Schema migration 2 — admission tables (addendum §3). Migration 3 adds `donate_admissions` | ✅ |
 | A2 | Board type picker | ✅ |
 | A3 | Fundraiser form + API branch. **Event block. Three dates. Early bird.** No prize fields | ✅ |
 | A4 | Fundraiser grid + contributor board | ✅ |
@@ -722,7 +730,7 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A6 | Hold timer + resolve-then-release cron | ✅ |
 | A7 | CLOSING + finalization — `finalRaisedCents` only | — |
 | A8 | Admission activation in the confirmation transaction | — |
-| A9 | Attendance step, passes screen, Manage attendance + token auth | — |
+| A9 | Donate checkbox, passes screen, host donate-flag toggle | — |
 | A10 | Volunteer surface, QR, roster, search, check-in, undo | — |
 
 **A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
@@ -733,7 +741,7 @@ Both were originally in the admission slices. Both had to move once squares go l
 
 **Event block to A3.** Invariant 16 locks event terms at the first confirmed contribution. If admission is configured later, early supporters bought a square and later supporters bought a square plus admission for four, at the same price — and the early ones backed the cause first. Configuring the event at board creation means everyone gets the same disclosed offer. The block collects name, date, venue, and max attendees per supporter. The attendance picker and passes still come at A9.
 
-**Preparation to A5.** Resolve the supporter, write the grant, `declaredCount = 0`. Without it, every contributor between launch and A8 has no `EventSupporter` row and needs a backfill written under time pressure against live money.
+**Preparation to A5.** Resolve the supporter and write the grant, carrying the donate checkbox. Without it, every contributor between launch and A8 has no `EventSupporter` row and needs a backfill written under time pressure against live money.
 
 **Consequence: the admission tables move to A1b**, not A8. A5 cannot write to tables that don't exist. Two migration files rather than one, both written before either is applied — that keeps the review separation without a timing gap.
 
@@ -764,7 +772,7 @@ Email notifications. Platform fee, separate PR.
 | Slice | Contents | Visible? |
 |---|---|---|
 | **1** | Schema, `admission.ts`, claim-time preparation, activation in the confirmation transaction | No. Nothing user-facing |
-| **2** | Event block on the create form, attendance step, passes screen, Manage attendance + token auth | Contributor and host |
+| **2** | Donate checkbox, passes screen, host donate-flag toggle | Contributor and host |
 | **3** | Volunteer surface, QR generation and scanning, roster, search, check-in, undo | Gate |
 
 Slice 1 is where a mistake is expensive and silent. Review it before Slice 2 starts. Handoff brief: `slice-1-handoff.md`.

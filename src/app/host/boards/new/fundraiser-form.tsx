@@ -66,7 +66,6 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   const [eventName, setEventName] = useState("");
   const [eventStartsAt, setEventStartsAt] = useState("");
   const [eventVenue, setEventVenue] = useState("");
-  const [maxAttendees, setMaxAttendees] = useState("4");
 
   const [hostVenmo, setHostVenmo] = useState("");
   const [hostZelle, setHostZelle] = useState("");
@@ -145,7 +144,6 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           eventName: eventName.trim() || null,
           eventStartsAt,
           eventVenue: eventVenue.trim() || null,
-          maxAttendeesPerSupporter: parseInt(maxAttendees, 10) || 4,
           hostVenmo: hostVenmo.trim() || null,
           hostZelle: hostZelle.trim() || null,
           hostCashapp: hostCashapp.trim() || null,
@@ -368,8 +366,8 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
               This fundraiser includes event admission
             </span>
             <span className="block text-xs text-gray-600 mt-0.5">
-              Contributors can bring people to an event. Set the terms now —
-              they lock once the first contribution is confirmed.
+              Each confirmed square admits one person. Contributors who
+              aren&apos;t attending can donate their admissions at checkout.
             </span>
           </span>
         </label>
@@ -418,24 +416,6 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
               />
             </div>
 
-            <div>
-              <label htmlFor="maxAttendees" className={labelClass}>
-                Max attendees per supporter
-              </label>
-              <input
-                id="maxAttendees"
-                type="number"
-                min="1"
-                max="10"
-                value={maxAttendees}
-                onChange={(e) => setMaxAttendees(e.target.value)}
-                className={inputClass}
-              />
-              <p className="text-xs text-gray-600 mt-1.5">
-                Per person, not per square. Someone who contributes twice draws
-                from the same allowance.
-              </p>
-            </div>
           </div>
         )}
       </div>

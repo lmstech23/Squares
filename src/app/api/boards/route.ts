@@ -82,7 +82,6 @@ interface CreateBoardBody {
   eventName?: string | null;
   eventStartsAt?: string;
   eventVenue?: string | null;
-  maxAttendeesPerSupporter?: number;
 }
 
 /// Parsed event config, or null when the board has no event attached.
@@ -91,7 +90,6 @@ interface EventInput {
   startsAt: Date;
   timezone: string;
   venue: string | null;
-  maxAttendeesPerSupporter: number;
 }
 
 export async function POST(request: Request) {
@@ -313,19 +311,13 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        const maxAttendees = body.maxAttendeesPerSupporter ?? 4;
-        if (!Number.isInteger(maxAttendees) || maxAttendees < 1 || maxAttendees > 10) {
-          return NextResponse.json(
-            { error: "Max attendees per supporter must be between 1 and 10." },
-            { status: 400 }
-          );
-        }
+        // No attendance cap. One confirmed square mints one admission pass
+        // (addendum v2.0 §1), so there is nothing to collect here.
         eventInput = {
           name: body.eventName?.trim() || null,
           startsAt,
           timezone,
           venue: body.eventVenue?.trim() || null,
-          maxAttendeesPerSupporter: maxAttendees,
         };
       }
 
@@ -415,7 +407,6 @@ export async function POST(request: Request) {
           startsAt: eventInput.startsAt,
           timezone: eventInput.timezone,
           venue: eventInput.venue,
-          maxAttendeesPerSupporter: eventInput.maxAttendeesPerSupporter,
         },
       });
     }
