@@ -53,11 +53,17 @@ UI naming is fixed:
 
 ```
 Square #23
-Drawing Ticket #23     (derived from the Square — no table)
-4 Admission Passes
+Entry #23      the drawing entry, derived from the Square — no table
+4 Tickets      event admission
 ```
 
-**Never call an admission pass a ticket** anywhere a human can read it.
+**Reversed from v1.x and v2.0, deliberately.** Those drafts used *Drawing Ticket* and *Admission Pass*, on the theory that "ticket" was already taken by the drawing.
+
+Contributors do not talk that way. People say **tickets** for getting into an event and **entries** for a drawing. Same disambiguation, words a parent would actually use. See v2 §6C.
+
+**Never call a drawing entry a ticket** anywhere a human can read it.
+
+Internal model names are unchanged: `AdmissionPass`, `AdmissionGrant`, `EventSupporter`, `passSequenceCursor`. Display strings only — renaming models for a copy decision is churn.
 
 ---
 
@@ -175,9 +181,18 @@ createGrant(supporterId, squareBatchId, source = FUNDRAISER,
 
 Idempotent by constraint: `squareBatchId` is unique, so a retried claim can't write a second grant.
 
-### Abandoned claims
+### Orphaned grants
 
-When the release cron releases a batch, if its grant has no remaining live squares, delete the grant; if the supporter is `pending` with no grants left, delete the supporter. Active supporters are never touched. Without this, abandoned claims inflate the host's forecast permanently.
+A grant with no live squares must be deleted, along with its supporter if that supporter is `pending` and has no grants left. Active supporters are never touched. Without this, dead grants inflate the host's unpaid forecast permanently.
+
+**Key the cleanup on "the grant has no live squares," not on "a batch was released."** Two different paths produce an orphan and only one of them is a release:
+
+| Path | What happens |
+|---|---|
+| Abandoned claim | Hold expires, cron releases the batch, its grant is left with nothing |
+| **Merged checkout** | Earlier squares are re-batched onto a new `batchId`, leaving the older grant holding zero squares. **Nothing was released** |
+
+A release-keyed cleanup never reaches the second one. It is the same failure this section exists to prevent, arrived at from a direction the release event cannot see.
 
 ---
 
@@ -191,9 +206,40 @@ card:  Stripe webhook  ──┐            square → paid
 cash:  host confirms  ───┘            mint 1 pass, unless donateAdmissions
 ```
 
+**One function, called from both.** As of A6 the Stripe webhook and the cash confirm path each flip squares to `paid` independently. A8 must not add minting to both — two implementations of the same transaction will drift, and the one that drifts is whichever gets tested less. Extract a single `confirmSquare(squareId, tx)` that both call, and put minting inside it.
+
+The failure this prevents is specific and quiet: card contributors get passes and cash contributors don't, or the reverse, and nobody notices until a gate.
+
 Two writes plus one pass. Drawing eligibility is a *derived property* of the square reaching `paid`, not a write — there is no `Ticket` table (money doc §5). On a Phase A no-prize board no ticket exists at all.
 
 **Per square, not per batch.** Three squares reserved, one confirms → one pass. The old model activated a whole declared count off a single confirmation; that special case is gone. Passes accrue exactly as squares confirm.
+
+### Squares confirmed before A8 need a backfill
+
+Minting happens at confirmation. If the board goes live to real contributors before A8 ships — which is the plan, since squares are live weeks before the gate — then every square confirmed in that window is `paid`, carries a grant, and has **no pass**. Confirmation has already passed for them and will not run again.
+
+**A8 must include a one-time backfill**, run inside the same deploy:
+
+```
+for each active supporter:
+    expected = confirmed squares whose grant has donateAdmissions = false
+    existing = active + used passes
+    mint (expected - existing) passes at the next cursor values
+```
+
+Idempotent by construction — it mints the difference, so running it twice is a no-op. It must respect `donateAdmissions`, and it must never touch `void` passes, or a supporter who opted out gets passes anyway.
+
+This is not an edge case. It is the expected state of the board on the day A8 ships, and discovering it then means writing a migration against live contributor money under time pressure.
+
+**Until A9, the confirmation page says nothing about admission.**
+
+Originally until A8, on the reasoning that the pass had to exist first. It does now — A8 mints it — but there is still no passes screen and no email, so the contributor cannot reach the thing being named. A count with nothing to click is a support question, not reassurance. The line appears at A9, with a working link behind it.
+
+Original reasoning, unchanged: Not a promise of passes arriving later. Passes mint in the same transaction that confirms the square, so someone paying at 9pm has their QRs at 9pm — copy describing a wait would be describing a delay that is not supposed to exist, and it would still be there after A8 telling people to expect something they already have.
+
+A receipt that names something the person cannot see or click is worse than one that stays quiet.
+
+**The better answer is to ship A8 before the board goes live**, which is why v2 §16 moves it ahead of A7. Then the backfill is a no-op, the copy question never arises, and the first contributor gets passes the moment they pay.
 
 ### Email is not activation
 
@@ -218,6 +264,8 @@ Only the transaction that flips the row does the activation work. Both still min
 Application-level status checking alone does not prevent this. It is the class of bug that passes every test on a developer machine and fires once, at a tailgate.
 
 ### Host-funded squares
+
+**Not yet reachable.** Nothing in the product sets `isHostEntry = true` — host contributions are unbuilt, so there is no creation path to hook. This section specifies what must happen whenever that lands, not something A8 could have implemented.
 
 A host-entry square is created already funded, so preparation and minting happen in one transaction at creation, keyed on the host's email from the `Host` record. Her square funds the cause and admits her. It is drawing-ineligible under invariant 15, which is the cleanest demonstration that eligibility and admission are separate.
 

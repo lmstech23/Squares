@@ -365,8 +365,8 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
               This fundraiser includes event admission
             </span>
             <span className="block text-xs text-gray-600 mt-0.5">
-              Each confirmed square admits one person. Contributors who
-              aren&apos;t attending can donate their admissions at checkout.
+              Each confirmed square is one ticket to the event. Contributors
+              who aren&apos;t attending can donate their tickets at checkout.
             </span>
           </span>
         </label>

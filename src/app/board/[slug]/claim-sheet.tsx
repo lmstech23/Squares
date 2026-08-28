@@ -302,7 +302,10 @@ export default function ClaimSheet({
           </div>
         </div>
 
-        {/* Admission — one square, one pass. Addendum v2.0 §1. */}
+        {/* Admission — one square, one ticket. Addendum §1.
+            Display says "ticket"; the model is still AdmissionPass. People say
+            tickets for getting into an event and entries for a drawing, so the
+            words follow them rather than the schema. */}
         {hasEvent && (
           <label className="flex items-start gap-2.5 cursor-pointer mb-4">
             <input
@@ -313,14 +316,12 @@ export default function ClaimSheet({
             />
             <span>
               <span className="block text-sm">
-                I am not attending — donate my admissions
+                I am not attending — donate my tickets
               </span>
               <span className="block text-xs text-gray-600 mt-0.5">
                 {donateAdmissions
-                  ? "No admission passes for this purchase."
-                  : `${count} admission ${
-                      count === 1 ? "pass" : "passes"
-                    }, one per square.`}
+                  ? "No tickets for this purchase."
+                  : `${count} ${count === 1 ? "ticket" : "tickets"}, one per square.`}
               </span>
             </span>
           </label>

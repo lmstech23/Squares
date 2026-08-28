@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import FundraiserGrid from "./fundraiser-grid";
 import ClaimSheet from "./claim-sheet";
 import HoldTimer from "./hold-timer";
+import HowItWorks from "./how-it-works";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
 //
@@ -45,6 +46,9 @@ interface Props {
   hasEvent: boolean;
   cashModeEnabled: boolean;
   stripeConnected: boolean;
+  /// prizePoolPercent > 0. Gates prize language everywhere — never board type,
+  /// because a Phase B fundraiser with prizes needs it back.
+  hasPrize: boolean;
   handles: {
     venmo: string | null;
     zelle: string | null;
@@ -93,6 +97,7 @@ export default function FundraiserView({
   hasEvent,
   cashModeEnabled,
   stripeConnected,
+  hasPrize,
   handles,
   confirmation,
 }: Props) {
@@ -220,9 +225,7 @@ export default function FundraiserView({
             {confirmation.hasEvent && confirmation.admissionPasses > 0 && (
               <p className="text-sm text-green-200/80 mt-2">
                 {confirmation.admissionPasses}{" "}
-                {confirmation.admissionPasses === 1
-                  ? "Admission Pass"
-                  : "Admission Passes"}
+                {confirmation.admissionPasses === 1 ? "Ticket" : "Tickets"}
               </p>
             )}
             <p className="text-xs text-green-200/60 mt-2">
@@ -263,6 +266,10 @@ export default function FundraiserView({
             should have to study the grid to work out what to do. */}
         <div className="mt-6">
           <FundraiserGrid squares={squares} />
+        </div>
+
+        <div className="mt-6">
+          <HowItWorks hasEvent={hasEvent} hasPrize={hasPrize} handles={handles} />
         </div>
 
         {claiming && (

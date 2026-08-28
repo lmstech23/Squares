@@ -183,6 +183,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         hasEvent={board.event != null}
         cashModeEnabled={board.cashModeEnabled}
         stripeConnected={board.host.stripeChargesEnabled ?? false}
+        hasPrize={board.prizePoolPercent > 0}
         confirmation={confirmation}
         handles={{
           venmo: board.hostVenmo,

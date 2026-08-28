@@ -423,9 +423,13 @@ Three changes follow.
 
 `cashModeEnabled` is **forced true** on fundraiser boards and the toggle does not render. A host cannot switch it off, because switching it off would mean the only way to contribute is a card — and direct payment is how most people will pay.
 
-### No PIN
+### No PIN — on either side
 
-`cashPin` is unused on fundraiser boards and is never displayed. A PIN exists so a host can hand a code to people standing in front of her. There is nobody standing in front of her.
+`cashPin` is unused on fundraiser boards, never displayed to the host, and **never requested from the contributor.**
+
+A PIN exists so a host can hand a code to people standing in front of her. There is nobody standing in front of her. A contributor two states away has no way to obtain one, so asking for it does not merely look wrong — it makes direct payment unreachable, which is the way most people will pay.
+
+Removing it from the host dashboard is half the job. The claim sheet is the other half.
 
 **The contributor chooses the method at checkout**, which is what replaces the PIN:
 
@@ -439,6 +443,16 @@ How would you like to pay?
 Choosing the second shows the host's handles, reserves the squares, and tells the contributor to send the amount. The square sits amber until the host confirms. Same machinery as Game Day cash, reached without a code.
 
 The host's handles come from the create form. At least one is required on a fundraiser board — without one there is nowhere to send money.
+
+### Prize-dependent fields do not render
+
+Phase A has no prizes, so there are no winners, so nothing needs to ask how a winner should be paid.
+
+**Off the claim sheet:** "How should the host pay you?" and any payout-preference selector. That field exists to route a prize. `requirePlayerPayout` and `payoutVisibility` are already off the create form for the same reason (§5).
+
+**Off the board:** the "If you win" section, and any prize or payout language in the Payment panel.
+
+These return with Phase B, gated on `prizePoolPercent > 0` rather than on board type — a fundraiser *with* prizes needs them.
 
 ### The word "cash" never appears
 
@@ -461,7 +475,7 @@ It means paper money to everyone reading it, and there is no paper money here.
 
 ### Contact fields are a hard requirement
 
-**Name and email are both required** on a board with an event. `EventSupporter.name` and `.email` are `NOT NULL` with no default, and `resolveSupporter` runs inside the claim transaction — an email-only sheet fails on the first claim, not at A8.
+**Name and email are both required** on a board with an event. Email must not be marked optional on the claim sheet — it is the supporter identity key, and omitting it makes `resolveSupporter` throw inside the claim transaction. The claim fails, not the admission step. `EventSupporter.name` and `.email` are `NOT NULL` with no default, and `resolveSupporter` runs inside the claim transaction — an email-only sheet fails on the first claim, not at A8.
 
 `phone` is nullable, matching how `squares.player_phone` already behaves.
 
@@ -534,23 +548,31 @@ Multi-square confirmation lists every square: *"Your drawing tickets: #23 · #52
 ```
 Square #23 is yours.
 
-Drawing Ticket #23
-1 Admission Pass
+Entry #23
+1 Ticket
 
 [ View your passes ]
 ```
 
-Never call an admission pass a ticket. A drawing ticket keeps its existing meaning — an entry in the drawing, numbered to the square, derived rather than stored. The display strings are **Drawing Ticket** and **Admission Pass**, never interchangeable.
+**Vocabulary, reversed from earlier drafts.** Those used *Drawing Ticket* and *Admission Pass*, on the theory that "ticket" was taken by the drawing. Contributors do not talk that way — people say **tickets** for getting into an event and **entries** for a drawing.
+
+```
+Square #23     the position on the board
+Entry #23      the drawing entry, derived from the Square
+1 Ticket       event admission
+```
+
+**Never call a drawing entry a ticket.** The collision runs the other direction now. Internal model names (`AdmissionPass`, `AdmissionGrant`) are unchanged — display strings only.
 
 ### Passes screen
 
 One row per pass, each independently shareable. Naming is optional and most supporters will skip it.
 
 ```
-Pass 1 of 4    [ Keep ]   [ Share ]
-Pass 2 of 4    [ Keep ]   [ Share ]
-Pass 3 of 4    [ Keep ]   [ Share ]
-Pass 4 of 4    [ Keep ]   [ Share ]
+Ticket 1 of 4    [ Keep ]   [ Share ]
+Ticket 2 of 4    [ Keep ]   [ Share ]
+Ticket 3 of 4    [ Keep ]   [ Share ]
+Ticket 4 of 4    [ Keep ]   [ Share ]
 ```
 
 A four-square purchase yields four passes. A donated purchase yields none, and no admission line renders on the confirmation.
@@ -613,6 +635,10 @@ No row or column meaning, so no axis math and no digit assignment.
 - **5 columns below 400px.**
 - Confirmed squares show their number.
 - Any non-open square renders as unavailable, no legend, no state colors — money doc §10.
+
+**No legend.** Not "Open / Taken / Pending" in muted, green, and amber. A contributor sees available or not available; the state breakdown is the host's view. A legend also leaks how many squares are stuck mid-checkout, which is nobody's business but hers.
+
+"Taken" and "Pending" are Game Day words besides. Nothing is taken from anyone.
 
 Do not reuse the game grid component. Do not try to make 75 a rectangle.
 
@@ -828,6 +854,8 @@ The page must not promise a flow this spec doesn't build. Hero mockups showing a
 **No credit gate, no `pending_payment`, no fee.** A fundraiser board activates the moment it is created.
 
 Game Day keeps the credit system exactly as it is. This is a fundraiser-only bypass, not a change to Game Day.
+
+**The one-pending-board-per-host guard is Game Day only.** It runs before the creation paths, so a host sitting on an unpaid Game Day draft would otherwise be blocked from creating a fundraiser — a board that needs no credit, refused by a gate belonging to a different board type. Scoping it is part of the bypass, not an optional tidy-up.
 
 ### Credits are the wrong instrument here
 
