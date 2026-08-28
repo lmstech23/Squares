@@ -55,6 +55,11 @@ protected a population that does not exist, since there are no Game Day
 customers. Bring it back only if Daali has hosts who are not the person
 building it *and* A9 plus a ticket email still do not exist. v2 §14.
 
+**One email per purchase, both board types.** Confirmation email is a shared
+path in `src/lib/confirmation-email.ts` — never a per-square loop. This is a
+deliberate exception to "Game Day is untouched": two email paths would drift,
+and the one that drifts is whichever gets tested less. Decided Aug 28, 2026.
+
 Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits.
 
 ---
