@@ -19,19 +19,22 @@ Fundraiser boards are gaining **optional event admission**. A contribution can a
 
 The through-line: **Daali handles the seam between money collected and people admitted.** Everything else is deferred.
 
-Admission is being built in three slices. Slice 1 is schema and the activation transaction, deliberately invisible to users. Slice 2 is contributor and host UI. Slice 3 is the volunteer gate.
+**Phase A** is a no-prize fundraiser plus admission — the Hampton configuration. Prize boards, the draw, and free entry are **deferred to Phase B** by decision, not configuration. A host cannot switch prizes on in Phase A, and the prize fields do not render on the form. Build order is v2 §16.
+
+Admission itself is three slices: schema and activation, then contributor and host UI, then the volunteer gate.
 
 ---
 
-## Build state — read this before planning any fundraiser work
+## Build state
 
-**Game Day is shipped and live. Fundraiser is specced and at zero.**
+**Verify build state by reading `prisma/schema.prisma`. Never infer it from a document.**
 
-Nothing in `fundraiser-board-v2.md` has been built. As of Aug 27, 2026 the schema has no `boardType`, no fundraiser columns on `Board`, no `batchId` / `isHostEntry` / `holdExpiresAt` / `checkoutSessionId` on `Square`, and no `FreeEntry` table. No admission tables either.
+The fundraiser spec was written long before any of it was built, and a brief was once written against a schema nobody had checked. That is the failure this section exists to prevent.
 
-**Admission Slice 1 sits on top of v2 §16 steps 1–9, and those are unbuilt.** Slice 1 cannot start until they are. The Slice 1 handoff was originally written against a schema that was never checked; that error is recorded here so it is not repeated.
+Done: **A1** — schema and `boardType = "game"` backfill. Columns exist; nothing reads them.
+Next: **A2** — board type picker.
 
-Verify build state by reading `prisma/schema.prisma`. Do not infer it from a document.
+Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits.
 
 ---
 
@@ -39,13 +42,14 @@ Verify build state by reading `prisma/schema.prisma`. Do not infer it from a doc
 
 | Document | Authority over |
 |---|---|
-| `fundraiser-money-state-machine.md` | Money, drawing eligibility. Invariants 1–22. **Wins every conflict** |
+| `fundraiser-money-state-machine.md` | Money, drawing eligibility, pricing. Invariants 1–22 and 42–44. **Wins every conflict** |
 | `fundraiser-admission-addendum.md` | Admission model and schema. Invariants 23–41 |
 | `fundraiser-board-v2.md` | All fundraiser flows and screens. **Flow authority for fundraiser work** |
-| `slice-1-handoff.md` | Admission Slice 1 build brief. Derives from the three above |
+| `slice-1-handoff.md` | Admission Slice 1 (A8) build brief. Derives from the three above |
+| `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
 
-All five live in the repo root. They are consistent as of admission addendum v1.4. There are no companion or delta files.
+Consistent as of admission addendum v1.5.
 
 **If two documents disagree, that is a bug. Report it. Do not choose.**
 
@@ -55,32 +59,32 @@ All five live in the repo root. They are consistent as of admission addendum v1.
 
 1. **Document first, code second.** Every change gets written down before it is built. For fundraiser work that means `fundraiser-board-v2.md`, not `SYSTEM-FLOW.md`.
 
-2. **Check the flow docs before pushing.** Walk every section the change touches. If the change would break any documented flow, stop and fix the approach first. This rule exists because on Feb 26, 2026, working code was destroyed by changes that ignored the documented flow.
+2. **Cite SYSTEM-FLOW rules by name, not number.** That file has gained rules over time, so numbers drift between copies. Say "the document-first rule," not "Rule 7."
 
-3. **Invariants are not suggestions.** If a test fails against an invariant, the model is right and the code is wrong. If you believe an invariant is wrong, say so and stop — do not work around it.
+3. **Check the flow docs before pushing.** Walk every section the change touches. If the change would break any documented flow, stop and fix the approach first. This rule exists because on Feb 26, 2026, working code was destroyed by changes that ignored the documented flow.
 
-4. **Stay in scope.** Do not refactor adjacent code, rename things, upgrade dependencies, or improve unrelated files. A diff should contain only what the task asked for.
+4. **Invariants are not suggestions.** If a test fails against an invariant, the model is right and the code is wrong. If you believe an invariant is wrong, say so and stop — do not work around it.
 
-5. **Game Day is untouched.** Every fundraiser and admission change must leave Game Day behavior and tests exactly as they were.
+5. **Stay in scope.** Do not refactor adjacent code, rename things, upgrade dependencies, or improve unrelated files. A diff should contain only what the task asked for. This includes formatters — `prisma format` realigns the whole schema and buries a real change in 163 lines of noise.
 
-6. **Ask rather than assume.** File paths, field names, and existing behavior are knowable — read the repo. Product decisions are not — ask.
+6. **Game Day is untouched.** Every fundraiser and admission change must leave Game Day behavior and tests exactly as they were.
 
-7. **Cross-reference rules by name, not number.** "The document-first rule," not "Rule 7." Numbering shifts when a rule is inserted, and a stale number sends the reader to the wrong rule.
+7. **Ask rather than assume.** File paths, field names, and existing behavior are knowable — read the repo. Product decisions are not — ask.
+
+8. **Never overwrite `SYSTEM-FLOW.md` from a circulating copy.** The repo's is newer than any zip or project-knowledge version and carries the double-grid feature. Port edits onto it by hand — `system-flow-port.md`.
 
 ---
 
 ## Untouchable without explicit approval
 
-- The drawing ticket — its meaning, numbering, and lifecycle. Admission never touches it.
-- Invariants 1–22 in the money doc.
+- The **drawing ticket concept**. There is no `Ticket` table and none should be built. Admission never touches it.
+- Invariants 1–22 and 42–44 in the money doc.
 - Any Game Day flow, route, or test.
 - Adding admission columns to `Board` or `Square`. The model deliberately puts none there. If the code seems to need one, the model is being misread.
 
 ---
 
 ## The drawing ticket is derived — there is no `Ticket` table
-
-A paid drawing ticket **is** the square. There is no `Ticket` model, and none should be built.
 
 ```
 paid drawing ticket  = Square where paymentStatus = paid
@@ -90,12 +94,18 @@ free entry ticket    = FreeEntry row, F sequence, its own atomic counter
 eligible draw pool   = a query over those two, not a table
 ```
 
-Money doc §5 is the authority: "The paid ticket ID **is** the square position. There is no sequence generator for paid tickets and none should be built."
+Money doc §5 is the authority. Two consequences:
 
-Two consequences that are easy to get wrong:
+- **Confirmation does not write a ticket.** Drawing eligibility follows from the square reaching `paid`. On a Phase A no-prize board `prizePoolPercent = 0`, so no ticket exists at all.
+- **The only index this implies is `FreeEntry (boardId, sequenceNumber)`.** The `(boardId, ticketNumber)` uniqueness line describes a guarantee already held by `Square (boardId, position)` — not an index to create.
 
-- **Confirmation does three writes, not four** — square to `paid`, supporter to `active`, mint passes. Drawing eligibility falls out of the first and needs no write of its own.
-- **The only index this implies is `FreeEntry (boardId, sequenceNumber)`.** The money doc's `(boardId, ticketNumber)` uniqueness line describes a guarantee that already holds structurally via `Square (boardId, position)` — it is not an instruction to build an index.
+---
+
+## Pricing
+
+`raised` is the **sum of `Square.pricePaidCents`** over confirmed squares. Never `count × price` — invariant 43.
+
+Price is fixed the moment a square leaves `open`, at claim or at cash reservation, and never recomputed — invariant 42. A cash square reserved at the early-bird price and confirmed a week later is still owed the early price, and the host's cash panel must show the amount that square was reserved at.
 
 ---
 

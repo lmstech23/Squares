@@ -46,23 +46,43 @@ ALTER TABLE boards
   ADD COLUMN final_prize_pool_cents  INTEGER,
   ADD COLUMN drawn_at                TIMESTAMPTZ,
   ADD COLUMN draw_results            JSONB,
-  ADD COLUMN title_history           JSONB;
+  ADD COLUMN title_history           JSONB,
+  -- Campaign backstop. draw_date used to do double duty as both the drawing
+  -- schedule and the campaign end; with prizes deferred to Phase B, nothing
+  -- else closes a no-prize fundraiser. Required on fundraiser boards,
+  -- enforced by API validation for the same conditional reason as draw_date.
+  ADD COLUMN campaign_ends_at        TIMESTAMPTZ,
+  -- Early bird — money doc §8B. Null price = flat pricing, current behavior.
+  ADD COLUMN early_bird_price_cents  INTEGER,
+  ADD COLUMN early_bird_ends_at      TIMESTAMPTZ;
 
--- Ranges from v2 §3. draw_trigger / draw_date / draw_timezone stay nullable:
--- the spec requires them on PRIZE boards only, which is a conditional
--- constraint and cannot be NOT NULL. API validation enforces it.
+-- Ranges from v2 §3. draw_trigger / draw_date / draw_timezone / campaign_ends_at
+-- stay nullable: the spec requires them conditionally, which cannot be NOT NULL
+-- on a table full of game boards. API validation enforces it.
+--
+-- The prize CHECK is deliberately added now even though prize boards are
+-- deferred to Phase B and nothing exercises it yet — that is precisely why it
+-- should not wait on someone remembering it later.
 ALTER TABLE boards
   ADD CONSTRAINT boards_prize_pool_percent_range
     CHECK (prize_pool_percent BETWEEN 0 AND 50),
   ADD CONSTRAINT boards_prize_tier_count_range
-    CHECK (prize_tier_count BETWEEN 1 AND 4);
+    CHECK (prize_tier_count BETWEEN 1 AND 4),
+  ADD CONSTRAINT boards_prize_requires_draw_date
+    CHECK (prize_pool_percent = 0 OR draw_date IS NOT NULL);
 
 -- 3. Square columns
+--
+-- price_paid_cents is nullable because an `open` square has no price yet. It is
+-- written the moment the square leaves `open` — at claim or at cash reservation
+-- — and never recomputed. `raised` is the sum of this column over confirmed
+-- squares, never count x price. Money doc invariants 42-44.
 ALTER TABLE squares
   ADD COLUMN hold_expires_at     TIMESTAMPTZ,
   ADD COLUMN checkout_session_id TEXT,
   ADD COLUMN batch_id            TEXT,
-  ADD COLUMN is_host_entry       BOOLEAN NOT NULL DEFAULT FALSE;
+  ADD COLUMN is_host_entry       BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN price_paid_cents    INTEGER;
 
 CREATE INDEX idx_squares_batch ON squares(batch_id);
 

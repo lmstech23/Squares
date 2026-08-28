@@ -15,7 +15,7 @@ Sign off on the invariants in Section 9 before any of this is built. The product
 |---|---|
 | **Square** | A spot on the fundraiser board. 25/50/75/100 per board. |
 | **Contribution** | Money given to claim a square. Non-refundable once confirmed. |
-| **Ticket** | An entry in the prize drawing. Exists only on prize-enabled boards. **Derived, not a table** — a paid ticket is the square itself, a free-entry ticket is a `FreeEntry` row. See §5. |
+| **Ticket** | An entry in the prize drawing. Exists only on prize-enabled boards. |
 | **Confirmed** | Money actually received. Card settled, or cash marked received by the host. |
 | **Reserved** | A cash square held for a named person. **$0.** Not confirmed. |
 | **Raised** | Sum of confirmed contributions. The public number. |
@@ -164,9 +164,20 @@ Tickets exist only when `prizePoolPercent > 0`.
 
 The paid ticket ID **is** the square position. There is no sequence generator for paid tickets and none should be built. The only sequential counter in the system is the `F` free-entry sequence.
 
-**Concurrency:** `(boardId, ticketNumber)` is unique. This is a **guarantee that already holds structurally, not an index to create.** Paid ticket numbers equal square positions, and `(boardId, position)` is already unique on `Square`, so two simultaneous confirmations of different squares cannot collide. Nothing needs to be added.
+**There is no `Ticket` table, and none should be built.** A paid drawing ticket is not a row. It is a property of a Square:
 
-The sequential-collision risk applies only to the `F` free-entry sequence, which needs its own atomic counter. **The one index this section actually calls for is `FreeEntry (boardId, sequenceNumber)` unique** — that is the only place a counter can collide.
+```
+paid drawing ticket  =  Square where paymentStatus = paid
+                        AND isHostEntry = false
+                        AND board.prizePoolPercent > 0
+
+free entry ticket    =  FreeEntry row, F sequence
+eligible draw pool   =  a query over those two
+```
+
+**Concurrency:** uniqueness of `(boardId, ticketNumber)` holds structurally rather than by index, because paid ticket numbers equal square positions and square positions are already unique. Two simultaneous confirmations of different squares cannot collide. The only real index needed is on `FreeEntry (boardId, sequenceNumber)`, and the only sequential-collision risk is the `F` counter, which needs its own atomic increment.
+
+An earlier version of this paragraph read as if it mandated a `(boardId, ticketNumber)` constraint on a table. It does not. It describes a guarantee that already holds.
 
 **Gaps are normal.** If only #4 and #87 are claimed, the pool is exactly `{#4, #87}`. There is no requirement for contiguous numbering.
 
@@ -268,11 +279,37 @@ A chargeback or bank reversal is an **exceptional processor event**, not a fundr
 
 ---
 
+## 8B. Contribution price schedule
+
+Optional. A board may carry one changeover:
+
+```
+earlyBirdPriceCents   Int?        null = flat pricing, current behavior
+earlyBirdEndsAt       DateTime?   with the board's timezone
+squarePrice                       the standard price, after changeover
+```
+
+**Date-based, deliberately.** A quantity trigger ("first 25 squares") would need an atomic counter, a row lock, a rule for a batch spanning the boundary, and an answer for whether an expired hold returns its tier to the pool. A timestamp has none of that. If quantity tiers are ever wanted, they are a separate spec with their own invariants.
+
+**Price locks at claim, not at confirmation.** These are now two different moments and the gap between them can be days:
+
+| Case | Price |
+|---|---|
+| Card claim at 11:58pm, pays at 12:01am | Early. Claimed before changeover |
+| Card claim before, hold expires, reclaimed after | Standard. It is a new claim |
+| Cash reserved Friday at early price, host confirms the following Thursday | **Early.** The reservation fixed it |
+
+The cash row is the one to get right. A host confirming a week-old reservation must see the amount that square was reserved at, not the board's current price, or she collects the wrong money and `raised` disagrees with her bank.
+
+**Prize interaction: none.** The pool is a percentage of `raised`, and `raised` is a sum of actual amounts. Variable pricing flows through untouched. Had the pool been `squares × price × percent`, this would have broken it.
+
+---
+
 ## 9. Invariants
 
 Every one of these must hold at all times.
 
-1. `raised` counts confirmed contributions only. Never claimed, reserved, or pending.
+1. `raised` counts confirmed contributions only. Never claimed, reserved, or pending. It is the **sum of `Square.pricePaidCents`** across confirmed squares — never `count × price`, because price can vary by schedule.
 2. `prizePool = prizePoolPercent × raised`, confirmed only.
 3. A reserved cash square contributes $0 and holds no ticket.
 4. `CONFIRMED` is terminal. A confirmed square never returns to `open`.
@@ -287,13 +324,19 @@ Every one of these must hold at all times.
 13. Once `finalPrizePoolCents` is written, it never changes — including for later disputes.
 14. Prize tiers sum exactly to the finalized pool.
 15. Host and admin squares count toward `raised` but never receive an active drawing ticket. No override.
-16. After the first confirmed contribution, these are locked: square count, contribution price, prize on/off, prize percent, tier count, drawing rule, drawing date, and — on boards with an event — event date and the maximum attendee allowance per supporter. Attendance is a declaration against that allowance, never a fixed number of admissions per square or per purchase.
+16. After the first confirmed contribution, these are locked: square count, **the contribution price schedule** (both prices and the changeover time), prize on/off, prize percent, tier count, drawing rule, drawing date, and — on boards with an event — event date and the maximum attendee allowance per supporter. A disclosed schedule set before the first contribution is not a price change; an edit to that schedule afterward is. Attendance is a declaration against that allowance, never a fixed number of admissions per square or per purchase.
 17. Free entries never occupy a square or move the fundraising meter.
 18. A `pending` square carries a server-set `holdExpiresAt` = earlier of (now + 10 minutes) or campaign close. The displayed countdown uses that same timestamp. When the Daali hold expires, the Stripe Checkout Session must be resolved before any square is released: complete/paid → confirm the full batch; open/unpaid → explicitly expire the Stripe session, then release the full batch.
 19. A `pending` square may be manually released only after `holdExpiresAt` has passed, and only through the resolution sequence in 18.
 20. Payment always wins before release and before finalization. A pending card batch must never be released while its Stripe session remains capable of successful payment. A released batch must not later produce a new valid payment.
 21. Finalization cannot occur while any square is `pending` or `reserved_cash`. `CLOSING` reconciles every outstanding payment against Stripe before `finalRaisedCents` is written.
 22. Paid ticket numbers may have gaps. Contiguity is never required or asserted.
+
+### Pricing (invariants 42–44)
+
+42. `Square.pricePaidCents` is written the moment a square leaves `open` — at claim or at cash reservation — and is **never recomputed**. Price is fixed when the square is taken, not when the money arrives.
+43. `raised` is the sum of `pricePaidCents` over confirmed squares. No code path may derive it from a board-level price.
+44. The price schedule is a boundary in **time**, evaluated once per claim. It is never a function of how many squares have sold, so no counter, lock, or ordering guarantee is required.
 
 Invariants 23–41 govern event admission and are defined in `fundraiser-admission-addendum.md`. They are numbered continuously with this list so a single sequence covers both documents. Admission never moves money, never touches `raised`, and never alters drawing eligibility.
 

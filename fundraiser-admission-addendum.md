@@ -1,9 +1,11 @@
 # Fundraiser Admission — Addendum
 
 **Status:** FROZEN — Aug 27, 2026. Slice 1 released to build.
-**Version:** 1.4
+**Version:** 1.5
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on product)
 **Depends on:** Fundraiser boards, cash reserve/confirm, batch claim flow
+
+**Changed in 1.5:** activation corrected — a drawing ticket is a derived property of a Square, not a row, so confirmation performs **two** writes on a no-prize board and three on a prize board, not four. Phase A context added.
 
 **Changed in 1.4:** `sequenceNumber` made monotonic and never reused, fixing a collision on decrease-then-increase; `void` made terminal so a shared screenshot can never become valid again; display ordinal separated from sequence; decrease floored at the used count; check-in audit changed from bearer token to `VolunteerAccess` foreign key; invariant ranges corrected to 23–41.
 
@@ -23,7 +25,7 @@ Everything about dollars, square states, drawing eligibility, close, and draw me
 
 The drawing ticket is **untouched**. Its meaning, numbering, and lifecycle are unchanged. This document introduces a separate object.
 
-**A drawing ticket is a derived concept, not a table.** There is no `Ticket` model and none should be built — money doc §5. A paid drawing ticket *is* a `paid`, non-host square on a prize-enabled board; a free-entry ticket is a `FreeEntry` row. "Untouched" therefore means this document adds nothing to that derivation, not that it leaves a table alone.
+**It is a derived concept, not a table.** There is no `Ticket` model and none should be built — money doc §5.
 
 If this document appears to contradict the money doc, the money doc wins and this document is wrong.
 
@@ -63,10 +65,10 @@ Board (fundraiser)  ──optional──▶  Event
       │                              │
       │                         EventSupporter ──▶ AdmissionPass × N
       │                              ▲
-   Square ──confirms──┬─▶ drawing eligibility
-                      │   (derived from the square — no table)
-                      │                            │
-                      └──▶ AdmissionGrant ─────────┘
+   Square ──confirms──┬──▶ Ticket    │
+                      │   (drawing)  │
+                      │   unchanged  │
+                      └──▶ AdmissionGrant ───────┘
 ```
 
 Admission is **not** a field on `Square` and **not** a field on `Board`.
@@ -322,17 +324,18 @@ active   →  passes exist, can enter
 
 ### At confirmation
 
-**Passes are minted inside the same transaction that flips a square to `paid`.** Same commit as drawing eligibility.
+**Passes are minted inside the same transaction that flips a square to `paid`.**
 
 ```
 card:  Stripe webhook  ──┐                      square → paid
                          ├──▶ one transaction   supporter → active
 Zelle / Cash App:        │                      mint N admission passes
-  host taps confirm  ────┘
-                                                roster row appears
+  host taps confirm  ────┘                      roster row appears
 ```
 
-**Three writes, not four.** Drawing eligibility is not a fourth write — it is derived from the square being `paid`, so it follows from the first line rather than needing its own. Money doc §5.
+**Two writes, not four.** An earlier draft listed "drawing ticket → active" as a separate effect. It is not. Money doc §5: a paid drawing ticket is a derived property of a Square — `paymentStatus = paid AND NOT isHostEntry AND prizePoolPercent > 0` — so eligibility is a *consequence* of the first write, not an additional one. There is no `Ticket` table.
+
+On a Phase A no-prize board, `prizePoolPercent = 0`, so no ticket exists at all and the question does not arise.
 
 Card and Zelle/Cash App **end at the same state by the same path**. The trigger differs; nothing downstream does.
 
@@ -380,9 +383,13 @@ A supporter reserves 3 squares, declares 4 attendees, and only 1 square confirms
 
 Admission is deliberately **not proportional to contribution**. Money is counted per square. Admission is a declaration with a ceiling. They are different quantities and the system should never try to reconcile them.
 
+### Phase A note
+
+Admission ships in Phase A alongside a **no-prize** fundraiser (v2 §16). Everything in this document holds identically on a prize board — admission never touches money or eligibility — but on a Phase A board there are no tickets, so the only thing confirmation activates besides the square is admission.
+
 ### Host-funded squares
 
-**Host and admin squares carry admission normally.** They are funded, they are drawing-ineligible under invariant 15, and the host is obviously attending her own tailgate.
+**Host and admin squares carry admission normally.** They are funded, they are drawing-ineligible under invariant 15, and the host is obviously attending her own tailgate. (On a Phase A board nothing is drawing-eligible, so this reduces to: her square funds the cause and admits her.)
 
 **Where the host's supporter row comes from.** A host square is created already funded from the dashboard, so there is no separate confirmation step to activate on. Creating a host-entry square on a board with an event therefore does preparation and activation in one transaction:
 

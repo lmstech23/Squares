@@ -92,6 +92,12 @@ model Board {
   drawnAt                   DateTime?    @map("drawn_at") @db.Timestamptz(6)
   drawResults               Json?        @map("draw_results")
   titleHistory              Json?        @map("title_history")
+  // Campaign backstop — required on fundraiser boards, API-enforced.
+  // drawDate no longer doubles as the campaign end now that prizes are Phase B.
+  campaignEndsAt            DateTime?    @map("campaign_ends_at") @db.Timestamptz(6)
+  // Early bird — money doc §8B. Null price = flat pricing.
+  earlyBirdPriceCents       Int?         @map("early_bird_price_cents")
+  earlyBirdEndsAt           DateTime?    @map("early_bird_ends_at") @db.Timestamptz(6)
 
   host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
   squares                   Square[]
@@ -125,6 +131,10 @@ model Square {
   checkoutSessionId String?           @map("checkout_session_id")
   batchId           String?           @map("batch_id")
   isHostEntry       Boolean           @default(false) @map("is_host_entry")
+  /// Written when the square leaves `open` — at claim or cash reservation —
+  /// and never recomputed. `raised` sums this, never count × price. Inv. 42–44.
+  /// Nullable because an `open` square has no price yet.
+  pricePaidCents    Int?              @map("price_paid_cents")
 
   payment           PaymentReference?
   board             Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)

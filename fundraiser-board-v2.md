@@ -98,6 +98,8 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `drawnAt` | DateTime? | |
 | `drawResults` | Json? | |
 | `titleHistory` | Json? | Array of `{previousTitle, changedAt}` |
+| `earlyBirdPriceCents` | Int? | Null = flat pricing. Money doc §8B |
+| `earlyBirdEndsAt` | DateTime? | Changeover, in `drawTimezone` |
 
 ### Board — nullable for fundraiser
 
@@ -113,6 +115,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `checkoutSessionId` | String? | Needed to resolve/expire — invariant 18 |
 | `batchId` | String? | Groups a multi-square claim |
 | `isHostEntry` | Boolean | Default false. Funded, never eligible — invariant 15 |
+| `pricePaidCents` | Int | **Written when the square leaves `open`. Never recomputed** — invariant 42 |
 
 ### FreeEntry — new table
 
@@ -167,6 +170,8 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Tell people what it's for | Optional, 2 lines → `causeDescription` |
 | Number of squares | 25 / 50 / 75 / 100. Segmented. Default 100. |
 | Contribution per square | Min $1 → `squarePrice` |
+| Early bird price | Optional. Min $1, must be below the standard price |
+| Early bird ends | Required if an early bird price is set. Date + time |
 | Offer a prize? | No prize (default) / Yes |
 | Prize pool | If yes. 0–50% of raised. Default 20%. |
 | Number of prizes | If yes. 1–4. Default 4. |
@@ -187,6 +192,16 @@ If all 100 squares fill you raise $5,000
 ```
 
 Estimated proceeds is host-facing only and shown as an estimate, because processing cost varies by payment method. It never appears on the public board.
+
+### Early bird pricing
+
+Optional, one changeover, date-based. Money doc §8B and invariants 42–44.
+
+Public copy states the deadline, because urgency is the whole point:
+
+> **$25 per square through September 15. $30 after.**
+
+Price is fixed when a square is claimed or reserved, not when payment lands. A cash square reserved at the early price and confirmed a week later is still owed the early price, and the host's cash panel shows **the amount that square was reserved at**, never the board's current price.
 
 ### Optional event block
 
@@ -295,6 +310,8 @@ Mechanics are invariant 18 — resolve the Stripe session before releasing.
 Minimum viable fields: **name, email, phone, payment.** Nothing else.
 
 **Do not collect payout handles at checkout.** That is Game Day behavior and it does not belong here. Winners are asked for a handle after the draw, in the notification — four people, not a hundred.
+
+**Price is locked at claim.** The claim sheet shows the price in effect at that moment and writes it to `pricePaidCents`. If the hold expires and the squares are reclaimed after the changeover, that is a new claim at the new price — correct, and the release copy should not imply otherwise.
 
 **The no-refund policy must be visible before payment.** Money doc §8 flags this as a dependency: an undisclosed no-refund policy is the most reliable way to produce the disputes it cannot prevent. Exact wording is a copy decision; the requirement is not.
 
@@ -590,21 +607,46 @@ Game Day in every respect · cash mode PIN and reserve/confirm · Stripe Connect
 
 ## 16. Build order
 
-1. Schema + backfill `boardType = "game"`
-2. Board type picker
-3. Fundraiser form + API branch
-4. Fundraiser grid + contributor board
-5. Claim flow: quantity, optional picker, batching
-6. Hold timer + resolve-then-release cron
-7. CLOSING phase + finalization
-8. Draw + audit display
-9. Free-entry data path (no UI)
-10. Email notifications
-11. Platform fee — separate PR
+**Nothing in this document is built yet.** As of the admission review, the repo contains no `boardType`, no fundraiser columns, no `FreeEntry`. Everything below starts from zero.
 
-Steps 1–9 are a working fundraiser board. Ship there, run the Hampton tailgate on it, then do 10 and 11.
+### Phase A — No-prize fundraiser + admission (Hampton)
 
-**The eleven tests in money doc §11 gate step 7.** Do not proceed to the draw until they pass.
+Prize boards are **deferred**, by decision, not by configuration. `prizePoolPercent` stays in the schema defaulted to 0, and the prize fields do not render on the form. A host cannot turn prizes on in Phase A, because a toggle that produces a board with no draw behind it is worse than no toggle.
+
+| # | Step |
+|---|---|
+| A1 | Schema + backfill `boardType = "game"` — includes prize columns, unused |
+| A2 | Board type picker |
+| A3 | Fundraiser form + API branch. No prize fields. Early bird pricing |
+| A4 | Fundraiser grid + contributor board |
+| A5 | Claim flow: quantity, optional picker, batching, `pricePaidCents` at claim |
+| A6 | Hold timer + resolve-then-release cron |
+| A7 | CLOSING + finalization — `finalRaisedCents` only |
+| A8 | Admission Slice 1 — schema, preparation, activation |
+| A9 | Admission Slice 2 — event block, attendance step, passes, Manage attendance |
+| A10 | Admission Slice 3 — volunteer surface, QR, roster, check-in |
+
+A1–A7 are a working no-prize fundraiser. A8–A10 add the gate. Ship there and run Hampton.
+
+### Phase B — Prizes
+
+| # | Step |
+|---|---|
+| B1 | Prize fields on the form + live preview |
+| B2 | Drawing eligibility, `finalPrizePoolCents`, prize tiers |
+| B3 | Draw + audit display |
+| B4 | Free-entry data path (no UI) |
+| B5 | Winner notification + payout coordination |
+
+**The eleven tests in money doc §11 gate B3.** They are not on the Phase A critical path.
+
+### What Phase A does not have to solve
+
+No tickets of any kind, since tickets exist only when `prizePoolPercent > 0`. No draw, no tiers, no `finalPrizePoolCents`, no immutable-pool-versus-disputed-contribution problem, no free entry, no winner notification, no payout coordination. Money doc invariants 8–14 and 17 are dormant. This is a materially smaller object than the one this document was originally written around.
+
+### Phase C — later
+
+Email notifications. Platform fee, separate PR.
 
 ### Admission — three slices, in order
 
@@ -620,13 +662,15 @@ Slice 1 is where a mistake is expensive and silent. Review it before Slice 2 sta
 
 ## 17. Before writing code
 
+**Cite rules by name, never by number.** `SYSTEM-FLOW.md` has gained rules over time — the double-grid work inserted one — so "Rule 7" points at different text depending on which copy you are reading. Refer to **the document-first rule** and **the check-before-pushing rule** instead. Any numbered citation in these documents is stale by construction.
+
 **Superseded rule.** An earlier version of this section required a full fundraiser branch in `SYSTEM-FLOW.md` before any fundraiser code was written. That requirement is **retired and replaced by the two rules below.** It is recorded here rather than deleted so nobody reinstates it from memory.
 
 **Rule A — this document is the flow authority for fundraiser boards.** Everything fundraiser, including admission: screens, flows, auth, build order. `SYSTEM-FLOW.md` remains the authority for Game Day. The document-first rule is satisfied for fundraiser work by writing here first.
 
 **Rule B — the full SYSTEM-FLOW fundraiser backfill is deferred and blocks nothing.** It does not block Admission Slice 1, Slice 2, or Slice 3. It remains a real gap and a real ticket: SYSTEM-FLOW documents the Game Day app only, so anyone following the check-before-pushing rule who looks only there finds a map without the territory. The pointer added to its Quick Summary is what redirects them here.
 
-**What SYSTEM-FLOW carries for admission** — three edits, no more, and all three are done: the pointer, a correction to §4 noting that confirming cash on a board with an event does three things in one transaction rather than one, and the new tables listed in §7.
+**What SYSTEM-FLOW carries for admission** — three edits, no more, specified in `system-flow-port.md`. They must be **ported onto the repo's current copy**, never applied by overwriting the file. The repo's version is newer than any copy circulating in project knowledge and contains the double-grid feature.
 
 ---
 
