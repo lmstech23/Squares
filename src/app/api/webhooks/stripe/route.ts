@@ -15,7 +15,7 @@ import { stripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { confirmSquares } from "@/lib/confirm-square";
 import Stripe from "stripe";
-import { sendEmail } from "@/lib/email";
+import { sendPendingConfirmations } from "@/lib/confirmation-email";
 
 // Disable body parsing — we need the raw body for signature verification
 export const runtime = "nodejs";
@@ -166,38 +166,27 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     throw error;
   }
 
-  // --- SMS: card confirmed ---
-  // Fires after transaction succeeds. Twilio failure is non-fatal —
-  // payment state is already committed and cannot be affected.
-  try {
-    const paidSquares = await prisma.square.findMany({
-      where: { squareId: { in: squareIds } },
-      select: {
-        position: true,
-        playerName: true,
-        playerEmail: true,
-        board: {
-          select: { gameName: true },
-        },
-      },
-    });
+  // --- Confirmation email ---
+  //
+  // ONE email covering the whole batch, not one per square — addendum §5.
+  // This previously looped over squares and sent an email each, so buying two
+  // squares produced two emails. Four QR codes across four messages is
+  // unusable at a gate.
+  //
+  // Card confirms atomically, so it sends immediately. Failure is non-fatal:
+  // payment state is already committed, and an unstamped square is retried by
+  // the cron sweep rather than silently losing its receipt.
+  const confirmed = await prisma.square.findFirst({
+    where: { squareId: { in: squareIds } },
+    select: { batchId: true, boardId: true },
+  });
 
-    for (const sq of paidSquares) {
-      if (!sq.playerEmail) continue;
-      const squareNumber = sq.position + 1;
-      try {
-        await sendEmail(
-          sq.playerEmail,
-          `Your square is confirmed — ${sq.board.gameName}`,
-          `<p>You're in! Square #${squareNumber} on <strong>${sq.board.gameName}</strong> is locked in. Good luck!</p>`
-        );
-      } catch (emailErr) {
-        console.warn(`Card confirmed email failed for square #${squareNumber}:`, emailErr);
-      }
-    }
-
-  } catch (err) {
-    console.warn("Card confirmed email block failed (non-fatal):", err);
+  if (confirmed) {
+    await sendPendingConfirmations(
+      confirmed.batchId
+        ? { batchId: confirmed.batchId }
+        : { boardId: confirmed.boardId }
+    );
   }
 }
 

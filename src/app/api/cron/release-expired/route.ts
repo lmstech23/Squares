@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveExpiredHolds } from "@/lib/checkout-holds";
+import { sendPendingConfirmations } from "@/lib/confirmation-email";
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -47,8 +48,18 @@ export async function GET(request: Request) {
   // 3. Fundraiser holds — resolve, do not release. Invariants 18-20.
   const holds = await resolveExpiredHolds(now);
 
+  // 4. Confirmation emails for anything confirmed but not yet mailed.
+  //
+  // This is what lets the cash path avoid sending inline: a host confirming
+  // three squares one at a time produces three confirmation events, and
+  // sweeping here coalesces them into one email per contributor per cycle.
+  // Also the retry path for a card send that failed — an unstamped square is
+  // picked up next cycle rather than losing its receipt.
+  const emails = await sendPendingConfirmations({});
+
   return NextResponse.json({
     ok: true,
+    confirmationEmails: emails,
     releasedStripe: releasedStripe.count,
     expiredBoards: expiredBoards.count,
     fundraiserHolds: holds,

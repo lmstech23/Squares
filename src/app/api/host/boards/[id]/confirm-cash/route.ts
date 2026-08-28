@@ -17,7 +17,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { confirmSquares } from "@/lib/confirm-square";
 import { getHost } from "@/lib/auth";
-import { sendEmail } from "@/lib/email";
 
 interface ConfirmCashBody {
   squareId: string;
@@ -86,29 +85,18 @@ export async function POST(
       },
     });
 
-     // --- Email: cash confirmed ---
-    // Fires after confirmation is committed. Send failure is non-fatal.
-    try {
-      const square = await prisma.square.findUnique({
-        where: { squareId },
-        select: {
-          position: true,
-          playerName: true,
-          playerEmail: true,
-        },
-      });
-      if (square?.playerEmail) {
-        const squareNumber = square.position + 1;
-        await sendEmail(
-          square.playerEmail,
-          `Your square is confirmed — ${board.gameName}`,
-          `<p>Your cash payment is confirmed! You have Square #${squareNumber} on <strong>${board.gameName}</strong>. Good luck!</p>`
-        );
-      }
-    } catch (err) {
-      console.warn(`Cash confirmed email failed for square ${squareId}:`, err);
-    }
-    
+    // --- Confirmation email: deliberately NOT sent here ---
+    //
+    // Direct payments resolve one square at a time (money doc §4), so a host
+    // marking three squares received produces three confirmation events. A
+    // send from this handler would be three emails for one purchase, which is
+    // the bug this replaces.
+    //
+    // The five-minute cron sweeps unmailed confirmations instead, coalescing
+    // rapid clicks into one email per contributor. A contributor who paid by
+    // Zelle days ago is not waiting on a receipt to the minute, and the delay
+    // buys correctness for the common case. Addendum §5.
+
     return NextResponse.json({ success: true, squareId });
   } catch (error) {
     console.error("Confirm cash error:", error);
