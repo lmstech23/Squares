@@ -133,7 +133,7 @@ export async function confirmSquares(
  *     the lock is ever circumvented, a double-mint collides and rolls back
  *     with its square, retryable — rather than silently issuing twice.
  */
-async function mintPasses(
+export async function mintPasses(
   tx: Prisma.TransactionClient,
   supporterId: string,
   squareIds: string[]
@@ -176,6 +176,101 @@ async function mintPasses(
   });
 
   return squareIds.length;
+}
+
+/**
+ * Turn a grant's donate flag on or off after the fact — addendum §6.
+ *
+ * A host action from the event panel, for the supporter who decides to come
+ * after all or the one who cannot.
+ *
+ * Toggling ON voids that grant's active passes. Toggling OFF mints new ones at
+ * the NEXT cursor values with new tokens — never the old numbers. `void` is
+ * terminal: a screenshot shared into a group chat last week must not become a
+ * working credential again because someone changed their mind twice.
+ *
+ * A `used` pass is never voidable. If three people already walked in, that
+ * grant cannot be retroactively donated, and the request is rejected rather
+ * than partially applied.
+ */
+export async function setDonateFlag(
+  tx: Prisma.TransactionClient,
+  grantId: string,
+  donate: boolean
+): Promise<
+  | { ok: true; voided: number; minted: number }
+  | { ok: false; reason: "not_found" | "used_passes"; usedCount?: number }
+> {
+  const grant = await tx.admissionGrant.findUnique({
+    where: { id: grantId },
+    select: {
+      id: true,
+      eventSupporterId: true,
+      squareBatchId: true,
+      donateAdmissions: true,
+    },
+  });
+
+  if (!grant || !grant.squareBatchId) return { ok: false, reason: "not_found" };
+
+  // The confirmed squares this grant paid for — one pass each.
+  const squares = await tx.square.findMany({
+    where: { batchId: grant.squareBatchId, paymentStatus: "paid" },
+    select: { squareId: true },
+  });
+
+  if (donate) {
+    // Only this grant's passes, identified by the squares it paid for. A
+    // supporter may hold passes from another purchase that must not be touched.
+    const squareIds = squares.map((s) => s.squareId);
+
+    const used = await tx.admissionPass.count({
+      where: { squareId: { in: squareIds }, status: "used" },
+    });
+
+    if (used > 0) {
+      return { ok: false, reason: "used_passes", usedCount: used };
+    }
+
+    const voided = await tx.admissionPass.updateMany({
+      where: { squareId: { in: squareIds }, status: "active" },
+      data: { status: "void" },
+    });
+
+    await tx.admissionGrant.update({
+      where: { id: grant.id },
+      data: { donateAdmissions: true },
+    });
+
+    return { ok: true, voided: voided.count, minted: 0 };
+  }
+
+  // Toggling back on. Mint for squares that have no live pass — a grant
+  // toggled twice must not accumulate duplicates.
+  const live = await tx.admissionPass.findMany({
+    where: {
+      squareId: { in: squares.map((s) => s.squareId) },
+      status: { in: ["active", "used"] },
+    },
+    select: { squareId: true },
+  });
+  const covered = new Set(live.map((p) => p.squareId));
+  const needing = squares.filter((s) => !covered.has(s.squareId));
+
+  const minted = needing.length
+    ? await mintPasses(
+        tx,
+        grant.eventSupporterId,
+        needing.map((s) => s.squareId)
+      )
+    : 0;
+
+  await tx.admissionGrant.update({
+    where: { id: grant.id },
+    data: { donateAdmissions: false },
+  });
+
+  return { ok: true, voided: 0, minted };
 }
 
 /**

@@ -14,6 +14,7 @@ import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
 import ContributorList, { type ContributorRow } from "./contributor-list";
+import EventPanel, { type GrantRow } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
@@ -186,6 +187,66 @@ export default async function HostBoardPage({ params }: Props) {
 
     const contributors = Array.from(byContributor.values());
 
+    // Event panel — only on a board with an event.
+    let expected = 0;
+    let unpaidForecast = 0;
+    const grantRows: GrantRow[] = [];
+
+    if (board.event) {
+      // Expected counts active and used passes on active supporters. Donated
+      // purchases contribute zero, which is the point of the checkbox.
+      expected = await prisma.admissionPass.count({
+        where: {
+          supporter: { eventId: board.event.id, status: "active" },
+          status: { in: ["active", "used"] },
+        },
+      });
+
+      const grants = await prisma.admissionGrant.findMany({
+        where: { eventId: board.event.id },
+        select: {
+          id: true,
+          squareBatchId: true,
+          donateAdmissions: true,
+          supporter: { select: { id: true, name: true, email: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      for (const g of grants) {
+        if (!g.squareBatchId) continue;
+
+        const [paidSquares, awaitingSquares, used] = await Promise.all([
+          prisma.square.count({
+            where: { batchId: g.squareBatchId, paymentStatus: "paid" },
+          }),
+          prisma.square.count({
+            where: { batchId: g.squareBatchId, paymentStatus: "reserved_cash" },
+          }),
+          prisma.admissionPass.count({
+            where: {
+              supporter: { id: g.supporter.id },
+              status: "used",
+              square: { batchId: g.squareBatchId },
+            },
+          }),
+        ]);
+
+        // A forecast, never a headcount: what would exist if outstanding
+        // direct payments confirm. Donated purchases forecast nothing.
+        if (!g.donateAdmissions) unpaidForecast += awaitingSquares;
+
+        grantRows.push({
+          grantId: g.id,
+          name: g.supporter.name,
+          email: g.supporter.email,
+          tickets: g.donateAdmissions ? 0 : paidSquares,
+          donated: g.donateAdmissions,
+          usedCount: used,
+        });
+      }
+    }
+
     return (
       <div>
         <Link
@@ -233,6 +294,17 @@ export default async function HostBoardPage({ params }: Props) {
           }))}
           pendingBatches={pendingBatches}
         />
+
+        {board.event && (
+          <div className="mt-6">
+            <EventPanel
+              boardId={board.boardId}
+              expected={expected}
+              unpaidForecast={expected + unpaidForecast}
+              grants={grantRows}
+            />
+          </div>
+        )}
 
         <div className="mt-6">
           <ContributorList

@@ -121,12 +121,18 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       positions: number[];
       admissionPasses: number;
       hasEvent: boolean;
+      passesUrl: string | null;
     } | null = null;
 
     if (sp.success === "true" && sp.session_id) {
       const purchased = await prisma.square.findMany({
         where: { boardId: board.boardId, checkoutSessionId: sp.session_id },
-        select: { squareId: true, position: true, paymentStatus: true },
+        select: {
+          squareId: true,
+          position: true,
+          paymentStatus: true,
+          batchId: true,
+        },
         orderBy: { position: "asc" },
       });
 
@@ -145,10 +151,15 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
             })
           : 0;
 
+        const batchId = purchased.find((sq) => sq.batchId)?.batchId ?? null;
+
         confirmation = {
           positions: purchased.map((sq) => sq.position + 1),
           admissionPasses: passes,
           hasEvent: board.event != null,
+          // Only offered when there is something behind it — A9 is what makes
+          // the ticket line safe to show again.
+          passesUrl: passes > 0 && batchId ? `/passes/${batchId}` : null,
         };
       }
     }

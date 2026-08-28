@@ -60,6 +60,7 @@ interface Props {
     positions: number[];
     admissionPasses: number;
     hasEvent: boolean;
+    passesUrl: string | null;
   } | null;
 }
 
@@ -237,6 +238,17 @@ export default function FundraiserView({
               <p className="text-sm text-green-200/80 mt-1">
                 {confirmation.admissionPasses}{" "}
                 {confirmation.admissionPasses === 1 ? "Ticket" : "Tickets"}
+                {confirmation.passesUrl && (
+                  <>
+                    {" · "}
+                    <a
+                      href={confirmation.passesUrl}
+                      className="underline underline-offset-4 hover:text-green-100"
+                    >
+                      View your tickets
+                    </a>
+                  </>
+                )}
               </p>
             )}
             <p className="text-xs text-green-200/60 mt-2">

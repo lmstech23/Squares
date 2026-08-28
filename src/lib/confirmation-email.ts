@@ -152,6 +152,11 @@ export async function sendPendingConfirmations(where: {
       // Tickets — only on a board with an event, and never for a purchase that
       // donated its admissions: minting skipped it, so there are no passes to
       // find and this is naturally empty.
+      // The batch keys the passes screen. All squares a recipient has here
+      // share one batch in the normal case; if a merge produced more than one,
+      // any of them resolves to the same supporter and the same ticket set.
+      const batchId = rows.find((r) => r.batchId)?.batchId ?? null;
+
       const passes = await prisma.admissionPass.findMany({
         where: {
           squareId: { in: rows.map((r) => r.squareId) },
@@ -173,6 +178,15 @@ export async function sendPendingConfirmations(where: {
                    Show a code at the gate. Each admits one person, so you can
                    forward one on its own.
                  </p>
+                 ${
+                   batchId
+                     ? `<p style="margin:8px 0 0;font:13px system-ui,sans-serif;">
+                          <a href="${base}/passes/${encodeURIComponent(batchId)}"
+                             style="color:#166534;">View your tickets</a>
+                          — keep this link in case the email is gone.
+                        </p>`
+                     : ""
+                 }
                </td></tr>
                ${ticketBlocks(passes.map((p) => p.token), base)}
              </table>`
