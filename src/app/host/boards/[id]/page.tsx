@@ -74,6 +74,11 @@ export default async function HostBoardPage({ params }: Props) {
     },
   });
 
+  // Direct payment on fundraiser boards — §6C. cashModeEnabled is forced true
+  // at creation and the toggle never renders: switching it off would make card
+  // the only way to contribute, and direct payment is how most people will pay.
+  const isFundraiser = board.boardType === "fundraiser";
+
   const paidCount = board.squares.filter(
     (s) => s.paymentStatus === "paid"
   ).length;
@@ -182,8 +187,8 @@ export default async function HostBoardPage({ params }: Props) {
         </div>
       )}
 
-      {/* Cash Mode */}
-      {isOpen && (
+      {/* Cash Mode — never rendered on a fundraiser board (§6C) */}
+      {isOpen && !isFundraiser && (
         <CashModeToggle
           boardId={board.boardId}
           initialEnabled={board.cashModeEnabled}
@@ -203,6 +208,7 @@ export default async function HostBoardPage({ params }: Props) {
             paymentStatus: s.paymentStatus,
             paymentMethod: s.paymentMethod,
           }))}
+          isFundraiser={isFundraiser}
         />
       )}
 

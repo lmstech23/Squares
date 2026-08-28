@@ -36,9 +36,9 @@ export async function POST(
     const body: CashReserveBody = await request.json();
     const { squareIds, playerName, pin } = body;
 
-    if (!squareIds?.length || !playerName?.trim() || !pin?.trim()) {
+    if (!squareIds?.length || !playerName?.trim()) {
       return NextResponse.json(
-        { error: "Square IDs, name, and PIN are required." },
+        { error: "Square IDs and name are required." },
         { status: 400 }
       );
     }
@@ -80,20 +80,30 @@ export async function POST(
       );
     }
 
-    if (!board.cashModeEnabled || !board.cashPin) {
-      return NextResponse.json(
-        { error: "Cash reservations are not enabled for this board." },
-        { status: 403 }
-      );
-    }
-
-    if (pin.trim() !== board.cashPin) {
-      return NextResponse.json(
-        { error: "Incorrect PIN." },
-        { status: 403 }
-      );
-    }
     const isFundraiser = board.boardType === "fundraiser";
+
+    // Fundraiser boards have no PIN — §6C. Direct payment is always on, and
+    // the contributor picks the method at checkout instead of entering a code
+    // the host would have to hand them in person.
+    if (isFundraiser) {
+      if (!board.cashModeEnabled) {
+        return NextResponse.json(
+          { error: "Direct payment is not available on this board." },
+          { status: 403 }
+        );
+      }
+    } else {
+      if (!board.cashModeEnabled || !board.cashPin) {
+        return NextResponse.json(
+          { error: "Cash reservations are not enabled for this board." },
+          { status: 403 }
+        );
+      }
+
+      if (!pin?.trim() || pin.trim() !== board.cashPin) {
+        return NextResponse.json({ error: "Incorrect PIN." }, { status: 403 });
+      }
+    }
     const email = body.playerEmail?.trim().toLowerCase() || null;
 
     // Campaigns close on a date, not a board status — invariant 6.

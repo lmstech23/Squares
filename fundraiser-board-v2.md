@@ -63,7 +63,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 
 | File | Change |
 |------|--------|
-| `src/lib/admission.ts` | **NEW** — sole owner of pass lifecycle: resolve, declare, activate, allowance |
+| `src/lib/admission.ts` | **NEW** — sole owner of supporter, grant, and pass lifecycle: resolve, prepare, activate, mint |
 | `src/app/api/webhooks/stripe/route.ts` | Activation joins the batch confirmation transaction |
 | *existing cash confirm route* | Same activation call. Locate it; do not guess the path |
 | `src/lib/cron/release-expired.ts` | Clean up orphaned pending grants |
@@ -159,7 +159,8 @@ Free entries occupy no square, so they cannot be Square rows.
 | `gridType` | `"standard"`. Not meaningful. |
 | `maxSquaresPerPlayer` | **Does not apply** — money doc §12 |
 | `totalSquares` | 25 / 50 / 75 / 100 |
-| `cashModeEnabled`, `cashPin` | Unchanged |
+| `cashModeEnabled` | **Forced true** on fundraiser boards. No toggle — §6C |
+| `cashPin` | Unused on fundraiser boards. Never displayed |
 
 ---
 
@@ -192,8 +193,8 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Early bird ends | Required if an early bird price is set. Date + time |
 | **Campaign closes** | **Required.** Date + time → `campaignEndsAt` |
 | Timezone | **Required.** IANA. One per board, covering all dated fields → `timezone` |
-| Cash hold window | Default 7 days. Only if cash mode on. |
-| Payment handles | The four host handles only — this is how contributors pay |
+| Payment window | Default 7 days. Always shown on fundraiser boards — direct payment is always available. See §6C |
+| Payment handles | Venmo, Zelle, CashApp, PayPal. **At least one required** — this is how most contributors pay. §6C |
 
 **Prize fields do not render in Phase A.** `prizePoolPercent` stays 0. A host must not be able to switch on a drawing that has nothing behind it. Deferred to Phase B, specified here for when it returns:
 
@@ -381,6 +382,62 @@ Or pick your own
 
 Maximum 10 per transaction (money doc §12) — mechanical, not a policy cap. When someone hits 10, the copy reads **"claim more squares"** after checkout, never "limit reached." There is no limit on how many squares a person may contribute to overall.
 
+### Merged claims and the donate flag
+
+`/api/checkout` merges when a returning contributor with pending squares claims more: the old Stripe session is expired and the claims combine. Merged squares keep their original `batchId` and new ones get a fresh one, so **one checkout can produce two grants.**
+
+That is fine for passes — minting is per square, so the headcount is right either way. It is **not** fine for the donate flag, which is per grant.
+
+Someone claims 2 squares, abandons checkout, returns and claims 2 more while ticking *I'm not attending*. She experienced one checkout of 4 squares and expects 0 passes. Without a fix she gets 2, because the older grant still carries `donateAdmissions = false`.
+
+**On merge, propagate the current submission's donate value to every grant in the merge.** The checkbox states the person's intent for the whole checkout, not for whichever fragment of it was written last.
+
+Grant-level rather than supporter-level is still correct: someone who attended in September and makes a pure donation in October must not have September's passes voided by October's checkbox.
+
+## 6C. Direct payment — no toggle, no PIN, no "cash"
+
+Game Day is a cookout. Everyone is in the same yard, someone hands over twenty dollars, and a PIN shared around the group is a reasonable way to let them claim a square.
+
+**A fundraiser is not that.** Contributors are scattered across states. Nobody hands anyone paper money. Payment that Daali doesn't process arrives by Zelle, CashApp, Venmo, or PayPal.
+
+Three changes follow.
+
+### Always on, never a toggle
+
+`cashModeEnabled` is **forced true** on fundraiser boards and the toggle does not render. A host cannot switch it off, because switching it off would mean the only way to contribute is a card — and direct payment is how most people will pay.
+
+### No PIN
+
+`cashPin` is unused on fundraiser boards and is never displayed. A PIN exists so a host can hand a code to people standing in front of her. There is nobody standing in front of her.
+
+**The contributor chooses the method at checkout**, which is what replaces the PIN:
+
+```
+How would you like to pay?
+
+( ) Card
+( ) Zelle, CashApp, Venmo, or PayPal
+```
+
+Choosing the second shows the host's handles, reserves the squares, and tells the contributor to send the amount. The square sits amber until the host confirms. Same machinery as Game Day cash, reached without a code.
+
+The host's handles come from the create form. At least one is required on a fundraiser board — without one there is nowhere to send money.
+
+### The word "cash" never appears
+
+It means paper money to everyone reading it, and there is no paper money here.
+
+| Game Day string | Fundraiser string |
+|---|---|
+| Cash Mode On / PIN: 2663 | *not rendered* |
+| Cash Reservations | **Awaiting payment** |
+| Reserve | **Reserve for contributor** |
+| Cash reserved | **Awaiting payment** |
+| Confirm cash received | **Mark as received** |
+| Cash hold window | **Payment window** |
+
+**Display strings only.** `cashModeEnabled`, `cashPin`, `cashHoldDays`, and the `reserved_cash` payment status keep their names in the database and the code. Renaming a live enum is real risk for zero benefit, and the money doc's invariants reference those names.
+
 ### Contact fields are a hard requirement
 
 **Name and email are both required** on a board with an event. `EventSupporter.name` and `.email` are `NOT NULL` with no default, and `resolveSupporter` runs inside the claim transaction — an email-only sheet fails on the first claim, not at A8.
@@ -553,7 +610,9 @@ Enumerated because these leak through whenever a Game Day component is reused ra
 | "$3,000 total pot" | **Two errors.** There is no pot on a Phase A board, and `squares × price` is wrong arithmetic once early bird pricing exists |
 | Score entry, period selection, winner-by-quarter | Money doc §2 — a fundraiser has no scores |
 
-**Shared and correct:** cash mode, the cash PIN, cash reservations, the share panel and QR, and the square-claim flow. Those are board-agnostic and should not be duplicated.
+**Shared and correct:** the share panel and QR, and the square-claim flow. Those are board-agnostic and should not be duplicated.
+
+**The cash mode toggle and PIN are neither.** See §6C.
 
 ### The header
 
@@ -633,9 +692,11 @@ Below that, small but legible — not 9pt gray:
 
 Replaces score entry on fundraiser boards.
 
-**Always visible:** raised, prize pool, and the full state breakdown (money doc §10 host view) — confirmed, cash reserved, in checkout, open. Cash reserved is the number she works from; those are the parents who owe her money before close.
+**Always visible:** raised, and the full state breakdown (money doc §10 host view) — confirmed, awaiting payment, in checkout, open. Awaiting payment is the number she works from; those are the contributors who have said they'll send money and haven't yet.
 
-**Cash panel:** confirm or release **per square**, never forced as a batch. Someone reserving 3 and arriving with $100 must be resolvable to 2 confirmed and 1 released — invariant 7.
+On a Phase A board there is no prize pool line.
+
+**Awaiting payment panel:** confirm or release **per square**, never forced as a batch. Someone reserving 3 and arriving with $100 must be resolvable to 2 confirmed and 1 released — invariant 7.
 
 **Pending panel:** batch age visible ("3 squares, held 12 min"). Manual release only after the hold expires, and only through the resolution sequence — invariants 18–19.
 
@@ -694,9 +755,11 @@ Grid becomes read-only.
 
 ## 11. Editing and cancellation
 
-**Locked after the first confirmed contribution** (invariant 16): square count, contribution price, prize on/off, prize percent, tier count, drawing rule, drawing date, and — on boards with an event — event date and the maximum attendee allowance per supporter.
+**Locked after the first confirmed contribution** (invariant 16): square count, the contribution price schedule, prize on/off, prize percent, tier count, drawing rule, drawing date, and — on boards with an event — the event date.
 
-Lowering the allowance later never invalidates passes already issued.
+There is no attendee allowance to lock. One confirmed square mints one admission pass (admission invariant 24).
+
+**Not locked:** the fundraising goal. It is aspirational rather than a term of the deal, and raising it changes nothing about what anyone already bought.
 
 **Always editable:** title, description, contact details, payment handles.
 
@@ -774,7 +837,7 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A6 | Hold timer + resolve-then-release cron | ✅ |
 | A7 | CLOSING + finalization — `finalRaisedCents` only | — |
 | A8 | Admission activation in the confirmation transaction | — |
-| A9 | Donate checkbox, passes screen, host donate-flag toggle | — |
+| A9 | Passes screen, host donate-flag toggle | — |
 | A10 | Volunteer surface, QR, roster, search, check-in, undo | — |
 
 **A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
@@ -783,7 +846,9 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 
 Both were originally in the admission slices. Both had to move once squares go live before admission does.
 
-**Event block to A3.** Invariant 16 locks event terms at the first confirmed contribution. If admission is configured later, early supporters bought a square and later supporters bought a square plus admission for four, at the same price — and the early ones backed the cause first. Configuring the event at board creation means everyone gets the same disclosed offer. The block collects name, date, venue, and max attendees per supporter. The attendance picker and passes still come at A9.
+**Event block to A3.** Invariant 16 locks the event date at the first confirmed contribution. If admission is configured later, early supporters bought a bare square while later ones bought a square that admits someone, at the same price — and the early ones backed the cause first. Configuring the event at board creation means everyone gets the same disclosed offer. The block collects name, date, and venue. The passes screen comes at A9.
+
+**Donate checkbox to A5**, with preparation. It is written into the grant, so it has to exist when the grant is first written. Deferring it to A9 would give every contributor between launch and A9 `donateAdmissions = false` with no way to opt out — the same backfill-under-pressure problem that moved preparation here.
 
 **Preparation to A5.** Resolve the supporter and write the grant, carrying the donate checkbox. Without it, every contributor between launch and A8 has no `EventSupporter` row and needs a backfill written under time pressure against live money.
 
@@ -816,7 +881,7 @@ Email notifications. Platform fee, separate PR.
 | Slice | Contents | Visible? |
 |---|---|---|
 | **1** | Schema, `admission.ts`, claim-time preparation, activation in the confirmation transaction | No. Nothing user-facing |
-| **2** | Donate checkbox, passes screen, host donate-flag toggle | Contributor and host |
+| **2** | Passes screen, host donate-flag toggle | Contributor and host |
 | **3** | Volunteer surface, QR generation and scanning, roster, search, check-in, undo | Gate |
 
 Slice 1 is where a mistake is expensive and silent. Review it before Slice 2 starts. Handoff brief: `slice-1-handoff.md`.

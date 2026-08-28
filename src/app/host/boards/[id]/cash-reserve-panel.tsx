@@ -11,15 +11,48 @@ type SquareData = {
   paymentMethod: string;
 };
 
+// Direct payment strings — fundraiser-board-v2.md §6C.
+//
+// The word "cash" never appears on a fundraiser board: it means paper money to
+// everyone reading it, and there is no paper money here. Contributors are in
+// other states and pay by Zelle, CashApp, Venmo, or PayPal.
+//
+// DISPLAY STRINGS ONLY. cashModeEnabled, cashPin, cashHoldDays and the
+// reserved_cash status keep their names in the database and the code —
+// renaming a live enum is real risk for zero benefit, and the money doc's
+// invariants reference those names.
+const COPY = {
+  game: {
+    heading: "💵 Cash Reservations",
+    nameLabel: "Player name",
+    reserve: "Reserve",
+    awaiting: "⏳ Awaiting cash",
+    confirmed: "✓ Cash confirmed",
+    confirm: "✓ Confirm",
+  },
+  fundraiser: {
+    heading: "Awaiting payment",
+    nameLabel: "Contributor name",
+    reserve: "Reserve for contributor",
+    awaiting: "Awaiting payment",
+    confirmed: "Received",
+    confirm: "Mark as received",
+  },
+} as const;
+
 interface CashReservePanelProps {
   boardId: string;
   squares: SquareData[];
+  /// Fundraiser boards use the direct-payment string set — §6C.
+  isFundraiser?: boolean;
 }
 
 export default function CashReservePanel({
+  isFundraiser = false,
   boardId,
   squares,
 }: CashReservePanelProps) {
+  const copy = COPY[isFundraiser ? "fundraiser" : "game"];
   const router = useRouter();
   const [selectedSquare, setSelectedSquare] = useState("");
   const [playerName, setPlayerName] = useState("");
@@ -123,7 +156,7 @@ export default function CashReservePanel({
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
-      <p className="text-sm font-medium mb-3">💵 Cash Reservations</p>
+      <p className="text-sm font-medium mb-3">{copy.heading}</p>
 
       {/* Reserve form */}
       {openSquares.length > 0 ? (
@@ -144,7 +177,7 @@ export default function CashReservePanel({
             </select>
           </div>
           <div className="flex-1">
-            <label className="block text-[10px] text-gray-500 mb-1">Player name</label>
+            <label className="block text-[10px] text-gray-500 mb-1">{copy.nameLabel}</label>
             <input
               type="text"
               value={playerName}
@@ -158,7 +191,7 @@ export default function CashReservePanel({
             disabled={loading || !selectedSquare || !playerName.trim()}
             className="rounded-lg bg-yellow-700 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600 disabled:opacity-50 transition-colors flex-shrink-0"
           >
-            {loading ? "…" : "Reserve"}
+            {loading ? "…" : copy.reserve}
           </button>
         </form>
       ) : (
@@ -171,7 +204,7 @@ export default function CashReservePanel({
       {reservedCashSquares.length > 0 && (
         <div className="mb-3">
           <p className="text-[10px] text-yellow-500 uppercase tracking-wider mb-2">
-            ⏳ Awaiting cash ({reservedCashSquares.length})
+            {copy.awaiting} ({reservedCashSquares.length})
           </p>
           <div className="space-y-1.5">
             {reservedCashSquares.map((s) => (
@@ -189,7 +222,7 @@ export default function CashReservePanel({
                     disabled={actionLoading === s.squareId}
                     className="text-green-400 hover:text-green-300 font-medium transition-colors disabled:opacity-50"
                   >
-                    {actionLoading === s.squareId ? "…" : "✓ Confirm"}
+                    {actionLoading === s.squareId ? "…" : copy.confirm}
                   </button>
                   <span className="text-gray-700">|</span>
                   <button
@@ -210,7 +243,7 @@ export default function CashReservePanel({
       {paidCashSquares.length > 0 && (
         <div>
           <p className="text-[10px] text-green-500 uppercase tracking-wider mb-2">
-            ✓ Cash confirmed ({paidCashSquares.length})
+            {copy.confirmed} ({paidCashSquares.length})
           </p>
           <div className="space-y-1.5">
             {paidCashSquares.map((s) => (

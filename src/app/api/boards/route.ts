@@ -334,6 +334,24 @@ export async function POST(request: Request) {
         };
       }
 
+      // At least one handle is required — without one there is nowhere to send
+      // money, and direct payment is how most contributors will pay (§6C).
+      const anyHandle = [
+        body.hostVenmo,
+        body.hostZelle,
+        body.hostCashapp,
+        body.hostPaypal,
+      ].some((h) => h?.trim());
+      if (!anyHandle) {
+        return NextResponse.json(
+          {
+            error:
+              "Add at least one way to receive payment — Venmo, Zelle, Cash App, or PayPal.",
+          },
+          { status: 400 }
+        );
+      }
+
       fundraiserOnlyData = {
         causeDescription: body.causeDescription?.trim() || null,
         campaignEndsAt,
@@ -345,6 +363,13 @@ export async function POST(request: Request) {
         // Phase A: prizes are deferred and never accepted from the client.
         // prizePoolPercent stays at its 0 default — v2 §16.
         hostCutPercent: 0,
+        // Direct payment is always on and never a toggle — §6C. No PIN: a PIN
+        // exists so a host can hand a code to someone standing in front of
+        // her, and on a fundraiser nobody is standing in front of her. The
+        // contributor picks the method at checkout instead.
+        cashModeEnabled: true,
+        cashPin: null,
+        cashLiabilityAccepted: true,
       };
     }
 
@@ -402,11 +427,15 @@ export async function POST(request: Request) {
       // periods, payout split and host cut; fundraiser carries none of them.
       ...gameOnlyData,
       ...fundraiserOnlyData,
-      ...(isCashHost ? {
-        cashModeEnabled: true,
-        cashPin: cashPin,
-        cashLiabilityAccepted: true,
-      } : {}),
+      // Game Day only. Fundraiser boards set these above and must not receive
+      // a PIN — §6C.
+      ...(isCashHost && boardType === "game"
+        ? {
+            cashModeEnabled: true,
+            cashPin: cashPin,
+            cashLiabilityAccepted: true,
+          }
+        : {}),
     };
 
     // Event config is written in the same transaction as the board, on every

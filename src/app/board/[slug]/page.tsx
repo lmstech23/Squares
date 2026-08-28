@@ -145,6 +145,12 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         hasEvent={board.event != null}
         cashModeEnabled={board.cashModeEnabled}
         stripeConnected={board.host.stripeChargesEnabled ?? false}
+        handles={{
+          venmo: board.hostVenmo,
+          zelle: board.hostZelle,
+          cashapp: board.hostCashapp,
+          paypal: board.hostPaypal,
+        }}
       />
     );
   }

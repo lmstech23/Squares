@@ -123,6 +123,12 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
       setError("A campaign close date is required.");
       return;
     }
+    if (![hostVenmo, hostZelle, hostCashapp, hostPaypal].some((h) => h.trim())) {
+      setError(
+        "Add at least one way to receive payment — Venmo, Zelle, Cash App, or PayPal."
+      );
+      return;
+    }
     if (hasEvent && !eventStartsAt) {
       setError("An event date and time is required.");
       return;
@@ -453,7 +459,8 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         <div>
           <span className="block text-sm">How contributors pay you</span>
           <span className="block text-xs text-gray-600 mt-0.5">
-            Optional. Shown to anyone paying by cash or direct transfer.
+            At least one is required. Shown to anyone paying by Zelle, Cash
+            App, Venmo, or PayPal — without one there is nowhere to send money.
           </span>
         </div>
         <div className="grid grid-cols-2 gap-3">

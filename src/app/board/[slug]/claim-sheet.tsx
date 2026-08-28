@@ -27,6 +27,14 @@ interface Props {
   hasEvent: boolean;
   cashModeEnabled: boolean;
   stripeConnected: boolean;
+  /// Where a direct payment should be sent. At least one is present on a
+  /// fundraiser board — §6C.
+  handles: {
+    venmo: string | null;
+    zelle: string | null;
+    cashapp: string | null;
+    paypal: string | null;
+  };
   slug: string;
   /// Squares to preselect — used when re-claiming after a hold expired.
   initialPicked?: string[];
@@ -50,6 +58,7 @@ export default function ClaimSheet({
   hasEvent,
   cashModeEnabled,
   stripeConnected,
+  handles,
   slug,
   initialPicked,
   onClose,
@@ -66,7 +75,6 @@ export default function ClaimSheet({
   const [method, setMethod] = useState<"card" | "cash">(
     stripeConnected ? "card" : "cash"
   );
-  const [pin, setPin] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,11 +117,6 @@ export default function ClaimSheet({
       setError("A phone number is required.");
       return;
     }
-    if (method === "cash" && !pin.trim()) {
-      setError("The host's cash PIN is required.");
-      return;
-    }
-
     setError(null);
     setLoading(true);
 
@@ -130,7 +133,6 @@ export default function ClaimSheet({
           playerEmail: email.trim(),
           playerPhone: phone.trim(),
           donateAdmissions,
-          ...(method === "cash" ? { pin: pin.trim() } : {}),
         }),
       });
 
@@ -324,38 +326,62 @@ export default function ClaimSheet({
           </label>
         )}
 
-        {/* Payment — only methods that actually work are offered */}
+        {/* How would you like to pay? — §6C.
+            This picker is what replaces the PIN. A PIN exists so a host can
+            hand a code to someone standing in front of her; on a fundraiser
+            nobody is standing in front of her. Only methods that actually
+            work are offered. */}
         {stripeConnected && cashModeEnabled && (
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {(["card", "cash"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMethod(m)}
-                className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                  method === m
-                    ? "border-green-500 bg-green-950/20 text-white"
-                    : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
-                }`}
-              >
-                {m === "card" ? "Card" : "Cash / Direct Pay"}
-              </button>
-            ))}
+          <div className="mb-4">
+            <span className={labelClass}>How would you like to pay?</span>
+            <div className="space-y-2">
+              {(["card", "cash"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMethod(m)}
+                  className={`w-full text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                    method === m
+                      ? "border-green-500 bg-green-950/20 text-white"
+                      : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
+                  }`}
+                >
+                  {m === "card" ? "Card" : "Zelle, CashApp, Venmo, or PayPal"}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
         {method === "cash" && (
-          <div className="mb-4">
-            <label htmlFor="claimPin" className={labelClass}>
-              Host cash PIN
-            </label>
-            <input
-              id="claimPin"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              className={inputClass}
-            />
+          <div className="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-4">
+            <p className="text-sm mb-2">Send {money(total)} to:</p>
+            <ul className="space-y-1 text-sm">
+              {handles.zelle && (
+                <li>
+                  <span className="text-gray-500">Zelle</span> {handles.zelle}
+                </li>
+              )}
+              {handles.cashapp && (
+                <li>
+                  <span className="text-gray-500">Cash App</span>{" "}
+                  {handles.cashapp}
+                </li>
+              )}
+              {handles.venmo && (
+                <li>
+                  <span className="text-gray-500">Venmo</span> {handles.venmo}
+                </li>
+              )}
+              {handles.paypal && (
+                <li>
+                  <span className="text-gray-500">PayPal</span> {handles.paypal}
+                </li>
+              )}
+            </ul>
+            <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+              Your squares are held until the host marks your payment received.
+            </p>
           </div>
         )}
 

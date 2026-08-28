@@ -45,6 +45,12 @@ interface Props {
   hasEvent: boolean;
   cashModeEnabled: boolean;
   stripeConnected: boolean;
+  handles: {
+    venmo: string | null;
+    zelle: string | null;
+    cashapp: string | null;
+    paypal: string | null;
+  };
 }
 
 function money(cents: number): string {
@@ -81,6 +87,7 @@ export default function FundraiserView({
   hasEvent,
   cashModeEnabled,
   stripeConnected,
+  handles,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
@@ -233,6 +240,7 @@ export default function FundraiserView({
             hasEvent={hasEvent}
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
+            handles={handles}
             slug={slug}
             initialPicked={reclaim?.filter((id) =>
               squares.some(
