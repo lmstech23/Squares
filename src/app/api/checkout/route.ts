@@ -101,6 +101,8 @@ export async function POST(request: Request) {
     }
 
     const board = squares[0].board;
+    const isFundraiser = board.boardType === "fundraiser";
+    const donateAdmissions = body.donateAdmissions ?? false;
 
     // 3. Board must be open
     if (board.status !== "open") {
@@ -129,8 +131,41 @@ export async function POST(request: Request) {
         playerEmail: email,
         paymentStatus: "pending",
       },
-      select: { squareId: true, stripePaymentId: true, checkoutExpiresAt: true },
+      select: {
+        squareId: true,
+        stripePaymentId: true,
+        checkoutExpiresAt: true,
+        batchId: true,
+      },
     });
+
+    // The donate checkbox states intent for the WHOLE checkout, not for
+    // whichever fragment happened to be written last.
+    //
+    // Someone claims 2 squares, abandons, comes back and claims 2 more with
+    // "I'm not attending" ticked. She experienced one checkout of 4 and expects
+    // zero passes. Without this, the earlier grant still says
+    // donateAdmissions = false and she is minted 2 passes she asked not to
+    // have. So every grant taking part in the merge takes the current value.
+    //
+    // Grant-level, deliberately, not supporter-level: someone who attended in
+    // September and makes a pure donation in October must not have September's
+    // passes voided by October's checkbox. Addendum §6.
+    const priorBatchIds = Array.from(
+      new Set(
+        myPendingSquares
+          .map((sq) => sq.batchId)
+          .filter((id): id is string => id != null)
+      )
+    );
+
+    async function propagateDonateFlag() {
+      if (!isFundraiser || !board.event || priorBatchIds.length === 0) return;
+      await prisma.admissionGrant.updateMany({
+        where: { squareBatchId: { in: priorBatchIds } },
+        data: { donateAdmissions },
+      });
+    }
 
     if (myPendingSquares.length > 0) {
       const pendingIds = new Set(myPendingSquares.map((s) => s.squareId));
@@ -155,6 +190,9 @@ export async function POST(request: Request) {
             );
 
             if (existing?.url && existing.status === "open") {
+              // Resuming reuses the existing grant, so the checkbox on this
+              // submission would otherwise be silently discarded.
+              await propagateDonateFlag();
               return NextResponse.json({
                 checkoutUrl: existing.url,
                 resumed: true,
@@ -206,8 +244,6 @@ export async function POST(request: Request) {
         });
       }
     }
-
-    const isFundraiser = board.boardType === "fundraiser";
 
     // Fundraiser campaigns close on a date, not a board status — invariant 6.
     if (isFundraiser && board.campaignEndsAt && board.campaignEndsAt <= new Date()) {
@@ -307,8 +343,18 @@ export async function POST(request: Request) {
           board.event.id,
           batchId,
           { name, email, phone },
-          body.donateAdmissions ?? false
+          donateAdmissions
         );
+
+        // Merged squares are re-batched onto the new id above, which leaves
+        // any earlier grant carrying a stale flag. Bring it in line rather
+        // than leaving two grants disagreeing about the same checkout.
+        if (priorBatchIds.length > 0) {
+          await tx.admissionGrant.updateMany({
+            where: { squareBatchId: { in: priorBatchIds } },
+            data: { donateAdmissions },
+          });
+        }
       }
 
       return result;
