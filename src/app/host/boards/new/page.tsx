@@ -22,7 +22,7 @@ export default async function NewBoardPage() {
         Set the game, price, and payout split. You can share the link
         immediately after.
       </p>
-      <NewBoardFlow />
+      <NewBoardFlow isCashHost={host.paymentPreference === "cash"} />
     </div>
   );
 }

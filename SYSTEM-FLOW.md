@@ -124,15 +124,15 @@ When a host opens the "New Board" page, the system checks whether they can accep
 - **Host chose Stripe during onboarding AND finished Stripe setup** — go straight to the form.
 - **Host chose Stripe during onboarding but has NOT finished Stripe setup** — redirect to the Stripe setup page. They need to finish so players can actually pay by card.
 
-### 3B. Board Type Picker
+### 3B. Grid Type Picker
 
-Before the form opens, the host sees a popup asking which kind of board they want.
+Before the form opens, the host sees a popup asking which grid format they want.
 
-**Trigger:** Tapping "New Board" from the dashboard (after the Access Gate passes).
+**Trigger:** Continuing past the board type picker with **Game Day** selected. On a fundraiser board this step is skipped entirely — square count is a field on the fundraiser form instead (`fundraiser-board-v2.md` §4).
 
 **What the host sees:**
 
-- Title: **"Pick your board type"**
+- Title: **"Pick your grid"**
 - Subtitle: "You can't switch after players start buying squares."
 - Two cards side by side, equal weight (no recommendation, no default selection):
 

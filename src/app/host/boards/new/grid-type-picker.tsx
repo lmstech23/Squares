@@ -15,7 +15,7 @@ export default function GridTypePicker({ onContinue, onCancel }: Props) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
       <div className="bg-gray-950 border border-gray-800 rounded-lg max-w-2xl w-full p-6">
-        <h2 className="text-lg font-semibold mb-1">Pick your board type</h2>
+        <h2 className="text-lg font-semibold mb-1">Pick your grid</h2>
         <p className="text-sm text-gray-500 mb-5">
           You can&apos;t switch after players start buying squares.
         </p>
