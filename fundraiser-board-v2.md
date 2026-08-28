@@ -435,6 +435,10 @@ It means paper money to everyone reading it, and there is no paper money here.
 | Cash reserved | **Awaiting payment** |
 | Confirm cash received | **Mark as received** |
 | Cash hold window | **Payment window** |
+| Player / Players | **Contributor / Contributors** |
+| Player name | **Contributor name** |
+
+**"Player" is a word class, not a list of instances.** Anywhere a fundraiser surface says player — the reserve form, the roster heading, filter labels, empty states — it should say contributor. Nobody is playing anything. Treat the rows above as the pattern rather than the complete set, and prefer one mapping keyed by board type over scattered conditionals.
 
 **Display strings only.** `cashModeEnabled`, `cashPin`, `cashHoldDays`, and the `reserved_cash` payment status keep their names in the database and the code. Renaming a live enum is real risk for zero benefit, and the money doc's invariants reference those names.
 
@@ -833,6 +837,7 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A2 | Board type picker | ✅ |
 | A3 | Fundraiser form + API branch. **Event block. Three dates. Early bird.** No prize fields | ✅ |
 | A4 | Fundraiser grid + contributor board | ✅ |
+| A4b | **Fundraiser host dashboard** (§9) + contributor confirmation page (§6) | ✅ |
 | A5 | Claim flow: quantity, picker, batching, `pricePaidCents`, **admission preparation** | ✅ |
 | A6 | Hold timer + resolve-then-release cron | ✅ |
 | A7 | CLOSING + finalization — `finalRaisedCents` only | — |
@@ -841,6 +846,14 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A10 | Volunteer surface, QR, roster, search, check-in, undo | — |
 
 **A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
+
+### A4b was missing from this table
+
+§9 specifies the host dashboard in detail and no step ever claimed it. A4 reads "grid + contributor board," so the host side fell between A4 and A7 with nothing owning it — which is why a fundraiser board opened as host still shows the pot, score entry, and "Numbers will randomize immediately."
+
+§7's must-not-appear list applies to **every fundraiser surface, host included.** It was written from a contributor screenshot and reads as though it only governs the public board. It does not.
+
+The confirmation page is the same kind of omission, smaller: §6 specifies it, no step claimed it.
 
 ### Why the event block and preparation moved earlier
 

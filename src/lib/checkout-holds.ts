@@ -84,83 +84,146 @@ export async function resolveExpiredHolds(now = new Date()): Promise<ResolveResu
     batches.set(sq.batchId!, list);
   }
 
-  for (const [batchId, squares] of Array.from(batches).slice(0, MAX_BATCHES_PER_RUN)) {
+  for (const [batchId] of Array.from(batches).slice(0, MAX_BATCHES_PER_RUN)) {
     result.batchesExamined++;
-    const first = squares[0];
-    const sessionId = squares.find((s) => s.checkoutSessionId)?.checkoutSessionId;
-    const stripeAccount = first.board.host.stripeAccountId;
-
-    try {
-      // No session recorded means checkout never got that far. There is
-      // nothing that could still pay, so the batch is safe to release.
-      let paid = false;
-
-      if (sessionId && stripeAccount) {
-        const session = await stripe.checkout.sessions.retrieve(sessionId, {
-          stripeAccount,
-        });
-        paid = session.status === "complete" || session.payment_status === "paid";
-
-        if (!paid) {
-          // Expire BEFORE releasing. If this throws we leave the squares held
-          // and try again next pass — a stuck hold is recoverable, a
-          // double-sold square is not.
-          if (session.status === "open") {
-            await stripe.checkout.sessions.expire(sessionId, { stripeAccount });
-          }
-        }
-      }
-
-      if (paid) {
-        // Confirm the full batch. Idempotent: if the webhook already flipped
-        // these, the updateMany matches nothing and nothing happens.
-        //
-        // A8 adds admission minting to confirmation. When it does, this and
-        // the webhook must call one shared function rather than two that drift.
-        await prisma.square.updateMany({
-          where: { batchId, paymentStatus: "pending" },
-          data: { paymentStatus: "paid", holdExpiresAt: null },
-        });
-        result.batchesConfirmed++;
-        continue;
-      }
-
-      // Release the whole batch, conditionally on it still being pending.
-      const released = await prisma.square.updateMany({
-        where: { batchId, paymentStatus: "pending" },
-        data: {
-          paymentStatus: "open",
-          playerName: null,
-          playerEmail: null,
-          playerPhone: null,
-          stripePaymentId: null,
-          checkoutSessionId: null,
-          checkoutExpiresAt: null,
-          holdExpiresAt: null,
-          batchId: null,
-          pricePaidCents: null,
-          releaseReason: "expired",
-        },
-      });
-
-      if (released.count > 0) {
-        result.batchesReleased++;
-        result.squaresReleased += released.count;
-      }
-
-      // Abandoned-claim cleanup — addendum §4.
-      if (first.board.event) {
-        const cleaned = await releaseAdmissionForBatch(batchId);
-        result.grantsDeleted += cleaned.grantsDeleted;
-        result.supportersDeleted += cleaned.supportersDeleted;
-      }
-    } catch (error) {
-      // One bad batch must not stop the rest. Its squares stay held and the
-      // next pass tries again.
-      console.error(`Hold resolution failed for batch ${batchId}:`, error);
-      result.errors++;
-    }
+    const one = await resolveHoldBatch(batchId, now);
+    result.batchesConfirmed += one.confirmed ? 1 : 0;
+    result.batchesReleased += one.released > 0 ? 1 : 0;
+    result.squaresReleased += one.released;
+    result.grantsDeleted += one.grantsDeleted;
+    result.supportersDeleted += one.supportersDeleted;
+    result.errors += one.error ? 1 : 0;
   }
 
   return result;
 }
+
+export interface BatchResolution {
+  confirmed: boolean;
+  released: number;
+  grantsDeleted: number;
+  supportersDeleted: number;
+  error: boolean;
+  /** Set when the batch was not touched because its hold has not expired. */
+  notYetExpired?: boolean;
+}
+
+/**
+ * Resolve one batch through the sequence in invariant 18.
+ *
+ * Shared by the cron and by the host's manual release, so there is exactly one
+ * implementation of "payment always wins before release" (invariant 20). A
+ * second copy would be a second chance to get the ordering wrong.
+ *
+ * Refuses to act before `holdExpiresAt` — invariant 19: a pending batch may be
+ * released manually only after the hold has passed, and only through this
+ * sequence. Before that the checkout is genuinely live.
+ */
+export async function resolveHoldBatch(
+  batchId: string,
+  now = new Date()
+): Promise<BatchResolution> {
+  const nil: BatchResolution = {
+    confirmed: false,
+    released: 0,
+    grantsDeleted: 0,
+    supportersDeleted: 0,
+    error: false,
+  };
+
+  const squares = await prisma.square.findMany({
+    where: { batchId, paymentStatus: "pending" },
+    select: {
+      squareId: true,
+      holdExpiresAt: true,
+      checkoutSessionId: true,
+      board: {
+        select: {
+          boardId: true,
+          host: { select: { stripeAccountId: true } },
+          event: { select: { id: true } },
+        },
+      },
+    },
+  });
+
+  if (squares.length === 0) return nil;
+
+  const first = squares[0];
+
+  // Invariant 19. The control is absent rather than disabled in the UI, but
+  // the server refuses regardless — the UI is not the guarantee.
+  if (squares.some((sq) => !sq.holdExpiresAt || sq.holdExpiresAt > now)) {
+    return { ...nil, notYetExpired: true };
+  }
+
+  const sessionId = squares.find((s) => s.checkoutSessionId)?.checkoutSessionId;
+  const stripeAccount = first.board.host.stripeAccountId;
+
+  try {
+    // No session recorded means checkout never got that far. There is
+    // nothing that could still pay, so the batch is safe to release.
+    let paid = false;
+
+    if (sessionId && stripeAccount) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        stripeAccount,
+      });
+      paid = session.status === "complete" || session.payment_status === "paid";
+
+      if (!paid) {
+        // Expire BEFORE releasing. If this throws we leave the squares held
+        // and try again next pass — a stuck hold is recoverable, a
+        // double-sold square is not.
+        if (session.status === "open") {
+          await stripe.checkout.sessions.expire(sessionId, { stripeAccount });
+        }
+      }
+    }
+
+    if (paid) {
+      // Confirm the full batch. Idempotent: if the webhook already flipped
+      // these, the updateMany matches nothing and nothing happens.
+      //
+      // A8 adds admission minting to confirmation. When it does, this and
+      // the webhook must call one shared function rather than two that drift.
+      await prisma.square.updateMany({
+        where: { batchId, paymentStatus: "pending" },
+        data: { paymentStatus: "paid", holdExpiresAt: null },
+      });
+      return { ...nil, confirmed: true };
+    }
+
+    // Release the whole batch, conditionally on it still being pending.
+    const released = await prisma.square.updateMany({
+      where: { batchId, paymentStatus: "pending" },
+      data: {
+        paymentStatus: "open",
+        playerName: null,
+        playerEmail: null,
+        playerPhone: null,
+        stripePaymentId: null,
+        checkoutSessionId: null,
+        checkoutExpiresAt: null,
+        holdExpiresAt: null,
+        batchId: null,
+        pricePaidCents: null,
+        releaseReason: "expired",
+      },
+    });
+
+    // Abandoned-claim cleanup — addendum §4.
+    let cleaned = { grantsDeleted: 0, supportersDeleted: 0 };
+    if (first.board.event) {
+      cleaned = await releaseAdmissionForBatch(batchId);
+    }
+
+    return { ...nil, released: released.count, ...cleaned };
+  } catch (error) {
+    // One bad batch must not stop the rest. Its squares stay held and the
+    // next pass tries again.
+    console.error(`Hold resolution failed for batch ${batchId}:`, error);
+    return { ...nil, error: true };
+  }
+}
+

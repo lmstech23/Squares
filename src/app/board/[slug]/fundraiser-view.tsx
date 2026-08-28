@@ -51,6 +51,12 @@ interface Props {
     cashapp: string | null;
     paypal: string | null;
   };
+  /// Set on return from a completed checkout — v2 §6.
+  confirmation: {
+    positions: number[];
+    admissionPasses: number;
+    hasEvent: boolean;
+  } | null;
 }
 
 function money(cents: number): string {
@@ -88,6 +94,7 @@ export default function FundraiserView({
   cashModeEnabled,
   stripeConnected,
   handles,
+  confirmation,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
@@ -196,6 +203,33 @@ export default function FundraiserView({
           <span className="text-gray-600"> · </span>
           {openCount} {openCount === 1 ? "square" : "squares"} left
         </p>
+
+        {/* Confirmation — v2 §6. Not a generic success page.
+            Never says "ticket" on a no-prize board: ticket to what? The word
+            only means something when there is a drawing, and Phase A has none. */}
+        {confirmation && confirmation.positions.length > 0 && (
+          <div className="rounded-lg border border-green-900/50 bg-green-950/30 p-4 mt-5">
+            <p className="text-sm font-medium text-green-200">
+              🎉{" "}
+              {confirmation.positions.length === 1
+                ? `Square #${confirmation.positions[0]} is yours.`
+                : `Squares ${confirmation.positions
+                    .map((p) => `#${p}`)
+                    .join(" · ")} are yours.`}
+            </p>
+            {confirmation.hasEvent && confirmation.admissionPasses > 0 && (
+              <p className="text-sm text-green-200/80 mt-2">
+                {confirmation.admissionPasses}{" "}
+                {confirmation.admissionPasses === 1
+                  ? "Admission Pass"
+                  : "Admission Passes"}
+              </p>
+            )}
+            <p className="text-xs text-green-200/60 mt-2">
+              You just moved this {money(currentPrice * confirmation.positions.length)} closer.
+            </p>
+          </div>
+        )}
 
         {hold && (
           <div className="mt-5">

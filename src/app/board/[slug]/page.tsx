@@ -115,6 +115,47 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       (sq) => sq.paymentStatus === "open"
     ).length;
 
+    // Confirmation on return from Stripe — v2 §6. The squares in this
+    // purchase are found by the session id rather than trusted from the URL.
+    let confirmation: {
+      positions: number[];
+      admissionPasses: number;
+      hasEvent: boolean;
+    } | null = null;
+
+    if (sp.success === "true" && sp.session_id) {
+      const purchased = await prisma.square.findMany({
+        where: { boardId: board.boardId, checkoutSessionId: sp.session_id },
+        select: { position: true, paymentStatus: true, batchId: true },
+        orderBy: { position: "asc" },
+      });
+
+      if (purchased.length > 0) {
+        // One confirmed square mints one admission pass — addendum v2.0 §1.
+        // No passes exist until A8, so the count comes from the confirmed
+        // squares in this purchase rather than from AdmissionPass rows.
+        const confirmedHere = purchased.filter(
+          (sq) => sq.paymentStatus === "paid"
+        );
+
+        let donated = false;
+        const batchId = purchased[0].batchId;
+        if (board.event && batchId) {
+          const grant = await prisma.admissionGrant.findUnique({
+            where: { squareBatchId: batchId },
+            select: { donateAdmissions: true },
+          });
+          donated = grant?.donateAdmissions ?? false;
+        }
+
+        confirmation = {
+          positions: purchased.map((sq) => sq.position + 1),
+          admissionPasses: donated ? 0 : confirmedHere.length,
+          hasEvent: board.event != null,
+        };
+      }
+    }
+
     // Whether the early bird price is still in effect. Decided here rather
     // than in the view, which stays pure.
     const earlyBirdActive =
@@ -145,6 +186,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         hasEvent={board.event != null}
         cashModeEnabled={board.cashModeEnabled}
         stripeConnected={board.host.stripeChargesEnabled ?? false}
+        confirmation={confirmation}
         handles={{
           venmo: board.hostVenmo,
           zelle: board.hostZelle,

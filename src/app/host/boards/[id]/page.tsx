@@ -12,6 +12,7 @@ import SquareList from "./square-list";
 import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
+import FundraiserPanel from "./fundraiser-panel";
 export const dynamic = "force-dynamic";
 
 
@@ -43,6 +44,7 @@ export default async function HostBoardPage({ params }: Props) {
           playerPayoutMethod: true,
           playerPayoutHandle: true,
           smsOptIn: true,
+          pricePaidCents: true,
         },
         
       },
@@ -78,6 +80,109 @@ export default async function HostBoardPage({ params }: Props) {
   // at creation and the toggle never renders: switching it off would make card
   // the only way to contribute, and direct payment is how most people will pay.
   const isFundraiser = board.boardType === "fundraiser";
+  const boardUrl = `${process.env.NEXT_PUBLIC_URL}/board/${board.slug}`;
+
+  // ---- Fundraiser host dashboard — v2 §9 ----
+  //
+  // Returns before every Game Day surface. §7's must-not-appear list governs
+  // this screen too: no pot in the header, no "numbers will randomize", no
+  // score entry, no winner cards. Absent by construction, not by omission.
+  if (isFundraiser) {
+    const raised = await prisma.square.aggregate({
+      where: { boardId: board.boardId, paymentStatus: "paid" },
+      _sum: { pricePaidCents: true },
+    });
+
+    const byStatus = (status: string) =>
+      board.squares.filter((sq) => sq.paymentStatus === status);
+
+    // Group live checkouts by batch so age is reported per purchase, which is
+    // what the host is deciding about.
+    const now = new Date().getTime();
+    const pendingSquares = await prisma.square.findMany({
+      where: { boardId: board.boardId, paymentStatus: "pending" },
+      select: { batchId: true, holdExpiresAt: true, checkoutExpiresAt: true },
+    });
+
+    const batchMap = new Map<
+      string,
+      { count: number; holdExpiresAt: Date | null }
+    >();
+    for (const sq of pendingSquares) {
+      if (!sq.batchId) continue;
+      const entry = batchMap.get(sq.batchId) ?? {
+        count: 0,
+        holdExpiresAt: sq.holdExpiresAt,
+      };
+      entry.count++;
+      batchMap.set(sq.batchId, entry);
+    }
+
+    const pendingBatches = Array.from(batchMap, ([batchId, v]) => ({
+      batchId,
+      count: v.count,
+      // Held-for, derived from the 10-minute window ending at holdExpiresAt.
+      heldMinutes: v.holdExpiresAt
+        ? Math.max(
+            0,
+            Math.round((now - (v.holdExpiresAt.getTime() - 10 * 60_000)) / 60_000)
+          )
+        : 0,
+      expired: v.holdExpiresAt ? v.holdExpiresAt.getTime() <= now : false,
+    }));
+
+    const awaiting = byStatus("reserved_cash");
+
+    return (
+      <div>
+        <Link
+          href="/host/boards"
+          className="text-sm text-gray-400 hover:text-white mb-4 inline-block"
+        >
+          ← Back to Boards
+        </Link>
+        <h1 className="text-xl font-bold">{board.gameName}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          ${board.squarePrice / 100} per square
+        </p>
+        {board.causeDescription && (
+          <p className="text-sm text-gray-400 mt-1.5">{board.causeDescription}</p>
+        )}
+        <div className="mt-2 mb-6">
+          <EditDetailsButton
+            boardId={board.boardId}
+            gameName={board.gameName}
+            teamCol=""
+            teamRow=""
+          />
+        </div>
+
+        <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
+          <p className="text-xs text-gray-500 mb-2">
+            Share this link with your group
+          </p>
+          <ShareCard url={boardUrl} />
+        </div>
+
+        <FundraiserPanel
+          boardId={board.boardId}
+          raisedCents={raised._sum.pricePaidCents ?? 0}
+          goalCents={board.fundraisingGoalCents}
+          confirmedCount={byStatus("paid").length}
+          awaitingCount={awaiting.length}
+          inCheckoutCount={byStatus("pending").length}
+          openCount={byStatus("open").length}
+          awaitingSquares={awaiting.map((sq) => ({
+            squareId: sq.squareId,
+            position: sq.position,
+            playerName: sq.playerName,
+            pricePaidCents: sq.pricePaidCents,
+          }))}
+          pendingBatches={pendingBatches}
+        />
+      </div>
+    );
+  }
 
   const paidCount = board.squares.filter(
     (s) => s.paymentStatus === "paid"
@@ -85,7 +190,6 @@ export default async function HostBoardPage({ params }: Props) {
   const pendingCount = board.squares.filter(
     (s) => s.paymentStatus === "pending"
   ).length;
-  const boardUrl = `${process.env.NEXT_PUBLIC_URL}/board/${board.slug}`;
   const isOpen = board.status === "open";
   const hasNumbers = board.rowNumbers && board.colNumbers;
 
