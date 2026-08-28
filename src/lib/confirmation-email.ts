@@ -28,6 +28,40 @@ interface SquareRow {
   batchId: string | null;
 }
 
+/**
+ * Emails must point somewhere durable. A preview's own host is right for
+ * links on that deployment, but an email outlives the deployment that sent it,
+ * so the configured production URL is correct here.
+ */
+function emailBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_URL ?? "https://beta.daali.app";
+}
+
+/**
+ * One ticket block per admission pass, each carrying its own QR.
+ *
+ * The QR payload is the opaque token; the image is fetched from an endpoint
+ * that only draws it. Ordinals are positional — "Ticket 2 of 4" counts current
+ * usable passes in sequence order and never shows the raw sequenceNumber,
+ * which is monotonic and leaves gaps once anything is voided.
+ */
+function ticketBlocks(tokens: string[], base: string): string {
+  return tokens
+    .map(
+      (token, i) => `
+      <tr><td style="padding:16px 0;border-top:1px solid #e5e5e5;">
+        <p style="margin:0 0 8px;font:600 14px system-ui,sans-serif;">
+          Ticket ${i + 1} of ${tokens.length}
+        </p>
+        <img src="${base}/api/tickets/${encodeURIComponent(token)}/qr"
+             alt="Ticket ${i + 1} QR code"
+             width="160" height="160"
+             style="display:block;border:0;" />
+      </td></tr>`
+    )
+    .join("");
+}
+
 /** Groups by recipient so one person gets one email even across batches. */
 function byRecipient(squares: SquareRow[]): Map<string, SquareRow[]> {
   const map = new Map<string, SquareRow[]>();
@@ -115,8 +149,37 @@ export async function sendPendingConfirmations(where: {
       const positions = rows.map((r) => r.position + 1);
       const { subject, html } = subjectAndBody(positions, boardName, isFundraiser);
 
+      // Tickets — only on a board with an event, and never for a purchase that
+      // donated its admissions: minting skipped it, so there are no passes to
+      // find and this is naturally empty.
+      const passes = await prisma.admissionPass.findMany({
+        where: {
+          squareId: { in: rows.map((r) => r.squareId) },
+          status: { in: ["active", "used"] },
+        },
+        select: { token: true },
+        orderBy: { sequenceNumber: "asc" },
+      });
+
+      const base = emailBaseUrl();
+      const ticketHtml =
+        passes.length > 0
+          ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:8px;">
+               <tr><td style="padding-bottom:4px;">
+                 <p style="margin:0;font:600 14px system-ui,sans-serif;">
+                   ${passes.length} ${passes.length === 1 ? "Ticket" : "Tickets"}
+                 </p>
+                 <p style="margin:4px 0 0;font:13px system-ui,sans-serif;color:#666;">
+                   Show a code at the gate. Each admits one person, so you can
+                   forward one on its own.
+                 </p>
+               </td></tr>
+               ${ticketBlocks(passes.map((p) => p.token), base)}
+             </table>`
+          : "";
+
       try {
-        await sendEmail(email, subject, html);
+        await sendEmail(email, subject, html + ticketHtml);
       } catch (err) {
         // Leave them unstamped. The next sweep tries again; a dropped receipt
         // is worse than a late one.
