@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { generateSlug } from "@/lib/slug";
+import { canCreateFundraiser } from "@/lib/fundraiser-access";
 
 // ============================================================
 // PHASE 1 ADDITIONS:
@@ -120,6 +121,15 @@ export async function POST(request: Request) {
     const body: CreateBoardBody = await request.json();
 
     const boardType: BoardType = body.boardType === "fundraiser" ? "fundraiser" : "game";
+
+    // The gate — §14. Enforced here as well as in the UI, because hiding a
+    // card stops nobody from posting JSON. Closed by default.
+    if (boardType === "fundraiser" && !canCreateFundraiser(host.email)) {
+      return NextResponse.json(
+        { error: "Fundraiser boards are not available on this account yet." },
+        { status: 403 }
+      );
+    }
 
     if (!body.gameName?.trim()) {
       return NextResponse.json(

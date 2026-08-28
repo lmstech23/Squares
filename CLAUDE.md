@@ -50,6 +50,13 @@ npm run test:db:down
 `npm test` alone reports **1 skipped** when that database is absent — the skip
 is the signal that concurrency went unverified, not noise.
 
+**Fundraiser boards are gated.** `FUNDRAISER_HOSTS` is a comma-separated
+allowlist of host emails, closed when unset, enforced in the create page and
+again in `POST /api/boards`. It exists because admission is half-built: a
+contributor pays, the receipt says "1 Ticket", and that ticket is only a
+Postgres row — no passes screen (A9), no email (Phase C). **Lift it when A9 has
+shipped AND a ticket email exists. Both, not either.**
+
 Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits.
 
 ---

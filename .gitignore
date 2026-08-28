@@ -33,6 +33,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# ...but the example file is documentation, not a secret. Without this it sits
+# on disk and nobody cloning ever sees it — the same trap that nearly lost
+# add_fundraiser_boards.sql to the *.sql rule below.
+!.env.example
+
 # vercel
 .vercel
 
