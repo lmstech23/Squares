@@ -258,7 +258,9 @@ export async function POST(request: Request) {
 
       // Campaign close is required on every fundraiser board, prize or not —
       // drawDate no longer doubles as the backstop (v2 §5).
-      const campaignEndsAt = parseZoned(body.campaignEndsAt, timezone);
+      // Deadline: the later occurrence, so nobody loses an hour they thought
+      // they had. v2 §5.
+      const campaignEndsAt = parseZoned(body.campaignEndsAt, timezone, "later");
       if (!campaignEndsAt) {
         return NextResponse.json(
           { error: "A campaign close date is required." },
@@ -284,7 +286,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        earlyBirdEndsAt = parseZoned(body.earlyBirdEndsAt, timezone);
+        earlyBirdEndsAt = parseZoned(body.earlyBirdEndsAt, timezone, "later"); // deadline
         if (!earlyBirdEndsAt) {
           return NextResponse.json(
             { error: "Set a date for the early bird price to end." },
@@ -303,7 +305,8 @@ export async function POST(request: Request) {
 
       // Optional event block — v2 §5. Independent of every other date.
       if (body.hasEvent) {
-        const startsAt = parseZoned(body.eventStartsAt, timezone);
+        // Start time: the earlier occurrence — doors open at the first 1:30am.
+        const startsAt = parseZoned(body.eventStartsAt, timezone, "earlier");
         if (!startsAt) {
           return NextResponse.json(
             { error: "An event date and time is required." },

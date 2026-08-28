@@ -1,13 +1,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { parseZoned, tzOffsetMs } from "./zoned-time.ts";
+import { parseZoned, tzOffsetMs, type Ambiguity } from "./zoned-time.ts";
 
 const NY = "America/New_York";
 const HOUR = 60 * 60 * 1000;
 
 /** Asserts the parsed instant equals an expected UTC ISO string. */
-function expectUtc(local: string, zone: string, iso: string) {
-  const d = parseZoned(local, zone);
+function expectUtc(local: string, zone: string, iso: string, policy: Ambiguity = "later") {
+  const d = parseZoned(local, zone, policy);
   assert.ok(d, `expected ${local} in ${zone} to parse`);
   assert.equal(d.toISOString(), iso);
 }
@@ -35,16 +35,16 @@ describe("parseZoned", () => {
   });
 
   test("the same wall clock either side of the fall boundary differs by an hour in UTC", () => {
-    const before = parseZoned("2026-10-31T12:00", NY)!; // EDT, UTC-4
-    const after = parseZoned("2026-11-02T12:00", NY)!; // EST, UTC-5
+    const before = parseZoned("2026-10-31T12:00", NY, "later")!; // EDT, UTC-4
+    const after = parseZoned("2026-11-02T12:00", NY, "later")!; // EST, UTC-5
     const daysApart = 2 * 24 * HOUR;
     assert.equal(after.getTime() - before.getTime(), daysApart + HOUR);
   });
 
   test("the same wall clock either side of the spring boundary differs by an hour", () => {
     // US DST begins Mar 8, 2026.
-    const before = parseZoned("2026-03-07T12:00", NY)!; // EST, UTC-5
-    const after = parseZoned("2026-03-09T12:00", NY)!; // EDT, UTC-4
+    const before = parseZoned("2026-03-07T12:00", NY, "later")!; // EST, UTC-5
+    const after = parseZoned("2026-03-09T12:00", NY, "later")!; // EDT, UTC-4
     const daysApart = 2 * 24 * HOUR;
     assert.equal(after.getTime() - before.getTime(), daysApart - HOUR);
   });
@@ -58,7 +58,7 @@ describe("parseZoned", () => {
     // 2:30am on Mar 8 2026 does not exist in New York — the clock jumps 2am to
     // 3am. It must resolve to 3:30am EDT, not 1:30am EST. Landing an hour
     // EARLIER than the host typed would close a campaign before its deadline.
-    const d = parseZoned("2026-03-08T02:30", NY);
+    const d = parseZoned("2026-03-08T02:30", NY, "later");
     assert.ok(d);
     assert.equal(d.toISOString(), "2026-03-08T07:30:00.000Z");
 
@@ -70,11 +70,60 @@ describe("parseZoned", () => {
     assert.equal(localHour, "03");
   });
 
-  test("the repeated hour in fall resolves to a single instant", () => {
-    // 1:30am on Nov 1 2026 happens twice in New York. One is chosen.
-    const d = parseZoned("2026-11-01T01:30", NY);
-    assert.ok(d);
-    assert.equal(d.toISOString(), "2026-11-01T05:30:00.000Z");
+  test("the repeated hour in fall is resolved by the caller's policy", () => {
+    // 1:30am on Nov 1 2026 happens twice in New York — once at EDT (05:30Z)
+    // and again an hour later at EST (06:30Z). Neither is "the" answer:
+    //   deadline   -> later,   so nobody loses an hour they thought they had
+    //   start time -> earlier, so doors open at the first 1:30am
+    const earlier = parseZoned("2026-11-01T01:30", NY, "earlier");
+    const later = parseZoned("2026-11-01T01:30", NY, "later");
+    assert.ok(earlier && later);
+    assert.equal(earlier.toISOString(), "2026-11-01T05:30:00.000Z");
+    assert.equal(later.toISOString(), "2026-11-01T06:30:00.000Z");
+    assert.equal(later.getTime() - earlier.getTime(), HOUR);
+  });
+
+  test("the policy applies only to genuinely ambiguous times", () => {
+    // An ordinary wall clock is one instant. The policy must not shift it.
+    for (const local of ["2026-07-01T12:00", "2026-11-15T23:59", "2026-11-01T03:30"]) {
+      assert.equal(
+        parseZoned(local, NY, "earlier")!.getTime(),
+        parseZoned(local, NY, "later")!.getTime(),
+        `${local} should not depend on policy`
+      );
+    }
+  });
+
+  test("the gap shifts forward under BOTH policies", () => {
+    // The gap is not a choice between two real instants, so "earlier" must not
+    // drag 2:30am back to 1:30am. A deadline is never resolved earlier than
+    // the host typed.
+    assert.equal(
+      parseZoned("2026-03-08T02:30", NY, "earlier")!.toISOString(),
+      "2026-03-08T07:30:00.000Z"
+    );
+    assert.equal(
+      parseZoned("2026-03-08T02:30", NY, "later")!.toISOString(),
+      "2026-03-08T07:30:00.000Z"
+    );
+  });
+
+  test("southern-hemisphere transitions work the same way", () => {
+    // Sydney runs DST on the opposite calendar: it ends Apr 5 2026 (ambiguous)
+    // and begins Oct 4 2026 (gap). Guards against a northern-hemisphere
+    // assumption baked into the candidate search.
+    const SYD = "Australia/Sydney";
+    const earlier = parseZoned("2026-04-05T02:30", SYD, "earlier")!;
+    const later = parseZoned("2026-04-05T02:30", SYD, "later")!;
+    assert.equal(later.getTime() - earlier.getTime(), HOUR);
+
+    const gap = parseZoned("2026-10-04T02:30", SYD, "earlier")!;
+    const gapLocalHour = new Intl.DateTimeFormat("en-US", {
+      timeZone: SYD,
+      hour: "2-digit",
+      hour12: false,
+    }).format(gap);
+    assert.equal(gapLocalHour, "03");
   });
 
   test("a zone without DST is stable across the year", () => {
@@ -92,13 +141,13 @@ describe("parseZoned", () => {
   });
 
   test("returns null rather than a wrong date for bad input", () => {
-    assert.equal(parseZoned("", NY), null);
-    assert.equal(parseZoned(null, NY), null);
-    assert.equal(parseZoned(undefined, NY), null);
-    assert.equal(parseZoned("not a date", NY), null);
-    assert.equal(parseZoned("2026-13-01T12:00", NY), null); // month 13
-    assert.equal(parseZoned("2026-07-01T25:00", NY), null); // hour 25
-    assert.equal(parseZoned("2026-07-01T12:00", "Not/AZone"), null);
+    assert.equal(parseZoned("", NY, "later"), null);
+    assert.equal(parseZoned(null, NY, "later"), null);
+    assert.equal(parseZoned(undefined, NY, "later"), null);
+    assert.equal(parseZoned("not a date", NY, "later"), null);
+    assert.equal(parseZoned("2026-13-01T12:00", NY, "later"), null); // month 13
+    assert.equal(parseZoned("2026-07-01T25:00", NY, "later"), null); // hour 25
+    assert.equal(parseZoned("2026-07-01T12:00", "Not/AZone", "later"), null);
   });
 });
 

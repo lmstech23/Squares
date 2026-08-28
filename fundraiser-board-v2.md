@@ -99,7 +99,25 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `drawResults` | Json? | |
 | `titleHistory` | Json? | Array of `{previousTitle, changedAt}` |
 | `earlyBirdPriceCents` | Int? | Null = flat pricing. Money doc §8B |
+| `campaignEndsAt` | DateTime? | **Required for fundraiser**, null for game. See CHECK constraints below |
 | `earlyBirdEndsAt` | DateTime? | Changeover, in the board's `timezone` |
+
+### Conditional constraints
+
+Four requirements are conditional, so none can be `NOT NULL` on a table full of Game Day rows. Enforce each with a partial CHECK rather than API validation alone — API validation is one code path away from being bypassed, and adding a CHECK after rows exist requires a validation scan.
+
+```sql
+CHECK (prize_pool_percent = 0 OR draw_date IS NOT NULL)
+CHECK (board_type = 'game' OR campaign_ends_at IS NOT NULL)
+CHECK (board_type = 'game' OR timezone IS NOT NULL)
+CHECK (early_bird_price_cents IS NULL
+       OR (early_bird_ends_at IS NOT NULL
+           AND early_bird_price_cents < square_price))
+```
+
+The last one carries a real business rule: an early bird price with no end date never changes over, and an early bird price at or above the standard price is not an early bird.
+
+All four are dormant against existing data — every Game Day row satisfies them trivially.
 
 ### Board — nullable for fundraiser
 
@@ -209,7 +227,30 @@ The field was previously called `drawTimezone`, which was never accurate — it 
 
 **A separate event timezone is not supported.** A school fundraiser and its tailgate are in the same place. If a national organization ever needs otherwise, that is a second field and a doc change, not an assumption to build in now.
 
-**`datetime-local` gives wall-clock time with no zone.** Parsing it on a UTC server silently shifts it — a 7pm New York close becomes 2pm. Conversion must be explicit and zone-aware, including across a DST boundary, which fall campaigns will cross. `campaignEndsAt` gates money and `cashHoldDays` caps against it, so this is not cosmetic.
+**`datetime-local` gives wall-clock time with no zone.** Parsing it on a UTC server silently shifts it — a 7pm New York close becomes 2pm. Conversion must be explicit and zone-aware. `campaignEndsAt` gates money and `cashHoldDays` caps against it, so this is not cosmetic.
+
+### DST disambiguation
+
+Two wall-clock times per year are not a single instant, and both must be resolved deliberately.
+
+| Case | Example | Resolution |
+|---|---|---|
+| **Gap** (spring forward) | 2:30am doesn't exist on the changeover day | Shift **forward** to 3:30am |
+| **Ambiguous** (fall back) | 1:30am occurs twice | Depends on the field — see below |
+
+**The gap rule is absolute: a deadline is never resolved earlier than the host typed.** Resolving 2:30am backward to 1:30am closes a board an hour before its stated deadline, silently.
+
+**Ambiguity takes a policy per field**, because the same convention is wrong for both kinds of timestamp:
+
+| Field | Policy | Why |
+|---|---|---|
+| `campaignEndsAt` | **Later** occurrence | A deadline. Nobody is harmed by an extra hour; someone loses an hour they thought they had |
+| `earlyBirdEndsAt` | **Later** occurrence | Same. A deadline |
+| `Event.startsAt` | **Earlier** occurrence | A start time. Doors open at the first 1:30am, not the second |
+
+The conversion helper takes the policy as an explicit argument rather than defaulting. A generic helper cannot know whether it is resolving a deadline or a start time, and picking one convention silently makes it wrong half the time.
+
+Practical impact is one hour, twice a year, in the small hours. The reason to be explicit anyway is that the call site then states which kind of timestamp it is, which is the thing a reader needs to know.
 
 ### The three dates are independent
 

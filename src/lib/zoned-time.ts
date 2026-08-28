@@ -44,19 +44,46 @@ export function tzOffsetMs(date: Date, timeZone: string): number {
 }
 
 /**
+ * Which instant to pick when a wall clock occurs twice — the fall-back hour.
+ *
+ * There is no safe default, so callers state it. A generic converter cannot
+ * know whether it is resolving a deadline or a start time, and either
+ * convention is wrong half the time. v2 §5:
+ *
+ *   campaignEndsAt   "later"    a deadline — nobody is harmed by an extra
+ *                               hour; someone loses an hour they thought
+ *                               they had
+ *   earlyBirdEndsAt  "later"    same, a deadline
+ *   Event.startsAt   "earlier"  a start time — doors open at the first
+ *                               1:30am, not the second
+ *
+ * This does NOT apply to the spring-forward gap, which is not a choice
+ * between two real instants. See `parseZoned`.
+ */
+export type Ambiguity = "earlier" | "later";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
  * Converts "YYYY-MM-DDTHH:mm" from a `datetime-local` input into a UTC instant,
  * interpreting the wall clock in `timeZone`.
  *
- * Returns null for missing, malformed, or unparseable input, and for an
- * invalid IANA zone, so callers can write their own error copy.
+ * Two wall clocks a year are not a single instant, and both are resolved
+ * deliberately:
  *
- * Ambiguous and skipped local times (the DST fall-back hour and the spring
- * gap) resolve to a single defensible instant rather than throwing — see the
- * tests for exactly which.
+ * - **Gap** (spring forward). 2:30am does not exist on the changeover day.
+ *   Always shifts **forward**, to 3:30am, regardless of `whenAmbiguous`. This
+ *   is absolute: resolving it backward to 1:30am would close a board an hour
+ *   before its stated deadline, silently and with nothing in the logs.
+ * - **Ambiguous** (fall back). 1:30am happens twice. `whenAmbiguous` decides.
+ *
+ * Returns null for missing, malformed, or out-of-range input, and for an
+ * invalid IANA zone, so callers can write their own error copy.
  */
 export function parseZoned(
   value: string | null | undefined,
-  timeZone: string
+  timeZone: string,
+  whenAmbiguous: Ambiguity
 ): Date | null {
   if (!value) return null;
 
@@ -68,33 +95,47 @@ export function parseZoned(
     return null;
   }
 
-  // Treat the wall clock as if it were UTC, then subtract the zone's offset.
+  // Treat the wall clock as if it were UTC; the real instant is that minus the
+  // zone's offset. Which offset, though, is the whole question near a
+  // transition, so both candidates are built and tested rather than guessed at
+  // and corrected once.
   const guess = Date.UTC(year, month - 1, day, hour, minute);
 
-  let offset: number;
+  let offsetBefore: number;
+  let offsetAfter: number;
   try {
-    offset = tzOffsetMs(new Date(guess), timeZone);
+    // A day either side straddles any transition without landing on it.
+    offsetBefore = tzOffsetMs(new Date(guess - DAY_MS), timeZone);
+    offsetAfter = tzOffsetMs(new Date(guess + DAY_MS), timeZone);
   } catch {
     return null; // invalid IANA zone
   }
 
-  const first = new Date(guess - offset);
+  const candidates = Array.from(
+    new Set([guess - offsetBefore, guess - offsetAfter])
+  ).map((t) => new Date(t));
 
-  // One correction pass. Near a DST boundary the offset at the guessed instant
-  // can differ from the offset at the real one — without this, a date entered
-  // in November using the summer offset lands an hour off.
-  const corrected = tzOffsetMs(first, timeZone);
-  const second = corrected === offset ? first : new Date(guess - corrected);
+  // A candidate is real only if reading it back in the zone gives the wall
+  // clock the host actually typed.
+  const real = candidates.filter(
+    (c) => c.getTime() + tzOffsetMs(c, timeZone) === guess
+  );
 
-  // Verify the correction actually round-trips to the wall clock the host
-  // typed. It won't for a time inside the spring-forward gap, which never
-  // existed locally: there the correction overshoots backwards and 2:30am
-  // would resolve to 1:30am — an hour EARLIER than they asked for. Falling
-  // back to the uncorrected instant shifts forward out of the gap instead
-  // (2:30am becomes 3:30am), which is the conventional reading and never
-  // resolves a deadline earlier than the host intended.
-  const roundTrip = second.getTime() + tzOffsetMs(second, timeZone);
-  const result = roundTrip === guess ? second : first;
+  let result: Date;
+  if (real.length === 0) {
+    // The gap. Neither candidate round-trips because the local time never
+    // existed. Take the later one, which is the first real instant past the
+    // gap — 2:30am becomes 3:30am. Never the earlier one.
+    result = new Date(Math.max(...candidates.map((c) => c.getTime())));
+  } else if (real.length === 1) {
+    result = real[0];
+  } else {
+    // Genuinely ambiguous — the caller's policy decides.
+    const times = real.map((c) => c.getTime());
+    result = new Date(
+      whenAmbiguous === "later" ? Math.max(...times) : Math.min(...times)
+    );
+  }
 
   return Number.isNaN(result.getTime()) ? null : result;
 }

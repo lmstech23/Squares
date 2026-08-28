@@ -56,20 +56,36 @@ ALTER TABLE boards
   ADD COLUMN early_bird_price_cents  INTEGER,
   ADD COLUMN early_bird_ends_at      TIMESTAMPTZ;
 
--- Ranges from v2 §3. draw_trigger / draw_date / timezone / campaign_ends_at
--- stay nullable: the spec requires them conditionally, which cannot be NOT NULL
--- on a table full of game boards. API validation enforces it.
+-- Ranges and conditional requirements — v2 §3.
 --
--- The prize CHECK is deliberately added now even though prize boards are
--- deferred to Phase B and nothing exercises it yet — that is precisely why it
--- should not wait on someone remembering it later.
+-- draw_trigger / draw_date / timezone / campaign_ends_at stay nullable: each is
+-- required only for some rows, which cannot be expressed as NOT NULL on a table
+-- full of Game Day boards. They are enforced with partial CHECKs instead of API
+-- validation alone, because API validation is one code path away from being
+-- bypassed.
+--
+-- All four are dormant against existing data — every Game Day row satisfies
+-- them trivially. They are added here rather than later because after rows
+-- exist a new CHECK needs a validation scan, and because prize boards are
+-- deferred to Phase B, which is exactly how a constraint gets forgotten.
 ALTER TABLE boards
   ADD CONSTRAINT boards_prize_pool_percent_range
     CHECK (prize_pool_percent BETWEEN 0 AND 50),
   ADD CONSTRAINT boards_prize_tier_count_range
     CHECK (prize_tier_count BETWEEN 1 AND 4),
   ADD CONSTRAINT boards_prize_requires_draw_date
-    CHECK (prize_pool_percent = 0 OR draw_date IS NOT NULL);
+    CHECK (prize_pool_percent = 0 OR draw_date IS NOT NULL),
+  ADD CONSTRAINT boards_fundraiser_requires_campaign_end
+    CHECK (board_type = 'game' OR campaign_ends_at IS NOT NULL),
+  ADD CONSTRAINT boards_fundraiser_requires_timezone
+    CHECK (board_type = 'game' OR timezone IS NOT NULL),
+  -- An early bird price with no end date never changes over, and one at or
+  -- above the standard price is not an early bird. Both are business rules
+  -- from v2 §5, not just null-guards.
+  ADD CONSTRAINT boards_early_bird_coherent
+    CHECK (early_bird_price_cents IS NULL
+           OR (early_bird_ends_at IS NOT NULL
+               AND early_bird_price_cents < square_price));
 
 -- 3. Square columns
 --
