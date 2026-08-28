@@ -83,7 +83,7 @@ No admission column lands on `Board` or `Square`.
 | `endsAt` | DateTime? | |
 | `timezone` | String | Reads from `Board.timezone` |
 | `venue` | String? | |
-| `maxAttendeesPerSupporter` | Int? | **Unused.** Retained from v1.x so no migration is needed to drop it |
+| `maxAttendeesPerSupporter` | Int? | **Unused, and made nullable in migration 3.** It was `NOT NULL` with no default, and the form no longer collects it |
 
 ### EventSupporter
 
@@ -95,7 +95,7 @@ No admission column lands on `Board` or `Square`.
 | `passSequenceCursor` | Int | Default 0. Monotonic. Never decremented |
 | `status` | enum | `pending` → `active`. One-way latch |
 | `activatedAt` | DateTime? | |
-| `declaredCount` | Int? | **Unused.** Retained from v1.x |
+| `declaredCount` | Int? | **Unused and harmless.** `NOT NULL DEFAULT 0`, so it stays 0 forever. No migration needed |
 
 ### AdmissionGrant
 
@@ -105,9 +105,22 @@ No admission column lands on `Board` or `Square`.
 | `squareBatchId` | String? | Unique where not null. Makes preparation idempotent |
 | `source` | enum | `FUNDRAISER` · `STANDALONE` · `GATE_ALLOWANCE` · `HOST_APPROVED` |
 | `donateAdmissions` | Boolean | **NEW.** Default false. True mints no passes |
+| `declaredAtPurchase` | Int? | **Unused, and made nullable in migration 3.** Was `NOT NULL` with no default |
 | `createdAt` | DateTime | |
 
-`donateAdmissions` is the only schema addition v2.0 requires. Everything else is columns going unused.
+### Retiring a column: two different jobs
+
+Migration 3 adds `donateAdmissions` and `AdmissionPass.squareId`, and drops `NOT NULL` from two columns the model no longer supplies.
+
+**Leaving a column unused is not the same as making it safe to ignore.** A `NOT NULL` column with no default still has to be written on every insert. Three columns went out of use in v2.0 and they needed three different treatments:
+
+| Column | State | Action |
+|---|---|---|
+| `EventSupporter.declaredCount` | `NOT NULL DEFAULT 0` | Nothing. Stays 0 |
+| `Event.maxAttendeesPerSupporter` | `NOT NULL`, no default | **Drop NOT NULL.** Would fail the next board insert |
+| `AdmissionGrant.declaredAtPurchase` | `NOT NULL`, no default | **Drop NOT NULL.** Would fail `createGrant` |
+
+Before assuming a retired column is harmless, check `is_nullable` and `column_default`, not just whether anything reads it.
 
 ### AdmissionPass
 

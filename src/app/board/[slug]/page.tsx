@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
+import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
@@ -15,10 +16,19 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const board = await prisma.board.findUnique({
     where: { slug },
-    select: { gameName: true, squarePrice: true },
+    select: { gameName: true, squarePrice: true, boardType: true, causeDescription: true },
   });
 
   if (!board) return { title: "Board Not Found" };
+
+  if (board.boardType === "fundraiser") {
+    return {
+      title: `${board.gameName} — Daali Boards`,
+      description:
+        board.causeDescription ??
+        `$${board.squarePrice / 100} per square. Claim a square and support the cause.`,
+    };
+  }
 
   return {
     title: `${board.gameName} — Daali Boards`,
@@ -68,6 +78,66 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
   });
 
 
+
+  // ---- Fundraiser boards — v2 §6, §7 ----
+  //
+  // Returns before any Game Day computation. Nothing below this block runs for
+  // a fundraiser: no pot arithmetic, no axis numbers, no winner calculation.
+  // That separation is the point — every item on v2 §7's "must not appear"
+  // list leaked in by a shared code path.
+  if (board.boardType === "fundraiser") {
+    // `raised` is the sum of pricePaidCents over confirmed squares, never a
+    // count multiplied by a price — invariant 43. Summed in the database so a
+    // partially-early-bird board is exact.
+    const raised = await prisma.square.aggregate({
+      where: { boardId: board.boardId, paymentStatus: "paid" },
+      _sum: { pricePaidCents: true },
+    });
+
+    // Distinct contributors. Emails are counted server-side and never sent to
+    // the client — only the count crosses.
+    const supporters = await prisma.square.findMany({
+      where: {
+        boardId: board.boardId,
+        paymentStatus: "paid",
+        playerEmail: { not: null },
+      },
+      distinct: ["playerEmail"],
+      select: { squareId: true },
+    });
+
+    const openCount = board.squares.filter(
+      (sq) => sq.paymentStatus === "open"
+    ).length;
+
+    // Whether the early bird price is still in effect. Decided here rather
+    // than in the view, which stays pure.
+    const earlyBirdActive =
+      board.earlyBirdPriceCents != null &&
+      board.earlyBirdEndsAt != null &&
+      board.earlyBirdEndsAt > new Date();
+
+    return (
+      <FundraiserView
+        title={board.gameName}
+        causeDescription={board.causeDescription}
+        hostName={board.host.name}
+        squares={board.squares.map((sq) => ({
+          position: sq.position,
+          paymentStatus: sq.paymentStatus,
+        }))}
+        squarePrice={board.squarePrice}
+        earlyBirdPriceCents={board.earlyBirdPriceCents}
+        earlyBirdEndsAt={board.earlyBirdEndsAt}
+        earlyBirdActive={earlyBirdActive}
+        timezone={board.timezone}
+        raisedCents={raised._sum.pricePaidCents ?? 0}
+        goalCents={board.squarePrice * board.totalSquares}
+        supporterCount={supporters.length}
+        openCount={openCount}
+      />
+    );
+  }
 
   const paidCount = board.squares.filter(
     (s) => s.paymentStatus === "paid"
