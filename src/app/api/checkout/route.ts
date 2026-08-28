@@ -325,6 +325,7 @@ export async function POST(request: Request) {
                 pricePaidCents: claimPriceCents,
                 batchId,
                 holdExpiresAt: expiresAt,
+                claimedAt: new Date(),
               }
             : {}),
         },

@@ -103,6 +103,9 @@ export default function FundraiserView({
 }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
+  // Selection lives on the board, so the checkout button can say how many
+  // tickets are being bought before the sheet opens.
+  const [picked, setPicked] = useState<string[]>([]);
 
   // A hold this browser started, remembered at claim time. The server
   // timestamp is the truth; this is only how we know to show a countdown to
@@ -274,11 +277,31 @@ export default function FundraiserView({
         {/* The board is the visualization; the button is the action. Nobody
             should have to study the grid to work out what to do. */}
         <div className="mt-6">
-          <FundraiserGrid squares={squares} />
+          <FundraiserGrid
+            squares={squares}
+            selected={picked}
+            onToggle={(squareId) =>
+              setPicked((prev) =>
+                prev.includes(squareId)
+                  ? prev.filter((id) => id !== squareId)
+                  : prev.length >= 10
+                    ? prev
+                    : [...prev, squareId]
+              )
+            }
+          />
         </div>
 
         <div className="mt-6">
-          <HowItWorks hasEvent={hasEvent} hasPrize={hasPrize} handles={handles} />
+          <HowItWorks
+            hasEvent={hasEvent}
+            hasPrize={hasPrize}
+            selectedCount={picked.length}
+            onCheckout={() => {
+              setReclaim(picked);
+              setClaiming(true);
+            }}
+          />
         </div>
 
         {claiming && (

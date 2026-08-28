@@ -135,6 +135,11 @@ model Square {
   checkoutSessionId String?           @map("checkout_session_id")
   batchId           String?           @map("batch_id")
   isHostEntry       Boolean           @default(false) @map("is_host_entry")
+  /// When the square left `open`. Written alongside pricePaidCents and never
+  /// recomputed. PaymentReference.timestamp is the CONFIRMATION moment, which
+  /// covers exactly the rows that do not need a date — an awaiting row is the
+  /// one a host chases. v2 §9.
+  claimedAt         DateTime?         @map("claimed_at") @db.Timestamptz(6)
   /// Written when the square leaves `open` — at claim or cash reservation —
   /// and never recomputed. `raised` sums this, never count × price. Inv. 42–44.
   /// Nullable because an `open` square has no price yet.
@@ -149,6 +154,7 @@ model Square {
   @@unique([boardId, position])
   @@index([boardId, playerEmail], map: "idx_squares_board_email")
   @@index([batchId], map: "idx_squares_batch")
+  @@index([boardId, claimedAt], map: "idx_squares_claimed_at")
   @@map("squares")
 }
 

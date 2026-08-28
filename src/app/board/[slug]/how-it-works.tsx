@@ -1,7 +1,3 @@
-"use client";
-
-import { useState } from "react";
-
 // Contributor board panel — fundraiser-board-v2.md §6C.
 //
 // Replaces the Game Day "Payment & Payouts" panel, which is an instruction
@@ -12,33 +8,34 @@ import { useState } from "react";
 // board type. A Phase B fundraiser WITH prizes needs the drawing block back,
 // and gating on type would deny it.
 //
-// Handles are revealed on demand rather than listed. A permanent wall of
-// payment handles is clutter for the card majority, and it puts the host's
-// personal contact details on a public page for no reason.
+// One checkout action, not a payment picker. The method choice lives in the
+// claim sheet where the contributor is actually paying — asking it here too is
+// the same question twice, and listing the handles puts the host's personal
+// contact details on a public page.
 
 interface Props {
   hasEvent: boolean;
   hasPrize: boolean;
-  handles: {
-    venmo: string | null;
-    zelle: string | null;
-    cashapp: string | null;
-    paypal: string | null;
-  };
+  selectedCount: number;
+  onCheckout: () => void;
 }
 
 const heading =
   "text-[10px] font-medium text-gray-500 uppercase tracking-wider";
 
-export default function HowItWorks({ hasEvent, hasPrize, handles }: Props) {
-  const [showOther, setShowOther] = useState(false);
-
-  const listed = [
-    { label: "Zelle", value: handles.zelle },
-    { label: "Cash App", value: handles.cashapp },
-    { label: "Venmo", value: handles.venmo },
-    { label: "PayPal", value: handles.paypal },
-  ].filter((h) => h.value);
+export default function HowItWorks({
+  hasEvent,
+  hasPrize,
+  selectedCount,
+  onCheckout,
+}: Props) {
+  const unit = hasEvent
+    ? selectedCount === 1
+      ? "ticket"
+      : "tickets"
+    : selectedCount === 1
+      ? "square"
+      : "squares";
 
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-5">
@@ -73,35 +70,16 @@ export default function HowItWorks({ hasEvent, hasPrize, handles }: Props) {
         </div>
       )}
 
-      <div>
-        <p className={heading}>Payment options</p>
-        <div className="grid grid-cols-2 gap-2 mt-2">
-          <div className="rounded-lg border border-gray-800 bg-gray-950 px-3 py-2.5 text-sm text-center">
-            Credit Card
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowOther((v) => !v)}
-            className={`rounded-lg border px-3 py-2.5 text-sm text-center transition-colors ${
-              showOther
-                ? "border-gray-700 bg-gray-950 text-white"
-                : "border-gray-800 bg-gray-950 text-gray-400 hover:border-gray-700"
-            }`}
-          >
-            Other Payment Options
-          </button>
-        </div>
-
-        {showOther && (
-          <ul className="mt-3 space-y-1 text-sm">
-            {listed.map((h) => (
-              <li key={h.label}>
-                <span className="text-gray-500">{h.label}</span> {h.value}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={onCheckout}
+        disabled={selectedCount === 0}
+        className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        {selectedCount === 0
+          ? "Select squares to continue"
+          : `Checkout — ${selectedCount} ${unit}`}
+      </button>
     </div>
   );
 }

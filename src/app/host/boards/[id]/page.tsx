@@ -13,6 +13,7 @@ import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
+import ContributorList, { type ContributorRow } from "./contributor-list";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export default async function HostBoardPage({ params }: Props) {
         },
         
       },
+      event: { select: { id: true } },
     },
   });
 
@@ -136,6 +138,54 @@ export default async function HostBoardPage({ params }: Props) {
 
     const awaiting = byStatus("reserved_cash");
 
+    // One row per contributor, keyed by email — a person who bought twice is
+    // one row, not two. Squares mid-checkout are excluded: they are not a
+    // contribution yet and may release in minutes.
+    const claimed = await prisma.square.findMany({
+      where: {
+        boardId: board.boardId,
+        paymentStatus: { in: ["paid", "reserved_cash"] },
+        playerEmail: { not: null },
+      },
+      select: {
+        playerName: true,
+        playerEmail: true,
+        paymentStatus: true,
+        claimedAt: true,
+      },
+    });
+
+    const byContributor = new Map<string, ContributorRow>();
+    for (const sq of claimed) {
+      const email = sq.playerEmail!.toLowerCase();
+      const existing = byContributor.get(email);
+      const isPaid = sq.paymentStatus === "paid";
+      const iso = sq.claimedAt ? sq.claimedAt.toISOString() : null;
+
+      if (!existing) {
+        byContributor.set(email, {
+          name: sq.playerName ?? "—",
+          email,
+          tickets: 1,
+          claimedAt: iso,
+          status: isPaid ? "CONFIRMED" : "AWAITING",
+        });
+        continue;
+      }
+
+      existing.tickets++;
+      // Earliest claim across their squares — how long they have been waiting.
+      if (iso && (!existing.claimedAt || iso < existing.claimedAt)) {
+        existing.claimedAt = iso;
+      }
+      // Anything outstanding keeps the row off CONFIRMED. A host chasing
+      // money must not see a green row with an unpaid square behind it.
+      const wanted = isPaid ? "CONFIRMED" : "AWAITING";
+      if (existing.status !== wanted) existing.status = "MIXED";
+    }
+
+    const contributors = Array.from(byContributor.values());
+
     return (
       <div>
         <Link
@@ -183,6 +233,14 @@ export default async function HostBoardPage({ params }: Props) {
           }))}
           pendingBatches={pendingBatches}
         />
+
+        <div className="mt-6">
+          <ContributorList
+            rows={contributors}
+            boardName={board.gameName}
+            hasEvent={board.event != null}
+          />
+        </div>
       </div>
     );
   }

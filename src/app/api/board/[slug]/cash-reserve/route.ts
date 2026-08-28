@@ -160,7 +160,11 @@ export async function POST(
           checkoutExpiresAt: null,
           releaseReason: null,
           ...(isFundraiser
-            ? { pricePaidCents: claimPriceCents, batchId }
+            ? {
+                pricePaidCents: claimPriceCents,
+                batchId,
+                claimedAt: new Date(),
+              }
             : {}),
         },
       });
