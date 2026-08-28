@@ -821,21 +821,48 @@ The page must not promise a flow this spec doesn't build. Hero mockups showing a
 
 ---
 
-## 14. Platform fee — 3%
+## 14. Monetization
 
-**Ship after the board works.** Not in the first PR.
+### Phase A: fundraiser boards are free
 
-- Fundraiser boards: 3% via Stripe Connect `application_fee_amount` per charge
-- Game Day boards: credit system unchanged
-- Cash squares: no collectable fee — falls back to one credit
+**No credit gate, no `pending_payment`, no fee.** A fundraiser board activates the moment it is created.
 
-Charged to host proceeds. **No player-facing tip prompt and no cover-the-fees checkbox.** Contributors see the square price and nothing else.
+Game Day keeps the credit system exactly as it is. This is a fundraiser-only bypass, not a change to Game Day.
+
+### Credits are the wrong instrument here
+
+An earlier version of this section said cash squares "fall back to one credit." That routes a fundraiser board through `pending_payment` and puts a $9 gate in front of a host raising money for a school. Wrong on its own terms, and it also contradicted §15, which listed the credit system as unchanged.
+
+Game Day credits work because a board is a discrete event with a known host who runs a few per season. A fundraiser is a campaign that may raise $200 or $20,000, and charging the same $9 for both is neither fair nor defensible.
+
+### The unsolved problem, for whoever picks this up
+
+**Most fundraiser money will never touch Stripe.** Direct payment by Zelle, CashApp, Venmo, or PayPal goes host-to-contributor, and Daali cannot take a percentage of money it never handles.
+
+That constrains every model:
+
+| Model | Works on card | Works on direct payment | Problem |
+|---|---|---|---|
+| Percentage via Connect `application_fee_amount` | Yes | **No** | Boards that are mostly Zelle pay almost nothing |
+| Flat fee per board, up front | Yes | Yes | Same gate as credits, and it is what credits already were |
+| Flat fee invoiced at close, on `finalRaisedCents` | Yes | Yes | Requires collecting from a host after the fact |
+| Percentage of `finalRaisedCents`, invoiced at close | Yes | Yes | Same |
+
+The last two are the only models that scale with the size of the campaign **and** survive a board where nothing went through Stripe. Both need a collection mechanism that does not exist.
+
+**Not deciding this now.** Phase C. It needs a real decision rather than a default, and defaulting is exactly what the credit fallback was.
+
+### When it lands
+
+Charged to host proceeds. **No contributor-facing tip prompt and no cover-the-fees checkbox.** Contributors see the square price and nothing else.
 
 ---
 
 ## 15. Unchanged
 
-Game Day in every respect · cash mode PIN and reserve/confirm · Stripe Connect onboarding · credit system and `pending_payment` flow · payout coordination · manual payout model · host onboarding.
+Game Day in every respect · Stripe Connect onboarding · payout coordination · manual payout model · host onboarding.
+
+**Changed for fundraiser boards:** the cash mode toggle and PIN (§6C), and the credit system and `pending_payment` flow (§14). Both still apply to Game Day unchanged. An earlier version of this section listed both as unchanged everywhere, which is how a $9 credit gate ended up in front of a school fundraiser.
 
 ---
 
@@ -852,7 +879,7 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A1 | Schema migration 1 — fundraiser columns, `FreeEntry`, backfill `boardType = "game"` | ✅ |
 | A1b | Schema migration 2 — admission tables (addendum §3). Migration 3 adds `donate_admissions` | ✅ |
 | A2 | Board type picker | ✅ |
-| A3 | Fundraiser form + API branch. **Event block. Three dates. Early bird.** No prize fields | ✅ |
+| A3 | Fundraiser form + API branch. **Event block. Dates. Early bird.** No prize fields. **No credit gate** — §14 | ✅ |
 | A4 | Fundraiser grid + contributor board | ✅ |
 | A4b | **Fundraiser host dashboard** (§9) + contributor confirmation page (§6) | ✅ |
 | A5 | Claim flow: quantity, picker, batching, `pricePaidCents`, **admission preparation** | ✅ |

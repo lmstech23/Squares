@@ -457,7 +457,54 @@ export async function POST(request: Request) {
       });
     }
 
+    // --- Path 0: Fundraiser — no credit gate, no pending_payment, no fee ---
+    //
+    // v2 §14. A fundraiser board activates the moment it is created.
+    //
+    // Credits are the wrong instrument here, not merely mispriced. Game Day
+    // credits work because a board is a discrete event a host runs a few times
+    // a season. A fundraiser is a campaign that may raise $200 or $20,000, and
+    // a $9 gate in front of someone raising money for a school is not
+    // defensible at either end of that range.
+    //
+    // No fee mechanism at all on this path — not a fee set to zero. The model
+    // is genuinely undecided (§14: most fundraiser money never touches Stripe,
+    // so a Connect percentage collects almost nothing), and a speculative
+    // column would be guessing at it.
+    //
+    // Game Day is untouched below: credits, pending_payment, and the 48-hour
+    // activation window all behave exactly as before.
+    if (boardType === "fundraiser") {
+      const board = await prisma.$transaction(async (tx) => {
+        const newBoard = await tx.board.create({
+          data: {
+            ...boardData,
+            status: "open",
+            activatedAt: new Date(),
+          },
+        });
+
+        await tx.square.createMany({
+          data: Array.from({ length: totalSquares }, (_, i) => ({
+            boardId: newBoard.boardId,
+            position: i,
+            paymentStatus: "open" as const,
+          })),
+        });
+
+        await createEvent(tx, newBoard.boardId);
+
+        return newBoard;
+      });
+
+      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
+    }
+
     // --- Guard: one pending board per host at a time ---
+    //
+    // Game Day only, and it has to be: a fundraiser creates no pending board,
+    // so an unpaid Game Day draft sitting in the way would block a fundraiser
+    // that never needed a credit in the first place.
     const existingPending = await prisma.board.findFirst({
       where: { hostId: host.id, status: 'pending_payment' },
     });
