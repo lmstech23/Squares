@@ -132,7 +132,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         earlyBirdActive={earlyBirdActive}
         timezone={board.timezone}
         raisedCents={raised._sum.pricePaidCents ?? 0}
-        goalCents={board.squarePrice * board.totalSquares}
+        goalCents={board.fundraisingGoalCents}
         supporterCount={supporters.length}
         openCount={openCount}
       />

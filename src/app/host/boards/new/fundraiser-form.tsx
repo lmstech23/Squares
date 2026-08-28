@@ -56,6 +56,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   const [causeDescription, setCauseDescription] = useState("");
   const [totalSquares, setTotalSquares] = useState(100);
   const [price, setPrice] = useState("");
+  const [goal, setGoal] = useState("");
   const [earlyBirdPrice, setEarlyBirdPrice] = useState("");
   const [earlyBirdEndsAt, setEarlyBirdEndsAt] = useState("");
   const [campaignEndsAt, setCampaignEndsAt] = useState("");
@@ -76,6 +77,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   const [loading, setLoading] = useState(false);
 
   const priceCents = Math.round(parseFloat(price || "0") * 100);
+  const goalCents = goal ? Math.round(parseFloat(goal) * 100) : null;
   const earlyCents = earlyBirdPrice
     ? Math.round(parseFloat(earlyBirdPrice) * 100)
     : null;
@@ -97,6 +99,10 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
     }
     if (!priceCents || priceCents < 100) {
       setError("Contribution per square must be at least $1.");
+      return;
+    }
+    if (goal && (!goalCents || goalCents < 100)) {
+      setError("Fundraising goal must be at least $1.");
       return;
     }
     if (earlyBirdPrice) {
@@ -135,6 +141,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           causeDescription: causeDescription.trim() || null,
           totalSquares,
           squarePrice: priceCents,
+          fundraisingGoalCents: goalCents,
           timezone,
           campaignEndsAt,
           earlyBirdPriceCents: earlyCents,
@@ -255,6 +262,27 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           placeholder="30"
           className={inputClass}
         />
+      </div>
+
+      <div>
+        <label htmlFor="goal" className={labelClass}>
+          Fundraising goal <span className="text-gray-600">(optional)</span>
+        </label>
+        <input
+          id="goal"
+          type="number"
+          min="1"
+          step="1"
+          inputMode="decimal"
+          value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+          placeholder="2000"
+          className={inputClass}
+        />
+        <p className="text-xs text-gray-600 mt-1.5">
+          Shows a progress bar on the board. Leave blank for none. You can
+          change this any time.
+        </p>
       </div>
 
       {/* --- Early bird — money doc §8B --- */}

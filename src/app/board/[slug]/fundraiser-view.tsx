@@ -31,7 +31,8 @@ interface Props {
   earlyBirdActive: boolean;
   timezone: string | null;
   raisedCents: number;
-  goalCents: number;
+  /// Null = no goal set. No bar, no denominator — v2 §7.
+  goalCents: number | null;
   supporterCount: number;
   openCount: number;
 }
@@ -75,7 +76,12 @@ export default function FundraiserView({
 
   const currentPrice = showSchedule ? earlyBirdPriceCents : squarePrice;
 
-  const pct = goalCents > 0 ? Math.min(100, (raisedCents / goalCents) * 100) : 0;
+  // Clamped at 100% when raised exceeds the goal — the real figure still shows
+  // above the bar. v2 §7.
+  const pct =
+    goalCents && goalCents > 0
+      ? Math.min(100, (raisedCents / goalCents) * 100)
+      : null;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -108,15 +114,17 @@ export default function FundraiserView({
               {money(raisedCents)}
             </span>
             <span className="text-sm text-gray-500">
-              raised of {money(goalCents)}
+              {goalCents ? <>raised of {money(goalCents)}</> : <>raised</>}
             </span>
           </div>
-          <div className="mt-2 h-2.5 bg-gray-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-green-500 rounded-full transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
+          {pct !== null && (
+            <div className="mt-2 h-2.5 bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 rounded-full transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          )}
         </div>
 
         {/* What's the fun — supporter momentum on a no-prize board. Phase A

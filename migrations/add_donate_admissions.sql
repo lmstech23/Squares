@@ -11,7 +11,22 @@
 -- gone. Its columns are retained rather than dropped, per v2.0 §3.
 -- ============================================================
 
--- 1. The donate flag. The only column v2.0 adds by design.
+-- 0. Host-entered fundraising goal — v2 §7.
+--
+-- Optional. Null means no goal and no progress bar, and the header shows a
+-- bare raised figure.
+--
+-- Deliberately host-entered rather than derived: no derivation from square
+-- count survives early bird pricing. squares x standard is unreachable so the
+-- bar could never fill, squares x early overfills, and both are the
+-- squares x price arithmetic v2 §7 warns against, applied to the denominator.
+--
+-- Not locked by invariant 16. A goal is aspirational, not a term of the deal —
+-- raising it changes nothing about what anyone already bought.
+ALTER TABLE boards
+  ADD COLUMN fundraising_goal_cents INTEGER;
+
+-- 1. The donate flag.
 ALTER TABLE admission_grants
   ADD COLUMN donate_admissions BOOLEAN NOT NULL DEFAULT FALSE;
 

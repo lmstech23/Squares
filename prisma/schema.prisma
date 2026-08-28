@@ -95,6 +95,9 @@ model Board {
   // Campaign backstop — required on fundraiser boards, API-enforced.
   // drawDate no longer doubles as the campaign end now that prizes are Phase B.
   campaignEndsAt            DateTime?    @map("campaign_ends_at") @db.Timestamptz(6)
+  /// Optional, host-entered. Null = no goal and no progress bar. Not locked by
+  /// invariant 16 — a goal is aspirational, not a term of the deal. v2 §7.
+  fundraisingGoalCents      Int?         @map("fundraising_goal_cents")
   // Early bird — money doc §8B. Null price = flat pricing.
   earlyBirdPriceCents       Int?         @map("early_bird_price_cents")
   earlyBirdEndsAt           DateTime?    @map("early_bird_ends_at") @db.Timestamptz(6)

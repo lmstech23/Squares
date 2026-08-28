@@ -72,6 +72,7 @@ interface CreateBoardBody {
   boardType?: BoardType;
   causeDescription?: string | null;
   totalSquares?: number;
+  fundraisingGoalCents?: number | null;
   timezone?: string;
   campaignEndsAt?: string;
   earlyBirdPriceCents?: number | null;
@@ -293,6 +294,18 @@ export async function POST(request: Request) {
         }
       }
 
+      // Optional host-entered goal. Null means no progress bar — v2 §7.
+      let fundraisingGoalCents: number | null = null;
+      if (body.fundraisingGoalCents != null) {
+        fundraisingGoalCents = body.fundraisingGoalCents;
+        if (!Number.isInteger(fundraisingGoalCents) || fundraisingGoalCents < 100) {
+          return NextResponse.json(
+            { error: "Fundraising goal must be at least $1." },
+            { status: 400 }
+          );
+        }
+      }
+
       const cashHoldDays = body.cashHoldDays ?? 7;
       if (!Number.isInteger(cashHoldDays) || cashHoldDays < 1 || cashHoldDays > 60) {
         return NextResponse.json(
@@ -324,6 +337,7 @@ export async function POST(request: Request) {
       fundraiserOnlyData = {
         causeDescription: body.causeDescription?.trim() || null,
         campaignEndsAt,
+        fundraisingGoalCents,
         timezone,
         earlyBirdPriceCents,
         earlyBirdEndsAt,
