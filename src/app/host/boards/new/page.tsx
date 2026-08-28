@@ -1,7 +1,6 @@
 import { getHost } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import NewBoardFlow from "./new-board-flow";
-import { canCreateFundraiser } from "@/lib/fundraiser-access";
 import Link from "next/link";
 
 export default async function NewBoardPage() {
@@ -23,10 +22,7 @@ export default async function NewBoardPage() {
         Set the game, price, and payout split. You can share the link
         immediately after.
       </p>
-      <NewBoardFlow
-        isCashHost={host.paymentPreference === "cash"}
-        canCreateFundraiser={canCreateFundraiser(host.email)}
-      />
+      <NewBoardFlow isCashHost={host.paymentPreference === "cash"} />
     </div>
   );
 }
