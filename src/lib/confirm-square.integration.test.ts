@@ -291,6 +291,98 @@ describe("confirmSquares (integration)", { skip: !url && "TEST_DATABASE_URL not 
     await cleanupBoard();
   });
 
+  test("MERGE: the donate flag applies to every grant in the checkout", async () => {
+    // The bug this covers: claim 2 squares, abandon checkout, come back and
+    // claim 2 more with "I'm not attending" ticked. One checkout of 4 from the
+    // contributor's point of view, expecting zero passes. Without propagation
+    // the earlier grant still says donateAdmissions = false and she is minted
+    // 2 passes she asked not to have.
+    //
+    // Mocking this would prove nothing — the propagation is an UPDATE across
+    // rows written by an earlier request.
+    const squares = await seedBoard(4);
+    const firstTwo = squares.slice(0, 2).map((s) => s.squareId);
+    const nextTwo = squares.slice(2).map((s) => s.squareId);
+
+    const { batchId: oldBatch, supporterId } = await seedClaim(firstTwo, false);
+
+    // Second submission merges the earlier squares in and ticks donate.
+    const newBatch = randomUUID();
+    await db.square.updateMany({
+      where: { squareId: { in: [...firstTwo, ...nextTwo] } },
+      data: { batchId: newBatch, paymentStatus: "reserved_cash" },
+    });
+    await db.admissionGrant.create({
+      data: {
+        eventId,
+        eventSupporterId: supporterId,
+        squareBatchId: newBatch,
+        donateAdmissions: true,
+      },
+    });
+    // What the checkout route does on merge: bring earlier grants in line.
+    await db.admissionGrant.updateMany({
+      where: { squareBatchId: { in: [oldBatch] } },
+      data: { donateAdmissions: true },
+    });
+
+    await db.$transaction((tx) =>
+      confirmSquares(tx, [...firstTwo, ...nextTwo], "reserved_cash")
+    );
+
+    assert.equal(
+      await db.admissionPass.count({ where: { eventSupporterId: supporterId } }),
+      0,
+      "she asked for no admissions and must get none"
+    );
+    assert.equal(
+      await db.square.count({ where: { boardId, paymentStatus: "paid" } }),
+      4,
+      "all four squares still fund the cause"
+    );
+
+    await cleanupBoard();
+  });
+
+  test("MERGE: a stale grant left at false would mint passes", async () => {
+    // The inverse, proving the assertion above is not vacuous. Same setup, but
+    // WITHOUT the propagation step — the earlier grant keeps donate = false and
+    // its two squares mint. If this ever returns 0, the test above stopped
+    // testing anything.
+    const squares = await seedBoard(4);
+    const firstTwo = squares.slice(0, 2).map((s) => s.squareId);
+    const nextTwo = squares.slice(2).map((s) => s.squareId);
+
+    const { supporterId } = await seedClaim(firstTwo, false);
+
+    const newBatch = randomUUID();
+    await db.square.updateMany({
+      where: { squareId: { in: nextTwo } },
+      data: { batchId: newBatch, paymentStatus: "reserved_cash" },
+    });
+    await db.admissionGrant.create({
+      data: {
+        eventId,
+        eventSupporterId: supporterId,
+        squareBatchId: newBatch,
+        donateAdmissions: true,
+      },
+    });
+    // No propagation here.
+
+    await db.$transaction((tx) =>
+      confirmSquares(tx, [...firstTwo, ...nextTwo], "reserved_cash")
+    );
+
+    assert.equal(
+      await db.admissionPass.count({ where: { eventSupporterId: supporterId } }),
+      2,
+      "the un-propagated grant mints — which is the bug propagation prevents"
+    );
+
+    await cleanupBoard();
+  });
+
   test("backfill skips donated grants", async () => {
     const squares = await seedBoard(2);
     const { supporterId } = await seedClaim(

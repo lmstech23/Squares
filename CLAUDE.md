@@ -39,6 +39,17 @@ Board dates are stored in UTC and entered as wall clock in `Board.timezone`
 `src/lib/zoned-time.ts` — never `new Date(localString)`, which reads as UTC on
 Vercel and silently moves a deadline. `npm test` covers the DST boundaries.
 
+Concurrency guarantees are covered by real-database tests, not mocks:
+
+```
+npm run test:db:up        disposable Postgres in Docker, schema built by db push
+npm run test:integration  the 8 confirmation/minting cases
+npm run test:db:down
+```
+
+`npm test` alone reports **1 skipped** when that database is absent — the skip
+is the signal that concurrency went unverified, not noise.
+
 Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits.
 
 ---

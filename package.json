@@ -12,7 +12,10 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "npx tsx prisma/seed.ts",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "test:db:up": "node scripts/test-db.mjs up",
+    "test:db:down": "node scripts/test-db.mjs down",
+    "test:integration": "node -e \"process.env.TEST_DATABASE_URL='postgresql://postgres:daali@localhost:55432/daali_test';require('child_process').execFileSync(process.execPath,['--experimental-strip-types','--test','src/lib/confirm-square.integration.test.ts'],{stdio:'inherit'})\""
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
