@@ -15,7 +15,7 @@ Sign off on the invariants in Section 9 before any of this is built. The product
 |---|---|
 | **Square** | A spot on the fundraiser board. 25/50/75/100 per board. |
 | **Contribution** | Money given to claim a square. Non-refundable once confirmed. |
-| **Ticket** | An entry in the prize drawing. Exists only on prize-enabled boards. |
+| **Drawing ticket** | An entry in the prize drawing. Exists only on prize-enabled boards. Derived from a Square, never a stored row — see §5. |
 | **Confirmed** | Money actually received. Card settled, or cash marked received by the host. |
 | **Reserved** | A cash square held for a named person. **$0.** Not confirmed. |
 | **Raised** | Sum of confirmed contributions. The public number. |

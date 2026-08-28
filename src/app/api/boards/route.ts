@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { parseZoned } from "@/lib/zoned-time";
 import { generateSlug } from "@/lib/slug";
 
 // ============================================================
@@ -50,60 +51,6 @@ const PERIOD_LABELS: Record<string, string[]> = {
 type BoardType = "game" | "fundraiser";
 
 const VALID_SQUARE_COUNTS = [25, 50, 75, 100];
-
-/// Offset of `timeZone` from UTC, in ms, at the given instant.
-function tzOffsetMs(date: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(date);
-  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
-  const asUtc = Date.UTC(
-    get("year"),
-    get("month") - 1,
-    get("day"),
-    get("hour") % 24,
-    get("minute"),
-    get("second")
-  );
-  return asUtc - date.getTime();
-}
-
-/// Converts a wall-clock string from a `datetime-local` input ("YYYY-MM-DDTHH:mm")
-/// into a UTC instant, interpreting it in the host's chosen IANA timezone.
-///
-/// `new Date(value)` would read it as server-local time, which is UTC on
-/// Vercel — a 7pm campaign close in New York would land at 2pm. These dates
-/// gate money, so the zone is applied explicitly. Returns null for missing or
-/// unparseable input so callers can write their own message.
-function parseZoned(
-  value: string | null | undefined,
-  timeZone: string
-): Date | null {
-  if (!value) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value);
-  if (!m) return null;
-  const [y, mo, d, h, mi] = m.slice(1).map(Number);
-  const guess = Date.UTC(y, mo - 1, d, h, mi);
-  let offset: number;
-  try {
-    offset = tzOffsetMs(new Date(guess), timeZone);
-  } catch {
-    return null; // invalid IANA zone
-  }
-  let result = new Date(guess - offset);
-  // One correction pass: near a DST boundary the offset at the guessed
-  // instant can differ from the offset at the real one.
-  const corrected = tzOffsetMs(result, timeZone);
-  if (corrected !== offset) result = new Date(guess - corrected);
-  return Number.isNaN(result.getTime()) ? null : result;
-}
 
 interface CreateBoardBody {
   gameName: string;
@@ -382,7 +329,7 @@ export async function POST(request: Request) {
       fundraiserOnlyData = {
         causeDescription: body.causeDescription?.trim() || null,
         campaignEndsAt,
-        drawTimezone: timezone,
+        timezone,
         earlyBirdPriceCents,
         earlyBirdEndsAt,
         cashHoldDays,

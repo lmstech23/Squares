@@ -91,7 +91,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `prizeTierCount` | Int | 1–4. Default 4. Ignored when percent is 0. |
 | `drawTrigger` | enum | `"date"` \| `"when_full"` |
 | `drawDate` | DateTime | **Required on every prize board**, both triggers. Backstop. |
-| `drawTimezone` | String | IANA, e.g. `America/New_York`. |
+| `timezone` | String | IANA, e.g. `America/New_York`. **One per board**, covering early bird, close, draw, and event. Renamed from `drawTimezone` — it was never draw-specific |
 | `cashHoldDays` | Int | Default 7. Capped at campaign close — invariant 6. |
 | `finalRaisedCents` | Int? | Written at CLOSED. Immutable — invariant 13. |
 | `finalPrizePoolCents` | Int? | Written at CLOSED. Immutable — invariant 13. |
@@ -99,7 +99,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `drawResults` | Json? | |
 | `titleHistory` | Json? | Array of `{previousTitle, changedAt}` |
 | `earlyBirdPriceCents` | Int? | Null = flat pricing. Money doc §8B |
-| `earlyBirdEndsAt` | DateTime? | Changeover, in `drawTimezone` |
+| `earlyBirdEndsAt` | DateTime? | Changeover, in the board's `timezone` |
 
 ### Board — nullable for fundraiser
 
@@ -172,9 +172,10 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Contribution per square | Min $1 → `squarePrice` |
 | Early bird price | Optional. Min $1, must be below the standard price |
 | Early bird ends | Required if an early bird price is set. Date + time |
-| **Campaign closes** | **Required.** Date + time + timezone → `campaignEndsAt` |
+| **Campaign closes** | **Required.** Date + time → `campaignEndsAt` |
+| Timezone | **Required.** IANA. One per board, covering all dated fields → `timezone` |
 | Cash hold window | Default 7 days. Only if cash mode on. |
-| Payment handles | Unchanged from payout coordination spec |
+| Payment handles | The four host handles only — this is how contributors pay |
 
 **Prize fields do not render in Phase A.** `prizePoolPercent` stays 0. A host must not be able to switch on a drawing that has nothing behind it. Deferred to Phase B, specified here for when it returns:
 
@@ -185,6 +186,8 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Number of prizes | If yes. 1–4. Default 4. |
 | Drawing | If yes. On a date / When all squares claimed |
 | Drawing date | Required either way, + timezone |
+
+**Not on the Phase A form:** `requirePlayerPayout` and `payoutVisibility`. Both exist to pay winners, and Phase A has no winners. Server defaults them. They return with Phase B.
 
 ### Campaign close
 
@@ -197,6 +200,16 @@ Helper text under the field, guidance only:
 > Cash reservations must be confirmed before this date.
 
 `cashHoldDays` caps at close (invariant 6), so a close date sitting right against the event squeezes the window for confirming Zelle payments. **No validation enforces a gap.** The host decides.
+
+### One timezone per board
+
+A single selector covers early bird, campaign close, draw date, and event. Stored as `Board.timezone`; `Event.timezone` reads from it.
+
+The field was previously called `drawTimezone`, which was never accurate — it always described the board, and on a Phase A no-prize board there is no draw for it to belong to. Renamed before either migration is applied.
+
+**A separate event timezone is not supported.** A school fundraiser and its tailgate are in the same place. If a national organization ever needs otherwise, that is a second field and a doc change, not an assumption to build in now.
+
+**`datetime-local` gives wall-clock time with no zone.** Parsing it on a UTC server silently shifts it — a 7pm New York close becomes 2pm. Conversion must be explicit and zone-aware, including across a DST boundary, which fall campaigns will cross. `campaignEndsAt` gates money and `cashHoldDays` caps against it, so this is not cosmetic.
 
 ### The three dates are independent
 
@@ -214,12 +227,21 @@ Any of the three may fall in any order relative to the others. No validation rel
 
 ```
 If all 100 squares fill you raise $2,500 – $3,000
-  Estimated proceeds   ~$2,400 – $2,900
 ```
 
-A range, because early bird pricing means the total depends on when squares sell. Low end is every square at the standard price; high end assumes none sold early. With flat pricing it collapses to a single figure.
+A range, because early bird pricing means the total depends on when squares sell.
 
-Estimated proceeds is host-facing only and shown as an estimate, because processing cost varies by payment method. It never appears on the public board.
+**Low end is every square at the early bird price. High end is every square at the standard price.** At 100 squares, $25 early and $30 standard, that is $2,500 to $3,000. With flat pricing the range collapses to a single figure.
+
+An earlier version of this paragraph described both ends as the standard price, which was wrong and contradicted its own example.
+
+### Estimated proceeds — not in Phase A
+
+Deliberately absent. Proceeds depend on the payment mix, and nothing at board creation knows it.
+
+Card carries Stripe's per-transaction cost; cash and Zelle carry none. The fee is **per transaction, not per square**, so five squares in one checkout cost the same fixed component as one — meaning even a fully-card board can't be estimated from square count. The platform fee (§14) is Phase C and isn't charged yet.
+
+A single blended percentage would be a made-up number on a host-facing money screen. Show the raise range and nothing else. Reinstating this needs a real fee model written down first, not a rate picked to look plausible.
 
 **Phase B** reinstates the prize lines:
 
@@ -391,7 +413,7 @@ Drawing Ticket #23
 [ View your passes ]
 ```
 
-Never call an admission pass a ticket. A drawing ticket keeps its existing meaning — an entry in the drawing, numbered to the square, and **derived rather than stored** (money doc §5). The display strings are **Drawing Ticket** and **Admission Pass**, never interchangeable.
+Never call an admission pass a ticket. A drawing ticket keeps its existing meaning — an entry in the drawing, numbered to the square, derived rather than stored. The display strings are **Drawing Ticket** and **Admission Pass**, never interchangeable.
 
 ### Passes screen
 
@@ -716,7 +738,7 @@ Slice 1 is where a mistake is expensive and silent. Review it before Slice 2 sta
 
 **Rule A — this document is the flow authority for fundraiser boards.** Everything fundraiser, including admission: screens, flows, auth, build order. `SYSTEM-FLOW.md` remains the authority for Game Day. The document-first rule is satisfied for fundraiser work by writing here first.
 
-**Rule B — the full SYSTEM-FLOW fundraiser backfill is deferred and blocks nothing.** It does not block Admission Slice 1, Slice 2, or Slice 3. It remains a real gap and a real backlog item: SYSTEM-FLOW documents the Game Day app only, so anyone following the check-before-pushing rule who looks only there finds a map without the territory. The pointer added to its Quick Summary is what redirects them here.
+**Rule B — the full SYSTEM-FLOW fundraiser backfill is deferred and blocks nothing.** It does not block Admission Slice 1, Slice 2, or Slice 3. It remains a real gap and a real backlog item: SYSTEM-FLOW covers Game Day only, so anyone following the check-before-pushing rule who looks only there finds a map without the territory. (Do not cite a date for that file — copies in circulation differ, and the repo's is newer than any of them.) The pointer added to its Quick Summary is what redirects them here.
 
 **What SYSTEM-FLOW carries for admission** — three edits, no more, specified in `system-flow-port.md`. They must be **ported onto the repo's current copy**, never applied by overwriting the file. The repo's version is newer than any copy circulating in project knowledge and contains the double-grid feature.
 

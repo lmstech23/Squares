@@ -1,9 +1,11 @@
 # Fundraiser Admission — Addendum
 
 **Status:** FROZEN — Aug 27, 2026. Slice 1 released to build.
-**Version:** 1.6
+**Version:** 1.7
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on product)
 **Depends on:** Fundraiser boards, cash reserve/confirm, batch claim flow
+
+**Changed in 1.7:** last two `Ticket`-as-model lines removed. This is the third pass on that phrasing; the sweep now covers `` `Ticket` `` in backticks, "Ticket model", and the vocabulary tables, which is where the survivors were hiding.
 
 **Changed in 1.6:** write count corrected to **three** — removing the ticket write from four leaves three, not two. Remaining `Ticket`-as-model language removed. Numbered rule citation replaced with the rule's name.
 
@@ -50,7 +52,7 @@ Drawing Ticket #23
 3 Admission Passes
 ```
 
-"Drawing Ticket" is a display string over a derived value — there is no `Ticket` model behind it. **Never call an admission pass a ticket anywhere a human can read it.**
+"Drawing Ticket" is a display string. There is no model behind it — a paid drawing ticket is a derived property of a Square (money doc §5). **Never call an admission pass a ticket anywhere a human can read it.**
 
 ---
 

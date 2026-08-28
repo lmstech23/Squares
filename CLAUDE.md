@@ -31,8 +31,13 @@ Admission itself is three slices: schema and activation, then contributor and ho
 
 The fundraiser spec was written long before any of it was built, and a brief was once written against a schema nobody had checked. That is the failure this section exists to prevent.
 
-Done: **A1** — schema and `boardType = "game"` backfill. Columns exist; nothing reads them.
-Next: **A2** — board type picker.
+Done: **A1**, **A1b**, **A2**, **A3** — both migrations written, board type picker, fundraiser form and API branch.
+Next: **A4** — fundraiser grid and contributor board (v2 §6, §7).
+
+Board dates are stored in UTC and entered as wall clock in `Board.timezone`
+(one zone per board, covering early bird, close, draw, and event). Convert with
+`src/lib/zoned-time.ts` — never `new Date(localString)`, which reads as UTC on
+Vercel and silently moves a deadline. `npm test` covers the DST boundaries.
 
 Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits.
 
@@ -49,7 +54,7 @@ Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores
 | `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
 
-Consistent as of admission addendum v1.5.
+Consistent as of admission addendum v1.7.
 
 **If two documents disagree, that is a bug. Report it. Do not choose.**
 

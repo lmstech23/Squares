@@ -76,7 +76,7 @@ model Board {
   hiddenFromHost            Boolean     @default(false) @map("hidden_from_host")
 
   // Fundraiser boards — fundraiser-board-v2.md §3
-  // drawTrigger/drawDate/drawTimezone are nullable at the DB level and required
+  // drawTrigger/drawDate/timezone are nullable at the DB level and required
   // by API validation on prize boards only (percent > 0) — the doc's "required"
   // is conditional, so it cannot be a NOT NULL column.
   boardType                 BoardType    @default(game) @map("board_type")
@@ -85,7 +85,7 @@ model Board {
   prizeTierCount            Int          @default(4) @map("prize_tier_count")
   drawTrigger               DrawTrigger? @map("draw_trigger")
   drawDate                  DateTime?    @map("draw_date") @db.Timestamptz(6)
-  drawTimezone              String?      @map("draw_timezone")
+  timezone                  String?
   cashHoldDays              Int          @default(7) @map("cash_hold_days")
   finalRaisedCents          Int?         @map("final_raised_cents")
   finalPrizePoolCents       Int?         @map("final_prize_pool_cents")

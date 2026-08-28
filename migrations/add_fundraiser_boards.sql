@@ -40,7 +40,7 @@ ALTER TABLE boards
   ADD COLUMN prize_tier_count        INTEGER NOT NULL DEFAULT 4,
   ADD COLUMN draw_trigger            draw_trigger,
   ADD COLUMN draw_date               TIMESTAMPTZ,
-  ADD COLUMN draw_timezone           TEXT,
+  ADD COLUMN timezone                TEXT,
   ADD COLUMN cash_hold_days          INTEGER NOT NULL DEFAULT 7,
   ADD COLUMN final_raised_cents      INTEGER,
   ADD COLUMN final_prize_pool_cents  INTEGER,
@@ -56,7 +56,7 @@ ALTER TABLE boards
   ADD COLUMN early_bird_price_cents  INTEGER,
   ADD COLUMN early_bird_ends_at      TIMESTAMPTZ;
 
--- Ranges from v2 §3. draw_trigger / draw_date / draw_timezone / campaign_ends_at
+-- Ranges from v2 §3. draw_trigger / draw_date / timezone / campaign_ends_at
 -- stay nullable: the spec requires them conditionally, which cannot be NOT NULL
 -- on a table full of game boards. API validation enforces it.
 --
