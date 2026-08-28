@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { randomUUID } from "crypto";
+import { currentPriceCents } from "@/lib/claim-price";
+import { prepareAdmission } from "@/lib/admission";
 
 // ============================================================
 // PLAYER: Self-serve cash reservation with PIN
@@ -21,6 +24,8 @@ interface CashReserveBody {
   playerPayoutMethod?: string | null;
   playerPayoutHandle?: string | null;
   smsOptIn?: boolean;
+  /// Fundraiser only — "I'm not attending, donate my admissions" (v2 §6).
+  donateAdmissions?: boolean;
 }
 
 export async function POST(
@@ -56,7 +61,11 @@ export async function POST(
         cashModeEnabled: true,
         cashPin: true,
         squarePrice: true,
-
+        boardType: true,
+        campaignEndsAt: true,
+        earlyBirdPriceCents: true,
+        earlyBirdEndsAt: true,
+        event: { select: { id: true } },
       },
     });
 
@@ -84,10 +93,43 @@ export async function POST(
         { status: 403 }
       );
     }
-      const reserved: string[] = [];
+    const isFundraiser = board.boardType === "fundraiser";
+    const email = body.playerEmail?.trim().toLowerCase() || null;
+
+    // Campaigns close on a date, not a board status — invariant 6.
+    if (isFundraiser && board.campaignEndsAt && board.campaignEndsAt <= new Date()) {
+      return NextResponse.json(
+        { error: "This campaign has closed." },
+        { status: 409 }
+      );
+    }
+
+    // A board with an event needs a name and an email to resolve the
+    // supporter — both are NOT NULL with no default. An email-only sheet
+    // fails here, at the first claim, not at confirmation. See v2 §6.
+    if (isFundraiser && board.event && !email) {
+      return NextResponse.json(
+        { error: "An email address is required to reserve on this board." },
+        { status: 400 }
+      );
+    }
+
+    // Price is fixed now, at reservation, and never recomputed — invariant 42.
+    // A square reserved at the early price and confirmed a week later is still
+    // owed the early price, and the host's cash panel must show that amount.
+    const claimPriceCents = isFundraiser
+      ? currentPriceCents(board)
+      : board.squarePrice;
+
+    const batchId = isFundraiser ? randomUUID() : null;
+
+    const reserved: string[] = [];
     const unavailable: string[] = [];
 
-    // Reserve each square — skip any that are no longer open
+    // Reserve each square — skip any that are no longer open.
+    // Cash batches are deliberately NOT atomic (money doc §4): a parent who
+    // reserves 3 and arrives with $100 must be resolvable to 2 confirmed and
+    // 1 released, so each square is taken independently.
     for (const squareId of squareIds) {
       const { count } = await prisma.square.updateMany({
         where: {
@@ -99,7 +141,7 @@ export async function POST(
           paymentStatus: "reserved_cash",
           paymentMethod: "cash",
           playerName: name,
-          playerEmail: body.playerEmail?.trim().toLowerCase() || null,
+          playerEmail: email,
           playerPhone: body.playerPhone?.trim() || null,
           playerPayoutMethod: (body.playerPayoutMethod as any) || null,
           playerPayoutHandle: body.playerPayoutHandle?.trim() || null,
@@ -107,6 +149,9 @@ export async function POST(
           stripePaymentId: null,
           checkoutExpiresAt: null,
           releaseReason: null,
+          ...(isFundraiser
+            ? { pricePaidCents: claimPriceCents, batchId }
+            : {}),
         },
       });
 
@@ -115,6 +160,21 @@ export async function POST(
       } else {
         reserved.push(squareId);
       }
+    }
+
+    // Admission preparation — addendum §4. Only once at least one square was
+    // actually taken, so a reservation that lost every square to a race leaves
+    // no supporter or grant behind.
+    if (isFundraiser && board.event && batchId && reserved.length > 0 && email) {
+      await prisma.$transaction(async (tx) => {
+        await prepareAdmission(
+          tx,
+          board.event!.id,
+          batchId,
+          { name, email, phone: body.playerPhone },
+          body.donateAdmissions ?? false
+        );
+      });
     }
 
     if (reserved.length === 0) {

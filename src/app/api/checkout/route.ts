@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
+import { randomUUID } from "crypto";
+import { currentPriceCents } from "@/lib/claim-price";
+import { prepareAdmission } from "@/lib/admission";
 
 interface CheckoutBody {
   squareIds: string[];
@@ -11,6 +14,8 @@ interface CheckoutBody {
   playerPayoutMethod?: string | null;
   playerPayoutHandle?: string | null;
   smsOptIn?: boolean;
+  /// Fundraiser only — "I'm not attending, donate my admissions" (v2 §6).
+  donateAdmissions?: boolean;
 }
 
 // 30-minute checkout TTL (Stripe minimum for checkout sessions)
@@ -73,6 +78,7 @@ export async function POST(request: Request) {
             host: {
               select: { stripeAccountId: true, stripeChargesEnabled: true },
             },
+            event: { select: { id: true } },
           },
         },
       },
@@ -193,6 +199,7 @@ export async function POST(request: Request) {
                 host: {
                   select: { stripeAccountId: true, stripeChargesEnabled: true },
                 },
+                event: { select: { id: true } },
               },
             },
           },
@@ -200,7 +207,19 @@ export async function POST(request: Request) {
       }
     }
 
+    const isFundraiser = board.boardType === "fundraiser";
+
+    // Fundraiser campaigns close on a date, not a board status — invariant 6.
+    if (isFundraiser && board.campaignEndsAt && board.campaignEndsAt <= new Date()) {
+      return NextResponse.json(
+        { error: "This campaign has closed." },
+        { status: 409 }
+      );
+    }
+
     // 5. Check max_squares_per_player (count paid + pending by email)
+    //    Fundraiser boards skip this entirely — money doc §12 says the limit
+    //    does not apply. There is no cap on how much one person may contribute.
     //    Exclude squares being re-claimed/merged (no double-counting)
     const playerSquareCount = await prisma.square.count({
       where: {
@@ -211,7 +230,7 @@ export async function POST(request: Request) {
       },
     });
 
-    if (playerSquareCount + squareIds.length > board.maxSquaresPerPlayer) {
+    if (!isFundraiser && playerSquareCount + squareIds.length > board.maxSquaresPerPlayer) {
       const remaining = board.maxSquaresPerPlayer - playerSquareCount;
       return NextResponse.json(
         {
@@ -226,7 +245,21 @@ export async function POST(request: Request) {
 
     // 6. Lock all squares as pending — single atomic updateMany
     //    OR clause: allows re-claiming own pending squares + locking new open ones
-    const expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
+    // The hold is capped at campaign close — no hold of any kind survives it
+    // (money doc §3).
+    let expiresAt = new Date(Date.now() + CHECKOUT_TTL_MS);
+    if (isFundraiser && board.campaignEndsAt && board.campaignEndsAt < expiresAt) {
+      expiresAt = board.campaignEndsAt;
+    }
+
+    // Price is fixed now, at claim, and never recomputed — invariant 42.
+    const claimPriceCents = isFundraiser
+      ? currentPriceCents(board)
+      : board.squarePrice;
+
+    // One batch id per claim. Groups the squares and keys the admission grant,
+    // which is what makes preparation idempotent under retry.
+    const batchId = isFundraiser ? randomUUID() : null;
 
     const { count: totalLocked } = await prisma.$transaction(async (tx) => {
       const result = await tx.square.updateMany({
@@ -250,11 +283,32 @@ export async function POST(request: Request) {
           smsOptIn: body.smsOptIn ?? false,
           checkoutExpiresAt: expiresAt,
           releaseReason: null,
+          ...(isFundraiser
+            ? {
+                pricePaidCents: claimPriceCents,
+                batchId,
+                holdExpiresAt: expiresAt,
+              }
+            : {}),
         },
       });
 
       if (result.count !== squareIds.length) {
         throw new Error("SQUARE_TAKEN");
+      }
+
+      // Admission preparation — addendum §4. Same transaction as the squares,
+      // so an abandoned claim never leaves a supporter behind. No passes yet:
+      // a pending supporter owns zero pass records. Minting is one per square
+      // at confirmation (A8).
+      if (isFundraiser && board.event && batchId) {
+        await prepareAdmission(
+          tx,
+          board.event.id,
+          batchId,
+          { name, email, phone },
+          body.donateAdmissions ?? false
+        );
       }
 
       return result;
@@ -269,7 +323,7 @@ export async function POST(request: Request) {
       },
     });
 
-    if (postLockCount > board.maxSquaresPerPlayer) {
+    if (!isFundraiser && postLockCount > board.maxSquaresPerPlayer) {
       await prisma.square.updateMany({
         where: { squareId: { in: squareIds }, paymentStatus: "pending" },
         data: {
@@ -317,7 +371,7 @@ export async function POST(request: Request) {
                       : `${squareIds.length} squares (#${positions})`,
                   description: board.gameName,
                 },
-                unit_amount: board.squarePrice,
+                unit_amount: claimPriceCents,
               },
               quantity: squareIds.length,
             },
@@ -363,7 +417,10 @@ export async function POST(request: Request) {
         squareId: { in: squareIds },
         paymentStatus: "pending",
       },
-      data: { stripePaymentId: session.id },
+      data: {
+        stripePaymentId: session.id,
+        ...(isFundraiser ? { checkoutSessionId: session.id } : {}),
+      },
     });
 
     return NextResponse.json({ checkoutUrl: session.url });

@@ -10,6 +10,7 @@
 // distinguishes pending from reserved from paid.
 
 interface GridSquare {
+  squareId: string;
   position: number;
   paymentStatus: string;
 }

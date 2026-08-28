@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import FundraiserGrid from "./fundraiser-grid";
+import ClaimSheet from "./claim-sheet";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
 //
@@ -14,6 +18,7 @@ import FundraiserGrid from "./fundraiser-grid";
 // pricePaidCents by the caller (invariant 43).
 
 interface GridSquare {
+  squareId: string;
   position: number;
   paymentStatus: string;
 }
@@ -35,6 +40,10 @@ interface Props {
   goalCents: number | null;
   supporterCount: number;
   openCount: number;
+  slug: string;
+  hasEvent: boolean;
+  cashModeEnabled: boolean;
+  stripeConnected: boolean;
 }
 
 function money(cents: number): string {
@@ -67,7 +76,12 @@ export default function FundraiserView({
   goalCents,
   supporterCount,
   openCount,
+  slug,
+  hasEvent,
+  cashModeEnabled,
+  stripeConnected,
 }: Props) {
+  const [claiming, setClaiming] = useState(false);
   // The schedule line renders only while the early bird price is still in
   // effect. Once the changeover has passed there is one price again, and
   // saying "through Sept 15, then $30" about a date in the past is noise.
@@ -136,18 +150,17 @@ export default function FundraiserView({
           {openCount} {openCount === 1 ? "square" : "squares"} left
         </p>
 
-        {/* What do I do.
-            A4 SCAFFOLD — the claim flow is A5 (quantity, picker, batching,
-            pricePaidCents at claim, admission preparation). The button is
-            rendered in its final form but inert until then, so A4 must not
-            ship on its own. */}
+        {/* What do I do */}
         <div className="mt-5">
           <button
             type="button"
-            disabled
-            className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={() => setClaiming(true)}
+            disabled={openCount === 0}
+            className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Claim a square — {money(currentPrice)}
+            {openCount === 0
+              ? "Every square is claimed"
+              : `Claim a square — ${money(currentPrice)}`}
           </button>
         </div>
 
@@ -156,6 +169,20 @@ export default function FundraiserView({
         <div className="mt-6">
           <FundraiserGrid squares={squares} />
         </div>
+
+        {claiming && (
+          <ClaimSheet
+            openSquares={squares
+              .filter((sq) => sq.paymentStatus === "open")
+              .map((sq) => ({ squareId: sq.squareId, position: sq.position }))}
+            priceCents={currentPrice}
+            hasEvent={hasEvent}
+            cashModeEnabled={cashModeEnabled}
+            stripeConnected={stripeConnected}
+            slug={slug}
+            onClose={() => setClaiming(false)}
+          />
+        )}
       </div>
     </div>
   );

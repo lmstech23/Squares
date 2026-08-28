@@ -55,6 +55,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       host: {
         select: { name: true, stripeAccountId: true, stripeChargesEnabled: true },
       },
+      event: { select: { id: true } },
     },
   });
  
@@ -123,6 +124,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         causeDescription={board.causeDescription}
         hostName={board.host.name}
         squares={board.squares.map((sq) => ({
+          squareId: sq.squareId,
           position: sq.position,
           paymentStatus: sq.paymentStatus,
         }))}
@@ -135,6 +137,10 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         goalCents={board.fundraisingGoalCents}
         supporterCount={supporters.length}
         openCount={openCount}
+        slug={board.slug}
+        hasEvent={board.event != null}
+        cashModeEnabled={board.cashModeEnabled}
+        stripeConnected={board.host.stripeChargesEnabled ?? false}
       />
     );
   }
