@@ -1,11 +1,13 @@
 # Fundraiser Admission — Addendum
 
 **Status:** FROZEN — Aug 27, 2026. Slice 1 released to build.
-**Version:** 1.5
+**Version:** 1.6
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on product)
 **Depends on:** Fundraiser boards, cash reserve/confirm, batch claim flow
 
-**Changed in 1.5:** activation corrected — a drawing ticket is a derived property of a Square, not a row, so confirmation performs **two** writes on a no-prize board and three on a prize board, not four. Phase A context added.
+**Changed in 1.6:** write count corrected to **three** — removing the ticket write from four leaves three, not two. Remaining `Ticket`-as-model language removed. Numbered rule citation replaced with the rule's name.
+
+**Changed in 1.5:** activation corrected — a drawing ticket is a derived property of a Square, not a row, so confirmation performs fewer writes than earlier drafts claimed. Phase A context added.
 
 **Changed in 1.4:** `sequenceNumber` made monotonic and never reused, fixing a collision on decrease-then-increase; `void` made terminal so a shared screenshot can never become valid again; display ordinal separated from sequence; decrease floored at the used count; check-in audit changed from bearer token to `VolunteerAccess` foreign key; invariant ranges corrected to 23–41.
 
@@ -23,9 +25,7 @@ This document adds **event admission** to fundraiser boards. It does not change 
 
 Everything about dollars, square states, drawing eligibility, close, and draw mechanics remains defined in `fundraiser-money-state-machine.md`. This addendum adds invariants 23–41 and amends invariant 16. It changes nothing else in that document.
 
-The drawing ticket is **untouched**. Its meaning, numbering, and lifecycle are unchanged. This document introduces a separate object.
-
-**It is a derived concept, not a table.** There is no `Ticket` model and none should be built — money doc §5.
+The existing **drawing ticket** concept is untouched. Its meaning and numbering are unchanged. There is no `Ticket` table — a paid drawing ticket is a derived property of a Square (money doc §5). This document introduces a separate object.
 
 If this document appears to contradict the money doc, the money doc wins and this document is wrong.
 
@@ -65,7 +65,7 @@ Board (fundraiser)  ──optional──▶  Event
       │                              │
       │                         EventSupporter ──▶ AdmissionPass × N
       │                              ▲
-   Square ──confirms──┬──▶ Ticket    │
+   Square ──confirms──┬──▶ drawing   │
                       │   (drawing)  │
                       │   unchanged  │
                       └──▶ AdmissionGrant ───────┘
@@ -218,7 +218,7 @@ The fourth is the important one and it is not decorative. See §4.
 
 ### Changed elsewhere
 
-Nothing. No column is added to `Board` or `Square`, and nothing changes about how a drawing ticket is derived from a square.
+Nothing. No column is added to `Board` or `Square`, and there is no `Ticket` table to add one to.
 
 ---
 
@@ -333,9 +333,13 @@ Zelle / Cash App:        │                      mint N admission passes
   host taps confirm  ────┘                      roster row appears
 ```
 
-**Two writes, not four.** An earlier draft listed "drawing ticket → active" as a separate effect. It is not. Money doc §5: a paid drawing ticket is a derived property of a Square — `paymentStatus = paid AND NOT isHostEntry AND prizePoolPercent > 0` — so eligibility is a *consequence* of the first write, not an additional one. There is no `Ticket` table.
+**Three writes, not four.** An earlier draft listed "drawing ticket → active" as a separate effect. It is not. Money doc §5: a paid drawing ticket is a derived property of a Square — `paymentStatus = paid AND NOT isHostEntry AND prizePoolPercent > 0` — so eligibility is a *consequence* of the square write, not an additional one. There is no `Ticket` table.
 
-On a Phase A no-prize board, `prizePoolPercent = 0`, so no ticket exists at all and the question does not arise.
+The three are: the square, the supporter, and the passes. `roster row appears` in the diagram is a query result, not a write.
+
+A draft between those two said *two*, which was an over-correction — removing one write from four leaves three. The two-write case is real but specific: a supporter with `declaredCount = 0` mints nothing, so only the square and the supporter are written. That is the empty case, not the rule.
+
+On a Phase A no-prize board `prizePoolPercent = 0`, so no ticket exists at all and the eligibility question does not arise.
 
 Card and Zelle/Cash App **end at the same state by the same path**. The trigger differs; nothing downstream does.
 

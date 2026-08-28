@@ -102,6 +102,7 @@ model Board {
   host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
   squares                   Square[]
   freeEntries               FreeEntry[]
+  event                     Event?
   creditTransactions        CreditTransaction[]
 
   @@index([pendingExpiresAt], map: "idx_boards_pending_expiry")
@@ -162,6 +163,166 @@ model FreeEntry {
 
   @@unique([boardId, sequenceNumber])
   @@map("free_entries")
+}
+
+//
+// Event admission — fundraiser-admission-addendum.md §2 (build step A1b).
+// Nothing below is read by any code path yet. Admission is deliberately kept
+// off Board, Square, and Host: no column is added to any of them.
+//
+
+/// At most one event per board. May start before, on, or after drawDate —
+/// no constraint between them.
+model Event {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  boardId                  String    @unique @map("board_id") @db.Uuid
+  name                     String?
+  startsAt                 DateTime  @map("starts_at") @db.Timestamptz(6)
+  endsAt                   DateTime? @map("ends_at") @db.Timestamptz(6)
+  timezone                 String
+  venue                    String?
+  maxAttendeesPerSupporter Int       @map("max_attendees_per_supporter")
+  /// Reserved — never read in Phase A. See addendum §5.
+  gateAllowanceTotal       Int       @default(0) @map("gate_allowance_total")
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  board            Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
+  supporters       EventSupporter[]
+  grants           AdmissionGrant[]
+  volunteerAccess  VolunteerAccess[]
+  checkInLogs      CheckInLog[]
+
+  @@map("events")
+}
+
+/// The roster unit and the owner of passes. identityKey is the purchaser email,
+/// lowercased and trimmed — two purchases with the same email are one supporter
+/// with one allowance between them. status is a latch: pending -> active, never back.
+model EventSupporter {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId            String          @map("event_id") @db.Uuid
+  identityKey        String          @map("identity_key")
+  name               String
+  email              String
+  /// Nullable — the claim flow does not require a phone (Square.playerPhone is
+  /// nullable too), and preparation must not fail for a contributor without one.
+  phone              String?
+  declaredCount      Int             @default(0) @map("declared_count")
+  /// Monotonic. Never decremented, never reset. Values are never reused.
+  passSequenceCursor Int             @default(0) @map("pass_sequence_cursor")
+  status             SupporterStatus @default(pending)
+  activatedAt        DateTime?       @map("activated_at") @db.Timestamptz(6)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event   Event                     @relation(fields: [eventId], references: [id], onUpdate: NoAction)
+  grants  AdmissionGrant[]
+  passes  AdmissionPass[]
+  tokens  AttendanceAccessToken[]
+
+  @@unique([eventId, identityKey])
+  @@map("event_supporters")
+}
+
+/// Provenance. One row per purchase that touched admission, written even when
+/// it declares 0 so the headcount is auditable rather than inferred from absence.
+model AdmissionGrant {
+  id                 String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId            String               @map("event_id") @db.Uuid
+  eventSupporterId   String               @map("event_supporter_id") @db.Uuid
+  /// Links to Square.batchId. Unique where not null — this is what makes the
+  /// claim-time preparation step idempotent under retry.
+  squareBatchId      String?              @map("square_batch_id")
+  /// Only FUNDRAISER is populated now. The rest exist so adding them later is
+  /// a code path, not a migration.
+  source             AdmissionGrantSource @default(FUNDRAISER)
+  declaredAtPurchase Int                  @map("declared_at_purchase")
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event     Event          @relation(fields: [eventId], references: [id], onUpdate: NoAction)
+  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
+
+  @@unique([squareBatchId])
+  @@index([eventSupporterId], map: "idx_admission_grants_supporter")
+  @@map("admission_grants")
+}
+
+/// Passes hang off the supporter, not the purchase. Every pass carries its own
+/// token whether or not it is ever named — a shared, unidentified QR is one
+/// screenshot away from admitting six people.
+model AdmissionPass {
+  id                            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventSupporterId              String              @map("event_supporter_id") @db.Uuid
+  /// Internal, not the displayed ordinal. Drawn from passSequenceCursor.
+  sequenceNumber                Int                 @map("sequence_number")
+  token                         String              @unique
+  label                         String?
+  status                        AdmissionPassStatus @default(active)
+  checkedInAt                   DateTime?           @map("checked_in_at") @db.Timestamptz(6)
+  /// Foreign key, never a bearer token. No raw credential is stored anywhere.
+  checkedInByVolunteerAccessId  String?             @map("checked_in_by_volunteer_access_id") @db.Uuid
+  createdAt                     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  supporter       EventSupporter   @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
+  checkedInBy     VolunteerAccess? @relation(fields: [checkedInByVolunteerAccessId], references: [id], onUpdate: NoAction)
+  checkInLogs     CheckInLog[]
+
+  /// The constraint behind concurrency-safe activation: concurrent confirmation
+  /// cannot double-mint. Safe because the cursor never reuses a value.
+  @@unique([eventSupporterId, sequenceNumber])
+  @@map("admission_passes")
+}
+
+/// Undo has to be auditable or the host stops trusting the count.
+model CheckInLog {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  passId               String        @map("pass_id") @db.Uuid
+  eventId              String        @map("event_id") @db.Uuid
+  action               CheckInAction
+  at                   DateTime      @default(now()) @db.Timestamptz(6)
+  byVolunteerAccessId  String        @map("by_volunteer_access_id") @db.Uuid
+
+  pass       AdmissionPass   @relation(fields: [passId], references: [id], onUpdate: NoAction)
+  event      Event           @relation(fields: [eventId], references: [id], onUpdate: NoAction)
+  byVolunteer VolunteerAccess @relation(fields: [byVolunteerAccessId], references: [id], onUpdate: NoAction)
+
+  @@index([eventId, at], map: "idx_check_in_logs_event_at")
+  @@index([passId], map: "idx_check_in_logs_pass")
+  @@map("check_in_logs")
+}
+
+/// Scoped to one event, revocable individually, grants roster read and check-in
+/// only. tokenHash is hashed at rest — the raw link is shown once at creation
+/// and never stored, so a database read never yields a working credential.
+model VolunteerAccess {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId   String    @map("event_id") @db.Uuid
+  label     String
+  tokenHash String    @map("token_hash")
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event        Event           @relation(fields: [eventId], references: [id], onUpdate: NoAction)
+  checkedInPasses AdmissionPass[]
+  checkInLogs  CheckInLog[]
+
+  @@index([eventId], map: "idx_volunteer_access_event")
+  @@map("volunteer_access")
+}
+
+/// 20-minute single-use link for Manage attendance. Hashed — the raw value
+/// exists only in the email. Flow: v2 §6A.
+model AttendanceAccessToken {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventSupporterId String    @map("event_supporter_id") @db.Uuid
+  tokenHash        String    @map("token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt           DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
+
+  @@index([eventSupporterId], map: "idx_attendance_tokens_supporter")
+  @@map("attendance_access_tokens")
 }
 
 model PaymentReference {
@@ -263,11 +424,47 @@ enum GridType {
 enum BoardType {
   game
   fundraiser
+
+  @@map("board_type")
 }
 
 enum DrawTrigger {
   date
   when_full
+
+  @@map("draw_trigger")
+}
+
+enum SupporterStatus {
+  pending
+  active
+
+  @@map("supporter_status")
+}
+
+enum AdmissionGrantSource {
+  FUNDRAISER
+  STANDALONE
+  GATE_ALLOWANCE
+  HOST_APPROVED
+
+  @@map("admission_grant_source")
+}
+
+/// `void` is terminal. A voided pass never returns to active under any path.
+enum AdmissionPassStatus {
+  active
+  used
+  void
+
+  @@map("admission_pass_status")
+}
+
+enum CheckInAction {
+  check_in
+  undo
+
+  @@map("check_in_action")
 }
 
 

@@ -115,7 +115,7 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `checkoutSessionId` | String? | Needed to resolve/expire — invariant 18 |
 | `batchId` | String? | Groups a multi-square claim |
 | `isHostEntry` | Boolean | Default false. Funded, never eligible — invariant 15 |
-| `pricePaidCents` | Int | **Written when the square leaves `open`. Never recomputed** — invariant 42 |
+| `pricePaidCents` | Int? | Null while `open`. **Written when the square leaves `open`. Never recomputed** — invariant 42 |
 
 ### FreeEntry — new table
 
@@ -172,26 +172,61 @@ The fundraiser path skips the grid-type picker — square count is a field on th
 | Contribution per square | Min $1 → `squarePrice` |
 | Early bird price | Optional. Min $1, must be below the standard price |
 | Early bird ends | Required if an early bird price is set. Date + time |
+| **Campaign closes** | **Required.** Date + time + timezone → `campaignEndsAt` |
+| Cash hold window | Default 7 days. Only if cash mode on. |
+| Payment handles | Unchanged from payout coordination spec |
+
+**Prize fields do not render in Phase A.** `prizePoolPercent` stays 0. A host must not be able to switch on a drawing that has nothing behind it. Deferred to Phase B, specified here for when it returns:
+
+| Field (Phase B) | Validation |
+|---|---|
 | Offer a prize? | No prize (default) / Yes |
 | Prize pool | If yes. 0–50% of raised. Default 20%. |
 | Number of prizes | If yes. 1–4. Default 4. |
 | Drawing | If yes. On a date / When all squares claimed |
-| Drawing date | **Required either way** + timezone |
-| Cash hold window | Default 7 days. Only if cash mode on. |
-| Payment handles | Unchanged from payout coordination spec |
+| Drawing date | Required either way, + timezone |
+
+### Campaign close
+
+`drawDate` previously did double duty — it scheduled the drawing *and* backstopped the campaign. With prizes deferred, nothing closes the board, so **`campaignEndsAt` is its own required field** on every fundraiser board, prize or not.
+
+Host-entered. Same conditional-validation pattern as the prize fields: enforced by the API for `boardType = "fundraiser"`, nullable in the database because Game Day rows will never have one.
+
+Helper text under the field, guidance only:
+
+> Cash reservations must be confirmed before this date.
+
+`cashHoldDays` caps at close (invariant 6), so a close date sitting right against the event squeezes the window for confirming Zelle payments. **No validation enforces a gap.** The host decides.
+
+### The three dates are independent
+
+```
+Early bird ends       optional, required only if an early bird price is set
+Campaign closes       required
+Event date and time   required if admission is on
+```
+
+Any of the three may fall in any order relative to the others. No validation relates them. All three lock after the first confirmed contribution (invariant 16).
 
 **Backstop date is required even for "when full."** A fill-triggered board that never fills would otherwise hold contributions with no drawing on the calendar, and the host has already been paid. Public copy reads: *"Drawing when all 100 squares are claimed, or October 15 — whichever comes first."*
 
-**Live preview under the prize fields:**
+**Live preview — Phase A:**
 
 ```
-If all 100 squares fill you raise $5,000
-  Prizes         $1,000
-    1st  $400    2nd  $300    3rd  $200    4th  $100
-  Estimated proceeds   ~$3,675
+If all 100 squares fill you raise $2,500 – $3,000
+  Estimated proceeds   ~$2,400 – $2,900
 ```
+
+A range, because early bird pricing means the total depends on when squares sell. Low end is every square at the standard price; high end assumes none sold early. With flat pricing it collapses to a single figure.
 
 Estimated proceeds is host-facing only and shown as an estimate, because processing cost varies by payment method. It never appears on the public board.
+
+**Phase B** reinstates the prize lines:
+
+```
+  Prizes         $1,000
+    1st  $400    2nd  $300    3rd  $200    4th  $100
+```
 
 ### Early bird pricing
 
@@ -613,20 +648,33 @@ Game Day in every respect · cash mode PIN and reserve/confirm · Stripe Connect
 
 Prize boards are **deferred**, by decision, not by configuration. `prizePoolPercent` stays in the schema defaulted to 0, and the prize fields do not render on the form. A host cannot turn prizes on in Phase A, because a toggle that produces a board with no draw behind it is worse than no toggle.
 
-| # | Step |
-|---|---|
-| A1 | Schema + backfill `boardType = "game"` — includes prize columns, unused |
-| A2 | Board type picker |
-| A3 | Fundraiser form + API branch. No prize fields. Early bird pricing |
-| A4 | Fundraiser grid + contributor board |
-| A5 | Claim flow: quantity, optional picker, batching, `pricePaidCents` at claim |
-| A6 | Hold timer + resolve-then-release cron |
-| A7 | CLOSING + finalization — `finalRaisedCents` only |
-| A8 | Admission Slice 1 — schema, preparation, activation |
-| A9 | Admission Slice 2 — event block, attendance step, passes, Manage attendance |
-| A10 | Admission Slice 3 — volunteer surface, QR, roster, check-in |
+| # | Step | Live-next-week? |
+|---|---|---|
+| A1 | Schema migration 1 — fundraiser columns, `FreeEntry`, backfill `boardType = "game"` | ✅ |
+| A1b | Schema migration 2 — admission tables (addendum §2) | ✅ |
+| A2 | Board type picker | ✅ |
+| A3 | Fundraiser form + API branch. **Event block. Three dates. Early bird.** No prize fields | ✅ |
+| A4 | Fundraiser grid + contributor board | ✅ |
+| A5 | Claim flow: quantity, picker, batching, `pricePaidCents`, **admission preparation** | ✅ |
+| A6 | Hold timer + resolve-then-release cron | ✅ |
+| A7 | CLOSING + finalization — `finalRaisedCents` only | — |
+| A8 | Admission activation in the confirmation transaction | — |
+| A9 | Attendance step, passes screen, Manage attendance + token auth | — |
+| A10 | Volunteer surface, QR, roster, search, check-in, undo | — |
 
-A1–A7 are a working no-prize fundraiser. A8–A10 add the gate. Ship there and run Hampton.
+**A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
+
+### Why the event block and preparation moved earlier
+
+Both were originally in the admission slices. Both had to move once squares go live before admission does.
+
+**Event block to A3.** Invariant 16 locks event terms at the first confirmed contribution. If admission is configured later, early supporters bought a square and later supporters bought a square plus admission for four, at the same price — and the early ones backed the cause first. Configuring the event at board creation means everyone gets the same disclosed offer. The block collects name, date, venue, and max attendees per supporter. The attendance picker and passes still come at A9.
+
+**Preparation to A5.** Resolve the supporter, write the grant, `declaredCount = 0`. Without it, every contributor between launch and A8 has no `EventSupporter` row and needs a backfill written under time pressure against live money.
+
+**Consequence: the admission tables move to A1b**, not A8. A5 cannot write to tables that don't exist. Two migration files rather than one, both written before either is applied — that keeps the review separation without a timing gap.
+
+A1–A6 is a working no-prize fundraiser that quietly accumulates admission state. A8–A10 light it up. Ship there and run Hampton.
 
 ### Phase B — Prizes
 
@@ -668,7 +716,7 @@ Slice 1 is where a mistake is expensive and silent. Review it before Slice 2 sta
 
 **Rule A — this document is the flow authority for fundraiser boards.** Everything fundraiser, including admission: screens, flows, auth, build order. `SYSTEM-FLOW.md` remains the authority for Game Day. The document-first rule is satisfied for fundraiser work by writing here first.
 
-**Rule B — the full SYSTEM-FLOW fundraiser backfill is deferred and blocks nothing.** It does not block Admission Slice 1, Slice 2, or Slice 3. It remains a real gap and a real ticket: SYSTEM-FLOW documents the Game Day app only, so anyone following the check-before-pushing rule who looks only there finds a map without the territory. The pointer added to its Quick Summary is what redirects them here.
+**Rule B — the full SYSTEM-FLOW fundraiser backfill is deferred and blocks nothing.** It does not block Admission Slice 1, Slice 2, or Slice 3. It remains a real gap and a real backlog item: SYSTEM-FLOW documents the Game Day app only, so anyone following the check-before-pushing rule who looks only there finds a map without the territory. The pointer added to its Quick Summary is what redirects them here.
 
 **What SYSTEM-FLOW carries for admission** — three edits, no more, specified in `system-flow-port.md`. They must be **ported onto the repo's current copy**, never applied by overwriting the file. The repo's version is newer than any copy circulating in project knowledge and contains the double-grid feature.
 

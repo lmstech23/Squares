@@ -28,7 +28,7 @@ Append after the existing confirm/release bullets.
 > admission passes    -> minted (N = declaredCount)
 > ```
 >
-> Two writes on a no-prize board. On a prize board, drawing eligibility also becomes active — but that is a *derived property* of the square reaching `paid`, not a separate row to write. There is no `Ticket` table. See money doc §5 and admission addendum §4.
+> Three writes. On a prize board, drawing eligibility also becomes active — but that is a *derived property* of the square reaching `paid`, not a separate row to write. There is no `Ticket` table. See money doc §5 and admission addendum §4.
 >
 > A developer who reads "confirm sets paid" and implements exactly that ships a gate that admits nobody. Game Day boards are unaffected.
 
