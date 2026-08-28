@@ -47,3 +47,7 @@ next-env.d.ts
 *.sql
 Direct_URL*
 *connection*.txt
+
+# ...but migrations are source. Without this, a new migration is silently
+# never committed, which is how add_fundraiser_boards.sql nearly got lost.
+!migrations/*.sql

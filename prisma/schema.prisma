@@ -75,8 +75,27 @@ model Board {
   // Dismiss feature (Addendum K) � soft-hide from host dashboard
   hiddenFromHost            Boolean     @default(false) @map("hidden_from_host")
 
+  // Fundraiser boards — fundraiser-board-v2.md §3
+  // drawTrigger/drawDate/drawTimezone are nullable at the DB level and required
+  // by API validation on prize boards only (percent > 0) — the doc's "required"
+  // is conditional, so it cannot be a NOT NULL column.
+  boardType                 BoardType    @default(game) @map("board_type")
+  causeDescription          String?      @map("cause_description")
+  prizePoolPercent          Int          @default(0) @map("prize_pool_percent")
+  prizeTierCount            Int          @default(4) @map("prize_tier_count")
+  drawTrigger               DrawTrigger? @map("draw_trigger")
+  drawDate                  DateTime?    @map("draw_date") @db.Timestamptz(6)
+  drawTimezone              String?      @map("draw_timezone")
+  cashHoldDays              Int          @default(7) @map("cash_hold_days")
+  finalRaisedCents          Int?         @map("final_raised_cents")
+  finalPrizePoolCents       Int?         @map("final_prize_pool_cents")
+  drawnAt                   DateTime?    @map("drawn_at") @db.Timestamptz(6)
+  drawResults               Json?        @map("draw_results")
+  titleHistory              Json?        @map("title_history")
+
   host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
   squares                   Square[]
+  freeEntries               FreeEntry[]
   creditTransactions        CreditTransaction[]
 
   @@index([pendingExpiresAt], map: "idx_boards_pending_expiry")
@@ -100,12 +119,39 @@ model Square {
   playerPayoutMethod    PlayerPayoutMethod?  @map("player_payout_method")
   playerPayoutHandle    String?              @map("player_payout_handle")
   smsOptIn              Boolean              @default(false) @map("sms_opt_in")
+
+  // Fundraiser boards — fundraiser-board-v2.md §3
+  holdExpiresAt     DateTime?         @map("hold_expires_at") @db.Timestamptz(6)
+  checkoutSessionId String?           @map("checkout_session_id")
+  batchId           String?           @map("batch_id")
+  isHostEntry       Boolean           @default(false) @map("is_host_entry")
+
   payment           PaymentReference?
   board             Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
 
   @@unique([boardId, position])
   @@index([boardId, playerEmail], map: "idx_squares_board_email")
+  @@index([batchId], map: "idx_squares_batch")
   @@map("squares")
+}
+
+/// Free entries occupy no square, so they cannot be Square rows — v2 §3.
+/// Built now, not surfaced in the UI. The `F` sequence is the only sequential
+/// counter in the system, and (boardId, sequenceNumber) is the one uniqueness
+/// constraint money doc §5 actually calls for.
+model FreeEntry {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  boardId        String    @map("board_id") @db.Uuid
+  sequenceNumber Int       @map("sequence_number")
+  name           String
+  phone          String
+  verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  board          Board     @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
+
+  @@unique([boardId, sequenceNumber])
+  @@map("free_entries")
 }
 
 model PaymentReference {
@@ -202,6 +248,16 @@ enum SportType {
 enum GridType {
   standard
   double
+}
+
+enum BoardType {
+  game
+  fundraiser
+}
+
+enum DrawTrigger {
+  date
+  when_full
 }
 
 
