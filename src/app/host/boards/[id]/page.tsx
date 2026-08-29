@@ -14,7 +14,7 @@ import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
 import ContributorList, { type ContributorRow } from "./contributor-list";
-import EventPanel, { type GrantRow } from "./event-panel";
+import EventPanel, { type GrantRow, type VolunteerLink } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
@@ -191,6 +191,7 @@ export default async function HostBoardPage({ params }: Props) {
     let expected = 0;
     let unpaidForecast = 0;
     const grantRows: GrantRow[] = [];
+    let volunteerLinks: VolunteerLink[] = [];
 
     if (board.event) {
       // Expected counts active and used passes on active supporters. Donated
@@ -201,6 +202,14 @@ export default async function HostBoardPage({ params }: Props) {
           status: { in: ["active", "used"] },
         },
       });
+
+      volunteerLinks = (
+        await prisma.volunteerAccess.findMany({
+          where: { eventId: board.event.id },
+          select: { id: true, label: true, revokedAt: true },
+          orderBy: { createdAt: "desc" },
+        })
+      ).map((v) => ({ id: v.id, label: v.label, revoked: v.revokedAt != null }));
 
       const grants = await prisma.admissionGrant.findMany({
         where: { eventId: board.event.id },
@@ -302,6 +311,7 @@ export default async function HostBoardPage({ params }: Props) {
               expected={expected}
               unpaidForecast={expected + unpaidForecast}
               grants={grantRows}
+              links={volunteerLinks}
             />
           </div>
         )}

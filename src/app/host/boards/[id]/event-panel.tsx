@@ -13,6 +13,12 @@ import { useRouter } from "next/navigation";
 // and green split she already reads on the grid. It is a forecast, never a
 // headcount, and it never reaches the volunteer roster.
 
+export interface VolunteerLink {
+  id: string;
+  label: string;
+  revoked: boolean;
+}
+
 export interface GrantRow {
   grantId: string;
   name: string;
@@ -27,6 +33,7 @@ interface Props {
   expected: number;
   unpaidForecast: number;
   grants: GrantRow[];
+  links: VolunteerLink[];
 }
 
 export default function EventPanel({
@@ -34,10 +41,62 @@ export default function EventPanel({
   expected,
   unpaidForecast,
   grants,
+  links,
 }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
+  // Shown once, immediately after creation. The raw value is never stored, so
+  // this is the only moment it can be copied.
+  const [freshLink, setFreshLink] = useState<string | null>(null);
+
+  async function createLink() {
+    if (!label.trim()) return;
+    setBusy("create");
+    setError(null);
+    try {
+      const res = await fetch(`/api/host/boards/${boardId}/volunteer-access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not create the link.");
+        return;
+      }
+      setFreshLink(`${window.location.origin}/gate/${data.token}`);
+      setLabel("");
+      router.refresh();
+    } catch {
+      setError("Network error.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function revoke(volunteerAccessId: string) {
+    setBusy(volunteerAccessId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/host/boards/${boardId}/volunteer-access`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ volunteerAccessId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Could not revoke.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setError("Network error.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function toggle(grantId: string, donate: boolean) {
     setBusy(grantId);
@@ -133,6 +192,82 @@ export default function EventPanel({
           </p>
         </div>
       )}
+
+      {/* Volunteer links — v2 6B */}
+      <div className="mt-5 pt-4 border-t border-gray-800">
+        <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2">
+          Gate volunteers
+        </p>
+
+        <div className="flex gap-2">
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Renee - main gate"
+            className="flex-1 rounded-lg border border-gray-800 bg-gray-950 px-3 py-2 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600"
+          />
+          <button
+            type="button"
+            disabled={busy === "create" || !label.trim()}
+            onClick={createLink}
+            className="rounded-lg border border-gray-700 px-3 py-2 text-xs text-gray-300 hover:text-white disabled:opacity-50 transition-colors"
+          >
+            {busy === "create" ? "..." : "Create link"}
+          </button>
+        </div>
+
+        {freshLink && (
+          <div className="mt-3 rounded-lg border border-green-900/50 bg-green-950/30 p-3">
+            <p className="text-xs text-green-200 font-medium">
+              Copy this now &mdash; it is shown once and cannot be retrieved.
+            </p>
+            <p className="text-xs text-green-100/90 mt-1.5 break-all font-mono">
+              {freshLink}
+            </p>
+            {/* The gotcha, in the share UI rather than a support doc nobody
+                reads. iOS blocks camera access inside in-app browsers, so a
+                link opened from Facebook or Instagram fails the camera
+                silently and the volunteer never learns why. */}
+            <p className="text-xs text-green-200/80 mt-2 leading-relaxed">
+              <strong>Send this by text or email.</strong> Sharing it through
+              Facebook or Instagram opens it in their in-app browser, where the
+              camera is blocked and scanning silently fails. Search still works,
+              but nobody will know why the scanner did not.
+            </p>
+          </div>
+        )}
+
+        {links.length > 0 && (
+          <div className="space-y-1.5 mt-3">
+            {links.map((l) => (
+              <div
+                key={l.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-950 px-3 py-2"
+              >
+                <span
+                  className={`text-sm truncate ${l.revoked ? "text-gray-600 line-through" : ""}`}
+                >
+                  {l.label}
+                </span>
+                {l.revoked ? (
+                  <span className="text-xs text-gray-600 flex-shrink-0">
+                    Revoked
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy === l.id}
+                    onClick={() => revoke(l.id)}
+                    className="flex-shrink-0 text-xs text-gray-500 hover:text-red-400 disabled:opacity-50 transition-colors"
+                  >
+                    {busy === l.id ? "..." : "Revoke"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
