@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveExpiredHolds } from "@/lib/checkout-holds";
 import { sendPendingConfirmations } from "@/lib/confirmation-email";
+import { closeDueBoards } from "@/lib/close-board";
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -57,9 +58,15 @@ export async function GET(request: Request) {
   // picked up next cycle rather than losing its receipt.
   const emails = await sendPendingConfirmations({});
 
+  // 5. Close campaigns whose end date has passed. A scheduled close needs no
+  // host action — money doc §7 — so a host who never opens the dashboard
+  // still gets a finalized board.
+  const closed = await closeDueBoards(now);
+
   return NextResponse.json({
     ok: true,
     confirmationEmails: emails,
+    campaignsClosed: closed,
     releasedStripe: releasedStripe.count,
     expiredBoards: expiredBoards.count,
     fundraiserHolds: holds,

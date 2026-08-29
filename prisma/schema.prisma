@@ -396,6 +396,10 @@ enum BoardStatus {
   closed
   pending_payment
   expired
+  /// Fundraiser only — money doc §7. Reconciliation phase between the campaign
+  /// ending and finalRaisedCents being written. New claims are rejected;
+  /// nothing is final yet. Game Day never enters it.
+  closing
 }
 
 enum PaymentStatus {

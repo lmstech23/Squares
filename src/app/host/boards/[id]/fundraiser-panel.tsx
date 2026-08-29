@@ -27,6 +27,8 @@ interface AwaitingSquare {
 
 interface Props {
   boardId: string;
+  status: string;
+  finalRaisedCents: number | null;
   raisedCents: number;
   goalCents: number | null;
   confirmedCount: number;
@@ -46,6 +48,8 @@ function money(cents: number): string {
 
 export default function FundraiserPanel({
   boardId,
+  status,
+  finalRaisedCents,
   raisedCents,
   goalCents,
   confirmedCount,
@@ -236,24 +240,67 @@ export default function FundraiserPanel({
         </div>
       )}
 
-      {/* Close is A7. Rendered disabled rather than omitted so the host can
-          see it exists, with no working path behind it. */}
-      <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">Close early</p>
+      {/* Close — money doc 7 */}
+      {status === "closed" ? (
+        <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
+          <p className="text-sm font-medium">Campaign closed</p>
           <p className="text-xs text-gray-500 mt-0.5">
-            Stop accepting contributions and finalize what you raised. Not
-            available yet.
+            Final total: {finalRaisedCents != null ? money(finalRaisedCents) : "—"}.
+            This figure is locked and will not change.
+          </p>
+          <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+            Tickets still work. The campaign has ended; the event has not.
           </p>
         </div>
-        <button
-          type="button"
-          disabled
-          className="rounded-lg border border-gray-800 px-3 py-2 text-sm text-gray-600 cursor-not-allowed flex-shrink-0"
-        >
-          Close
-        </button>
-      </div>
+      ) : (
+        <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">
+                {status === "closing" ? "Finishing up" : "Close early"}
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {status === "closing"
+                  ? "No longer accepting contributions. Resolve what is outstanding to finalize."
+                  : "Stop accepting contributions and finalize what you raised."}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={busy === "close"}
+              onClick={() => {
+                if (
+                  status !== "closing" &&
+                  !confirm(
+                    "Stop accepting contributions now? This cannot be undone."
+                  )
+                ) {
+                  return;
+                }
+                void post(
+                  `/api/host/boards/${boardId}/close-campaign`,
+                  {},
+                  "close"
+                );
+              }}
+              className="flex-shrink-0 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:text-white hover:border-gray-600 disabled:opacity-50 transition-colors"
+            >
+              {busy === "close"
+                ? "..."
+                : status === "closing"
+                  ? "Finalize"
+                  : "Close"}
+            </button>
+          </div>
+
+          {/* Required by 9. A dispute after the fact comes out of proceeds. */}
+          <p className="text-xs text-gray-600 mt-3 leading-relaxed">
+            The final total is locked once the campaign closes. If a
+            contribution is later disputed through the contributor&apos;s bank,
+            that amount comes out of your proceeds.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

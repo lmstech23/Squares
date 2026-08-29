@@ -49,6 +49,9 @@ interface Props {
   /// prizePoolPercent > 0. Gates prize language everywhere — never board type,
   /// because a Phase B fundraiser with prizes needs it back.
   hasPrize: boolean;
+  /// open | closing | closed. A closed campaign shows its final total and
+  /// stops offering the claim button.
+  status: string;
   handles: {
     venmo: string | null;
     zelle: string | null;
@@ -99,6 +102,7 @@ export default function FundraiserView({
   cashModeEnabled,
   stripeConnected,
   hasPrize,
+  status,
   handles,
   confirmation,
 }: Props) {
@@ -273,6 +277,17 @@ export default function FundraiserView({
         )}
 
         {/* What do I do */}
+        {status !== "open" ? (
+          <div className="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4">
+            <p className="text-sm font-medium">This campaign has closed.</p>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              Thank you to everyone who contributed.
+              {hasEvent
+                ? " Tickets already issued still work at the event."
+                : ""}
+            </p>
+          </div>
+        ) : (
         <div className="mt-5">
           <button
             type="button"
@@ -285,6 +300,7 @@ export default function FundraiserView({
               : `Claim a square — ${money(currentPrice)}`}
           </button>
         </div>
+        )}
 
         {/* The board is the visualization; the button is the action. Nobody
             should have to study the grid to work out what to do. */}

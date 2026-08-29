@@ -186,7 +186,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         earlyBirdEndsAt={board.earlyBirdEndsAt}
         earlyBirdActive={earlyBirdActive}
         timezone={board.timezone}
-        raisedCents={raised._sum.pricePaidCents ?? 0}
+        raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
         goalCents={board.fundraisingGoalCents}
         supporterCount={supporters.length}
         openCount={openCount}
@@ -195,6 +195,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         cashModeEnabled={board.cashModeEnabled}
         stripeConnected={board.host.stripeChargesEnabled ?? false}
         hasPrize={board.prizePoolPercent > 0}
+        status={board.status}
         confirmation={confirmation}
         handles={{
           venmo: board.hostVenmo,

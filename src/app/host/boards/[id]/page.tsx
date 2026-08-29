@@ -289,7 +289,9 @@ export default async function HostBoardPage({ params }: Props) {
 
         <FundraiserPanel
           boardId={board.boardId}
-          raisedCents={raised._sum.pricePaidCents ?? 0}
+          status={board.status}
+          finalRaisedCents={board.finalRaisedCents}
+          raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
           goalCents={board.fundraisingGoalCents}
           confirmedCount={byStatus("paid").length}
           awaitingCount={awaiting.length}
