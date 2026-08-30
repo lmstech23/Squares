@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 //
 // THE PAYLOAD IS THE OPAQUE TOKEN, NEVER A URL. A link payload means anyone
 // pointing a phone camera at a ticket reaches a check-in endpoint; check-in
-// must originate from the authenticated volunteer surface and nowhere else. An
+// must originate from the authenticated check-in surface and nowhere else. An
 // opaque token scanned by a stray camera app does nothing at all.
 //
 // The token appears in this route's own URL, which is unavoidable for an image

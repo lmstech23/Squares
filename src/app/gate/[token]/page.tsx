@@ -5,14 +5,14 @@ import GateSurface, { type RosterEntry } from "./gate-surface";
 
 export const dynamic = "force-dynamic";
 
-// Volunteer surface — fundraiser-board-v2.md §6B.
+// Check-in surface — fundraiser-board-v2.md §6B.
 //
 // Purpose-built layout, existing design tokens. Laid out for a condition no
 // other screen in Daali faces: outdoors, midday glare, one hand, a line of
-// people, and a volunteer who has never seen the app and got no training.
+// people, and someone who has never seen the app and got no training.
 //
 // Deliberately absent: any money, any square, any grid, any drawing, any host
-// setting. Volunteers consume entitlement and never create it.
+// setting. Check-in staff consume entitlement and never create it.
 
 interface Props {
   params: Promise<{ token: string }>;
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 export default async function GatePage({ params }: Props) {
   const { token } = await params;
 
-  const { resolveGateSession } = await import("@/lib/volunteer-access");
+  const { resolveGateSession } = await import("@/lib/check-in-staff");
   const session = await resolveGateSession(token);
 
   if (!session) notFound();
@@ -77,7 +77,7 @@ export default async function GatePage({ params }: Props) {
     <GateSurface
       token={token}
       eventName={event?.name ?? event?.board.gameName ?? "Check-in"}
-      volunteerLabel={session.label}
+      staffLabel={session.label}
       roster={roster}
     />
   );

@@ -14,7 +14,7 @@ import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
 import ContributorList, { type ContributorRow } from "./contributor-list";
-import EventPanel, { type GrantRow, type VolunteerLink } from "./event-panel";
+import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
@@ -191,7 +191,7 @@ export default async function HostBoardPage({ params }: Props) {
     let expected = 0;
     let unpaidForecast = 0;
     const grantRows: GrantRow[] = [];
-    let volunteerLinks: VolunteerLink[] = [];
+    let checkinStaffLinks: CheckinStaffLink[] = [];
 
     if (board.event) {
       // Expected counts active and used passes on active supporters. Donated
@@ -203,13 +203,17 @@ export default async function HostBoardPage({ params }: Props) {
         },
       });
 
-      volunteerLinks = (
-        await prisma.volunteerAccess.findMany({
+      checkinStaffLinks = (
+        await prisma.checkinStaffAccess.findMany({
           where: { eventId: board.event.id },
           select: { id: true, label: true, revokedAt: true },
           orderBy: { createdAt: "desc" },
         })
-      ).map((v) => ({ id: v.id, label: v.label, revoked: v.revokedAt != null }));
+      ).map((v: { id: string; label: string; revokedAt: Date | null }) => ({
+        id: v.id,
+        label: v.label,
+        revoked: v.revokedAt != null,
+      }));
 
       const grants = await prisma.admissionGrant.findMany({
         where: { eventId: board.event.id },
@@ -313,7 +317,7 @@ export default async function HostBoardPage({ params }: Props) {
               expected={expected}
               unpaidForecast={expected + unpaidForecast}
               grants={grantRows}
-              links={volunteerLinks}
+              links={checkinStaffLinks}
             />
           </div>
         )}

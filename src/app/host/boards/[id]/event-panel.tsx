@@ -11,9 +11,9 @@ import { useRouter } from "next/navigation";
 // The unpaid line counts admissions that WOULD exist if outstanding direct
 // payments confirm — a chase list before she orders food, mirroring the amber
 // and green split she already reads on the grid. It is a forecast, never a
-// headcount, and it never reaches the volunteer roster.
+// headcount, and it never reaches the check-in roster.
 
-export interface VolunteerLink {
+export interface CheckinStaffLink {
   id: string;
   label: string;
   revoked: boolean;
@@ -33,7 +33,7 @@ interface Props {
   expected: number;
   unpaidForecast: number;
   grants: GrantRow[];
-  links: VolunteerLink[];
+  links: CheckinStaffLink[];
 }
 
 export default function EventPanel({
@@ -56,7 +56,7 @@ export default function EventPanel({
     setBusy("create");
     setError(null);
     try {
-      const res = await fetch(`/api/host/boards/${boardId}/volunteer-access`, {
+      const res = await fetch(`/api/host/boards/${boardId}/check-in-staff`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ label }),
@@ -76,14 +76,14 @@ export default function EventPanel({
     }
   }
 
-  async function revoke(volunteerAccessId: string) {
-    setBusy(volunteerAccessId);
+  async function revoke(checkinStaffId: string) {
+    setBusy(checkinStaffId);
     setError(null);
     try {
-      const res = await fetch(`/api/host/boards/${boardId}/volunteer-access`, {
+      const res = await fetch(`/api/host/boards/${boardId}/check-in-staff`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ volunteerAccessId }),
+        body: JSON.stringify({ checkinStaffId }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -193,10 +193,10 @@ export default function EventPanel({
         </div>
       )}
 
-      {/* Volunteer links — v2 6B */}
+      {/* Check-in staff links — v2 6B */}
       <div className="mt-5 pt-4 border-t border-gray-800">
         <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2">
-          Gate volunteers
+          Check-in staff links
         </p>
 
         <div className="flex gap-2">
@@ -227,7 +227,7 @@ export default function EventPanel({
             {/* The gotcha, in the share UI rather than a support doc nobody
                 reads. iOS blocks camera access inside in-app browsers, so a
                 link opened from Facebook or Instagram fails the camera
-                silently and the volunteer never learns why. */}
+                silently and the staff member never learns why. */}
             <p className="text-xs text-green-200/80 mt-2 leading-relaxed">
               <strong>Send this by text or email.</strong> Sharing it through
               Facebook or Instagram opens it in their in-app browser, where the

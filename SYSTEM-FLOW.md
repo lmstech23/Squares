@@ -371,7 +371,7 @@ All operations are idempotent.
 Not duplicated here. `Board` and `Square` gain **no** admission columns, and there is no `Ticket` table — a drawing ticket is derived (money doc §5).
 
 Fundraiser: see `fundraiser-board-v2.md` §3.
-Admission: `Event`, `EventSupporter`, `AdmissionGrant`, `AdmissionPass`, `CheckInLog`, `VolunteerAccess`, `AttendanceAccessToken` — see `fundraiser-admission-addendum.md` §2.
+Admission: `Event`, `EventSupporter`, `AdmissionGrant`, `AdmissionPass`, `CheckInLog`, `CheckinStaffAccess`, `AttendanceAccessToken` — see `fundraiser-admission-addendum.md` §2.
 
 ---
 

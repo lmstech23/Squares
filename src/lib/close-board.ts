@@ -16,8 +16,8 @@ import { resolveHoldBatch } from "@/lib/checkout-holds";
 // winners. Closing stops claims and freezes the raised figure. That is all.
 //
 // Passes are untouched. The campaign ends; the event happens later, and a
-// campaign that closed October 9 still has tickets that scan on October 24
-// (admission invariant 36).
+// campaign that closed October 9 still has tickets that scan on October 24 —
+// the passes-outlive-the-campaign rule in the admission addendum.
 
 export type CloseOutcome =
   | { ok: true; status: "closed"; finalRaisedCents: number; alreadyFinal: boolean }

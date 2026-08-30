@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolveGateSession } from "@/lib/volunteer-access";
+import { resolveGateSession } from "@/lib/check-in-staff";
 
 // Gate check-in — fundraiser-board-v2.md §6B.
 //
 // POST /api/gate/[token]/checkin
 // Body: { passToken?: string, passId?: string, action: "check_in" | "undo" }
 //
-// Volunteers CONSUME entitlement and never create it (admission invariant 33).
+// Check-in staff CONSUME entitlement and never create it — the
+// consume-never-create rule in the admission addendum. No check-in action
+// increases the number of passes on an event.
 // Nothing here mints, voids, or touches money. The only state it writes is a
 // pass moving between `active` and `used`, plus the log row that makes undo
 // auditable.
@@ -47,7 +49,7 @@ export async function POST(
       return NextResponse.json({ error: "No ticket given." }, { status: 400 });
     }
 
-    // Scoped to this volunteer's event. A token from another event scans as
+    // Scoped to this staff member's event. A token from another event scans as
     // "not for this event" rather than admitting someone.
     const pass = await prisma.admissionPass.findFirst({
       where: {
@@ -78,7 +80,7 @@ export async function POST(
     }
 
     if (body.action === "check_in") {
-      // Duplicate scan. Say WHEN and BY WHOM — a volunteer holding up a line
+      // Duplicate scan. Say WHEN and BY WHOM — someone holding up a line
       // needs to know whether this is the same family coming back or the same
       // screenshot on two phones, and "already used" answers neither.
       if (pass.status === "used") {
@@ -100,14 +102,14 @@ export async function POST(
         );
       }
 
-      // Conditional update: two volunteers scanning the same code at once,
+      // Conditional update: two staff scanning the same code at once,
       // one wins and the other gets the duplicate message on retry.
       const { count } = await prisma.admissionPass.updateMany({
         where: { id: pass.id, status: "active" },
         data: {
           status: "used",
           checkedInAt: new Date(),
-          checkedInByVolunteerAccessId: session.volunteerAccessId,
+          checkedInByCheckinStaffId: session.checkinStaffId,
         },
       });
 
@@ -123,7 +125,7 @@ export async function POST(
           passId: pass.id,
           eventId: session.eventId,
           action: "check_in",
-          byVolunteerAccessId: session.volunteerAccessId,
+          byCheckinStaffId: session.checkinStaffId,
         },
       });
 
@@ -144,7 +146,7 @@ export async function POST(
       data: {
         status: "active",
         checkedInAt: null,
-        checkedInByVolunteerAccessId: null,
+        checkedInByCheckinStaffId: null,
       },
     });
 
@@ -153,7 +155,7 @@ export async function POST(
         passId: pass.id,
         eventId: session.eventId,
         action: "undo",
-        byVolunteerAccessId: session.volunteerAccessId,
+        byCheckinStaffId: session.checkinStaffId,
       },
     });
 

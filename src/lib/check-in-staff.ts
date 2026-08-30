@@ -1,9 +1,12 @@
 import { randomBytes, createHash, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 
-// Volunteer access credentials — fundraiser-board-v2.md §6B.
+// Check-in staff credentials — fundraiser-board-v2.md §6B, sign-up addendum §2.
 //
-// A volunteer link is a bearer credential that will sit in a text thread on
+// Authority to scan at the gate is a permission, not a contribution — the
+// person bringing water is a volunteer, the person authorized to scan is staff.
+//
+// A staff link is a bearer credential that will sit in a text thread on
 // five phones for a week. It is HASHED AT REST, so a database read never
 // yields a working gate credential — the raw value is shown once at creation
 // and never stored.
@@ -12,7 +15,7 @@ import { prisma } from "@/lib/prisma";
 // check-in only. Never money, never the grid, never a host setting.
 
 /** The raw link value. Shown once, never persisted. */
-export function newVolunteerToken(): string {
+export function newCheckinStaffToken(): string {
   return randomBytes(24).toString("base64url");
 }
 
@@ -34,7 +37,7 @@ export function tokensMatch(a: string, b: string): boolean {
 }
 
 export interface GateSession {
-  volunteerAccessId: string;
+  checkinStaffId: string;
   eventId: string;
   label: string;
 }
@@ -42,7 +45,7 @@ export interface GateSession {
 /**
  * Resolve a raw link token to a live gate session.
  *
- * Returns null for unknown, malformed, and revoked tokens alike — a volunteer
+ * Returns null for unknown, malformed, and revoked tokens alike — someone
  * whose link was revoked learns that it does not work, not that it once did.
  */
 export async function resolveGateSession(
@@ -50,7 +53,7 @@ export async function resolveGateSession(
 ): Promise<GateSession | null> {
   if (!token || token.length < 16 || token.length > 128) return null;
 
-  const access = await prisma.volunteerAccess.findFirst({
+  const access = await prisma.checkinStaffAccess.findFirst({
     where: { tokenHash: hashToken(token), revokedAt: null },
     select: { id: true, eventId: true, label: true },
   });
@@ -58,7 +61,7 @@ export async function resolveGateSession(
   if (!access) return null;
 
   return {
-    volunteerAccessId: access.id,
+    checkinStaffId: access.id,
     eventId: access.eventId,
     label: access.label,
   };

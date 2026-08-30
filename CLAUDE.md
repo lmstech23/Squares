@@ -21,7 +21,13 @@ The through-line: **Daali handles the seam between money collected and people ad
 
 **Phase A** is a no-prize fundraiser plus admission — the Hampton configuration. Prize boards, the draw, and free entry are **deferred to Phase B** by decision, not configuration. A host cannot switch prizes on in Phase A, and the prize fields do not render on the form. Build order is v2 §16.
 
-Admission itself is three slices: schema and activation, then contributor and host UI, then the volunteer gate.
+Admission itself is three slices: schema and activation, then contributor and host UI, then the check-in gate.
+
+**Check-in staff, not volunteers.** Authority to scan at the gate is a permission,
+not a contribution. The Prisma model is `CheckinStaffAccess`; the physical table is
+still `volunteer_access` and is pinned with `@@map`, because it holds issued records
+and a physical rename during a rolling deploy would break the gate mid-event.
+Sign-up addendum §2.
 
 ---
 

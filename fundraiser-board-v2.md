@@ -71,8 +71,8 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `src/app/board/[slug]/claim-sheet.tsx` | Donate checkbox, `pricePaidCents` at claim — §6 |
 | `src/app/board/[slug]/passes/page.tsx` | **NEW** — passes screen |
 | `src/app/api/host/events/[id]/donate-flag/route.ts` | **NEW** — host toggles a grant's donate setting |
-| `src/app/host/boards/[id]/event-panel.tsx` | **NEW** — roster, volunteer links, forecast |
-| `src/app/gate/[token]/page.tsx` | **NEW** — volunteer surface — §6B |
+| `src/app/host/boards/[id]/event-panel.tsx` | **NEW** — roster, check-in staff links, forecast |
+| `src/app/gate/[token]/page.tsx` | **NEW** — check-in surface — §6B |
 | `src/app/api/gate/[token]/checkin/route.ts` | **NEW** — scan, search, undo |
 
 ---
@@ -587,9 +587,9 @@ On a board with an event, a returning supporter also sees their passes. A second
 
 ---
 
-## 6B. Volunteer surface
+## 6B. Check-in surface
 
-**Purpose-built layout, existing design tokens.** Not a reskin and not a second visual language. Same fonts and color variables so it belongs to the product, but laid out for a condition no other screen in Daali faces: outdoors, midday glare, one hand, a line of people, and a volunteer who has never seen the app and got no training.
+**Purpose-built layout, existing design tokens.** Not a reskin and not a second visual language. Same fonts and color variables so it belongs to the product, but laid out for a condition no other screen in Daali faces: outdoors, midday glare, one hand, a line of people, and someone who has never seen the app and got no training.
 
 | | |
 |---|---|
@@ -611,19 +611,19 @@ daaliyah@example.com · (770) 555-0142
 
 Search matches supporter name, email, and phone. A pass label, when one exists, is an additional index. The roster works correctly with zero labels entered, which is the realistic case.
 
-**Undo** is a volunteer action. Misscans are the most common gate error and without undo the counter drifts until the host stops trusting it. Undo consumes nothing and creates nothing.
+**Undo** is a check-in staff action. Misscans are the most common gate error and without undo the counter drifts until the host stops trusting it. Undo consumes nothing and creates nothing.
 
 **Deliberately absent:** any money, any square, any grid, any drawing, any host setting. Volunteers consume entitlement and never create it (admission invariant 33).
 
 ### QR mechanics
 
-**Payload is an opaque token, never a URL.** A link payload means anyone pointing a phone camera at their own pass reaches a check-in endpoint. Check-in must originate from the authenticated volunteer surface and nowhere else. An opaque token scanned by a stray camera app does nothing.
+**Payload is an opaque token, never a URL.** A link payload means anyone pointing a phone camera at their own pass reaches a check-in endpoint. Check-in must originate from the authenticated check-in surface and nowhere else. An opaque token scanned by a stray camera app does nothing.
 
 **Decoder:** a maintained JS library (`html5-qrcode` or `zxing-wasm`), not the native `BarcodeDetector` API — coverage is still uneven across iOS Safari versions and this has to work on whatever phone a parent brought.
 
-**Camera:** permission requested on an explicit *Start scanning* tap, never on page load. Denial, unavailability, and failure all fall through to search with no dead end. Continuous scan — the volunteer should not tap once per person.
+**Camera:** permission requested on an explicit *Start scanning* tap, never on page load. Denial, unavailability, and failure all fall through to search with no dead end. Continuous scan — staff should not tap once per person.
 
-**The gotcha, and it needs host-facing copy.** `getUserMedia` is blocked inside iOS in-app browsers — Facebook, Instagram, and similar. If the host shares a volunteer link through a social app, the camera fails silently and the volunteer is stuck on search without knowing why. **Send volunteer links by SMS or email.** Put that sentence in the share UI, not in a support doc nobody reads.
+**The gotcha, and it needs host-facing copy.** `getUserMedia` is blocked inside iOS in-app browsers — Facebook, Instagram, and similar. If the host shares a check-in staff link through a social app, the camera fails silently and the staff member is stuck on search without knowing why. **Send check-in staff links by SMS or email.** Put that sentence in the share UI, not in a support doc nobody reads.
 
 ---
 
@@ -758,14 +758,14 @@ On a Phase A board there is no prize pool line.
 84 expected · 9 reserved but unpaid
 51 checked in · 33 remaining
 
-[ Volunteer links ]   [ Roster ]   [ Donate flags ]
+[ Check-in staff ]   [ Roster ]   [ Donate flags ]
 ```
 
-Expected counts `active` and `used` passes on active supporters. Donated purchases contribute zero, which is the point of the checkbox. The unpaid line counts admissions that would exist if outstanding cash reservations confirm - a chase list before she orders food, mirroring the amber/green split she already reads on the grid. It is a forecast, never a headcount, and never reaches the volunteer roster.
+Expected counts `active` and `used` passes on active supporters. Donated purchases contribute zero, which is the point of the checkbox. The unpaid line counts admissions that would exist if outstanding cash reservations confirm - a chase list before she orders food, mirroring the amber/green split she already reads on the grid. It is a forecast, never a headcount, and never reaches the check-in roster.
 
 **Donate flags** lets her toggle a purchase's setting after the fact, for the supporter who decides to come after all or the one who cannot. Toggling to donate voids that grant's unused passes; toggling back mints new ones with new tokens. A `used` pass is never voidable.
 
-Volunteer links are created, labeled ("Renee — main gate"), and revoked individually here. Each is scoped to one event and grants roster read and check-in only — never money, never the grid. The link is shown once at creation and stored hashed.
+Check-in staff links are created, labeled ("Renee — main gate"), and revoked individually here. Each is scoped to one event and grants roster read and check-in only — never money, never the grid. The link is shown once at creation and stored hashed.
 
 **Draw panel:** disabled until CLOSED. On completion, winner cards reuse the Phase 1 layout — name, place, amount, contact. Host pays out externally. **Daali does not move prize money.**
 
@@ -915,7 +915,7 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A8 | **Admission activation** — shared `confirmSquare`, minting, backfill | — |
 | A7 | CLOSING + finalization — `finalRaisedCents` only | — |
 | A9 | Passes screen, host donate-flag toggle | — |
-| A10 | Volunteer surface, QR, roster, search, check-in, undo | — |
+| A10 | Check-in surface, QR, roster, search, check-in, undo | — |
 
 **A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
 

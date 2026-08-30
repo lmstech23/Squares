@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // still reach their tickets. The batch id is the key: a random UUID already on
 // every purchase, unguessable, and known at the moment the email is sent.
 //
-// The link is the credential, the same model as the volunteer surface. There is
+// The link is the credential, the same model as the check-in surface. There is
 // no login here — a contributor has no account and never will.
 //
 // Shows every ticket the SUPPORTER currently holds, not only the ones from

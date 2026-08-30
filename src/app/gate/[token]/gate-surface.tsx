@@ -30,7 +30,7 @@ export interface RosterEntry {
 interface Props {
   token: string;
   eventName: string;
-  volunteerLabel: string;
+  staffLabel: string;
   roster: RosterEntry[];
 }
 
@@ -42,7 +42,7 @@ type Result =
 export default function GateSurface({
   token,
   eventName,
-  volunteerLabel,
+  staffLabel,
   roster: initialRoster,
 }: Props) {
   const [roster, setRoster] = useState(initialRoster);
@@ -160,7 +160,7 @@ export default function GateSurface({
 
     try {
       // Loaded on demand. The library is large and most of a shift is search,
-      // so a volunteer who never scans never downloads it.
+      // so a staff member who never scans never downloads it.
       const { Html5Qrcode } = await import("html5-qrcode");
       const scanner = new Html5Qrcode("gate-reader");
       scannerRef.current = scanner;
@@ -176,7 +176,7 @@ export default function GateSurface({
     } catch {
       // Denied, unavailable, or blocked. The most common cause is an iOS
       // in-app browser — Facebook and Instagram block getUserMedia outright,
-      // and the volunteer has no way to know that from a silent failure.
+      // and the staff member has no way to know that from a silent failure.
       setScanning(false);
       scannerRef.current = null;
       setCameraNote(
@@ -249,7 +249,7 @@ export default function GateSurface({
       {/* No nav, no board branding, no menu. One screen. */}
       <div className="max-w-lg mx-auto px-4 py-5">
         <p className="text-sm text-gray-500">{eventName}</p>
-        <p className="text-xs text-gray-600">{volunteerLabel}</p>
+        <p className="text-xs text-gray-600">{staffLabel}</p>
 
         <div className="mt-4 flex gap-2">
           <button

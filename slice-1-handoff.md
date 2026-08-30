@@ -29,7 +29,7 @@ That is deliberate. Activation is where a mistake is expensive and silent, and i
 
 ### 1. Schema — addendum §2
 
-`Event` · `EventSupporter` · `AdmissionGrant` · `AdmissionPass` · `CheckInLog` · `VolunteerAccess` · `AttendanceAccessToken`
+`Event` · `EventSupporter` · `AdmissionGrant` · `AdmissionPass` · `CheckInLog` · `CheckinStaffAccess` · `AttendanceAccessToken`
 
 Nothing is added to `Board` or `Square`. If the implementation seems to want a column on either, the model is being misread — stop and flag it.
 
@@ -47,7 +47,7 @@ AdmissionPass.token                               unique
 
 `identityKey` is the purchaser email, lowercased and trimmed.
 
-`VolunteerAccess.tokenHash` and `AttendanceAccessToken.tokenHash` are hashed at rest. **No raw bearer token is ever stored anywhere**, including audit trails: `AdmissionPass.checkedInByVolunteerAccessId` and `CheckInLog.byVolunteerAccessId` are foreign keys to `VolunteerAccess.id`, never the credential itself.
+`CheckinStaffAccess.tokenHash` and `AttendanceAccessToken.tokenHash` are hashed at rest. **No raw bearer token is ever stored anywhere**, including audit trails: `AdmissionPass.checkedInByCheckinStaffId` and `CheckInLog.byCheckinStaffId` are foreign keys to `CheckinStaffAccess.id`, never the credential itself.
 
 `EventSupporter.passSequenceCursor` is monotonic. Minting draws `cursor+1 … cursor+N` under the row lock and advances it. **Values are never reused and `void` is terminal** — see addendum §2 and invariant 40.
 
@@ -145,7 +145,7 @@ Case 21 runs first and runs last.
 
 Do not build, stub, or scaffold:
 
-event block on the create form · attendance picker · passes screen · Manage attendance · the token email · volunteer surface · QR generation · scanning · search · check-in · undo · roster · host event panel · gate allowance · host approval · standalone admission · refunds
+event block on the create form · attendance picker · passes screen · Manage attendance · the token email · check-in surface · QR generation · scanning · search · check-in · undo · roster · host event panel · gate allowance · host approval · standalone admission · refunds
 
 `source`, `gateAllowanceTotal`, and the reserved enum values exist as columns and are never read. That is correct and intentional.
 

@@ -139,13 +139,19 @@ Before assuming a retired column is harmless, check `is_nullable` and `column_de
 | `label` | String? | Optional name, if the purchaser bothered |
 | `status` | enum | `active` · `used` · `void` |
 | `checkedInAt` | DateTime? | |
-| `checkedInByVolunteerAccessId` | String? | FK to `VolunteerAccess.id`. Never a bearer token |
+| `checkedInByCheckinStaffId` | String? | FK to `CheckinStaffAccess.id`. Never a bearer token. Mapped to the physical column `checked_in_by_volunteer_access_id` |
 
 `sequenceNumber` is internal. The passes screen shows "Pass 2 of 4" by counting current usable passes in order, never the raw number.
 
-### CheckInLog · VolunteerAccess
+### CheckInLog · CheckinStaffAccess
 
-Unchanged from v1.x. `VolunteerAccess.tokenHash` is hashed at rest.
+Unchanged from v1.x. `CheckinStaffAccess.tokenHash` is hashed at rest.
+
+**Renamed at the application layer only** — sign-up addendum §2. The Prisma model is
+`CheckinStaffAccess`; the physical table is still `volunteer_access` and holds issued
+records, so `@@map` pins it. `CheckInLog.byCheckinStaffId` maps to
+`by_volunteer_access_id` the same way. A physical rename is a separate ticket for a
+planned window with no event nearby.
 
 ### AttendanceAccessToken
 
@@ -369,7 +375,7 @@ Appended to money doc §9. **Invariant 16 amendment:** the locked-after-first-co
 29. A pass is consumable once. A second scan is rejected and changes nothing. Undo restores it to `active`, is logged, and creates no entitlement.
 30. Concurrent confirmation is guarded by compare-and-swap on `EventSupporter.status` and enforced by unique `(eventSupporterId, sequenceNumber)`.
 31. Supporter status is a one-way latch. A later unpaid purchase never returns an active supporter to `pending`.
-32. Volunteers consume entitlement and never create it. No volunteer action increases the number of passes on an event.
+32. Check-in staff consume entitlement and never create it. No check-in action increases the number of passes on an event.
 33. Email delivery is never a precondition for a pass being valid. Passes remain valid after the board reaches `CLOSED`.
 
 ---
