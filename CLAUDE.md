@@ -103,6 +103,15 @@ Consistent as of admission addendum v1.7.
 
 7. **Ask rather than assume.** File paths, field names, and existing behavior are knowable — read the repo. Product decisions are not — ask.
 
+8. **Catalog first, tool output second.** A `prisma migrate diff` line is a
+   proposal, not a fact about the database. Before acting on one — or calling it
+   cosmetic — read `pg_index`, `pg_constraint`, `pg_policies`, `pg_trigger`.
+   Three times in one session a summary was wrong where the catalog was right:
+   "four missing indexes" were three existing *partial* ones, a category count
+   hid six unexamined statements, and "26 cosmetic FK statements" were thirteen
+   real changes to `ON DELETE`. Classify every statement individually and check
+   the arithmetic.
+
 8. **Never overwrite `SYSTEM-FLOW.md` from a circulating copy.** The repo's is newer than any zip or project-knowledge version and carries the double-grid feature. Port edits onto it by hand — `system-flow-port.md`.
 
 ---
