@@ -181,8 +181,10 @@ restore one. If the containment is ever undone it will show as **zero drift**.
 The only thing that observes it is `scripts/verify-containment.mts`:
 
 ```
-node --experimental-strip-types scripts/verify-containment.mts
+VERIFY_SITE_URL=https://beta.daali.app node --experimental-strip-types scripts/verify-containment.mts
 ```
+
+Two independent conclusions: **DATABASE CONTAINMENT** and **PRODUCTION SITE SMOKE**. Without `VERIFY_SITE_URL` the site conclusion is `LOCAL ONLY / PRODUCTION UNVERIFIED` (exit 2) and never green — `NEXT_PUBLIC_URL` is a local dev value, and a page check against `localhost` once got reported as if it were production.
 
 **Run it after any migration that creates anything in `public`.** It is
 catalog-driven — it discovers relations rather than enumerating them, so S1's

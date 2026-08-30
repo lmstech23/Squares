@@ -73,8 +73,10 @@ Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores
 So after any migration that creates anything in `public`:
 
 ```
-node --experimental-strip-types scripts/verify-containment.mts
+VERIFY_SITE_URL=https://beta.daali.app node --experimental-strip-types scripts/verify-containment.mts
 ```
+
+It reports two independent conclusions — **DATABASE CONTAINMENT** and **PRODUCTION SITE SMOKE**. Without `VERIFY_SITE_URL` the second reads `LOCAL ONLY / PRODUCTION UNVERIFIED` and exits 2, because `NEXT_PUBLIC_URL` is `localhost:3000` and a healthy database says nothing about the deployed app. Exit 0 means both passed; 1 means something failed.
 
 It is catalog-driven and fails closed, so a new table is checked without anyone adding it to a list. A table that genuinely should be client-readable goes in its `CLIENT_ACCESSIBLE` map with a reason, still requiring RLS and a policy — never a silent pass.
 

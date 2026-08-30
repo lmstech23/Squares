@@ -63,18 +63,31 @@ for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
 const SUPABASE_URL = env.get("NEXT_PUBLIC_SUPABASE_URL") ?? "";
 const ANON = env.get("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? "";
 const SERVICE = env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const SITE = (env.get("NEXT_PUBLIC_URL") ?? "").replace(/\/$/, "");
+// NEXT_PUBLIC_URL is a local dev value in this project. VERIFY_SITE_URL wins,
+// so the page checks can be aimed at the deployed app. Without it the site
+// conclusion is UNVERIFIED — never a pass.
+const SITE_FROM_ENV = Boolean(process.env.VERIFY_SITE_URL);
+const SITE = (process.env.VERIFY_SITE_URL ?? env.get("NEXT_PUBLIC_URL") ?? "").replace(/\/$/, "");
+const SITE_IS_LOCAL = SITE
+  ? ["localhost", "127.0.0.1", "::1"].includes(new URL(SITE).hostname)
+  : true;
 
 const p = new PrismaClient();
-let failures = 0;
-let inconclusives = 0;
+// Two INDEPENDENT conclusions. Database containment and the deployed site are
+// different questions with different evidence, and a pass on one must never
+// be allowed to read as a pass on the other.
+const tally = {
+  containment: { failures: 0, inconclusives: 0 },
+  site: { failures: 0, inconclusives: 0 },
+};
+let scope: "containment" | "site" = "containment";
 const notes: string[] = [];
 
 const H = (s: string) => console.log(`\n${"=".repeat(78)}\n${s}\n${"=".repeat(78)}`);
 const ok = (label: string, detail = "") => console.log(`  [ ok ] ${label.padEnd(56)} ${detail}`);
-const fail = (label: string, detail = "") => { failures++; console.log(`  [FAIL] ${label.padEnd(56)} ${detail}`); };
+const fail = (label: string, detail = "") => { tally[scope].failures++; console.log(`  [FAIL] ${label.padEnd(56)} ${detail}`); };
 const check = (cond: boolean, label: string, detail = "") => (cond ? ok(label, detail) : fail(label, detail));
-const unknown = (label: string, detail = "") => { inconclusives++; console.log(`  [ ?? ] ${label.padEnd(56)} INCONCLUSIVE: ${detail}`); };
+const unknown = (label: string, detail = "") => { tally[scope].inconclusives++; console.log(`  [ ?? ] ${label.padEnd(56)} INCONCLUSIVE: ${detail}`); };
 const note = (s: string) => { notes.push(s); console.log(`  ...  ${s}`); };
 
 // Requires every named column to be present and boolean. A renamed or dropped
@@ -279,16 +292,28 @@ try {
   const open = await p.board.findMany({ where: { status: "open" }, select: { slug: true }, take: 1 });
   check(open.length > 0, "Prisma relational read (open boards)", `${open.length} open board(s)`);
 
-  if (!SITE) fail("public pages", "NEXT_PUBLIC_URL not set in .env");
+  // Everything below is the SITE conclusion, tallied separately from
+  // containment. Name the host always: NEXT_PUBLIC_URL is a local dev value
+  // here (http://localhost:3000), and a bare "page renders — HTTP 200" once
+  // reported the dev server as if it were the deployed app.
+  scope = "site";
+  if (!SITE) fail("public pages", "no site URL — set VERIFY_SITE_URL or NEXT_PUBLIC_URL");
   else {
+    const host = new URL(SITE).hostname;
+    const where = SITE_IS_LOCAL ? "LOCAL DEV SERVER — not production" : "remote";
+    if (SITE_IS_LOCAL)
+      note(`page checks hit ${host} (${where}). They exercise the same Prisma code ` +
+           `against the production database, but say NOTHING about the deployed app. ` +
+           `Set VERIFY_SITE_URL to the production domain to check that.`);
     for (const [label, path, follow] of [["home", "/", true], ["board", open[0] ? `/board/${open[0].slug}` : "", false]] as const) {
       if (!path) { fail(`  ${label} page`, "no open board to test"); continue; }
       try {
         const res = await fetch(`${SITE}${path}`, { redirect: follow ? "follow" : "manual" });
-        check(res.status === 200, `  ${label} page renders`, `HTTP ${res.status}  ${path}`);
-      } catch (e) { unknown(`  ${label} page renders`, (e as Error).message.slice(0, 70)); }
+        check(res.status === 200, `  ${label} page @ ${host}`, `HTTP ${res.status}  ${path}  [${where}]`);
+      } catch (e) { unknown(`  ${label} page @ ${host}`, (e as Error).message.slice(0, 70)); }
     }
   }
+  scope = "containment";
 } catch (e) {
   fail("pooler / Prisma reads", (e as Error).message.replace(/\s+/g, " ").slice(0, 140));
 }
@@ -304,14 +329,42 @@ if (SUPABASE_URL && SERVICE) {
 // ------------------------------------------------------------ verdict ---
 H("VERDICT");
 for (const n of notes) console.log(`  note: ${n}`);
-console.log(`\n  relations checked: ${rels.length}   failures: ${failures}   inconclusive: ${inconclusives}`);
-if (failures === 0 && inconclusives === 0) console.log("\n  CONTAINED — the Data API is closed to anon and authenticated.");
-else if (inconclusives > 0 && failures === 0) console.log("\n  UNPROVEN — a probe never completed. Re-run; do not treat this as contained.");
-else console.log("\n  NOT CONTAINED — see failures above.");
-console.log(`\n  Not covered here: the authenticated host dashboard behind a real login.`);
-console.log(`  This script holds no credentials and will not mint a session. The`);
-console.log(`  'authenticated' role is verified from the catalog (section 3); a live`);
+
+// --- conclusion 1: the database -------------------------------------------
+const c = tally.containment;
+const containmentVerdict =
+  c.failures > 0 ? "FAIL" : c.inconclusives > 0 ? "UNPROVEN" : "PASS";
+console.log(`\n  DATABASE CONTAINMENT: ${containmentVerdict}`);
+console.log(`      ${rels.length} relation(s) checked, ${c.failures} failure(s), ${c.inconclusives} inconclusive`);
+if (containmentVerdict === "PASS") console.log(`      The Data API is closed to anon and authenticated.`);
+if (containmentVerdict === "UNPROVEN") console.log(`      A probe never completed. Re-run; do NOT treat this as contained.`);
+if (containmentVerdict === "FAIL") console.log(`      See failures above.`);
+
+// --- conclusion 2: the deployed site --------------------------------------
+// Independent of containment. Without VERIFY_SITE_URL pointing at a remote
+// host this can never be a pass, however healthy the database looks — a green
+// database says nothing about whether the deployed app still serves.
+const s = tally.site;
+const siteTested = SITE_FROM_ENV && !SITE_IS_LOCAL;
+const siteVerdict = !siteTested
+  ? "LOCAL ONLY / PRODUCTION UNVERIFIED"
+  : s.failures > 0 ? "FAIL" : s.inconclusives > 0 ? "UNPROVEN" : "PASS";
+console.log(`\n  PRODUCTION SITE SMOKE (${siteTested ? SITE : "not set"}): ${siteVerdict}`);
+if (!siteTested)
+  console.log(`      VERIFY_SITE_URL is ${SITE_FROM_ENV ? "a loopback address" : "unset"}, so nothing here\n` +
+              `      observed the deployed application. Re-run with\n` +
+              `      VERIFY_SITE_URL=https://<production-domain> to reach a verdict.`);
+else console.log(`      ${s.failures} failure(s), ${s.inconclusives} inconclusive`);
+
+console.log(`\n  Not covered by either conclusion: the authenticated host dashboard behind`);
+console.log(`  a real login. This script holds no credentials and will not mint a session.`);
+console.log(`  The 'authenticated' role is verified from the catalog (section 3); a live`);
 console.log(`  probe as that role would need the project JWT secret.`);
 
+// 0 = both conclusions pass. 2 = database contained, production unverified.
+// 1 = something actually failed or could not be established.
 await p.$disconnect();
-process.exit(failures === 0 && inconclusives === 0 ? 0 : 1);
+if (containmentVerdict !== "PASS") process.exit(1);
+if (siteVerdict === "PASS") process.exit(0);
+if (siteVerdict === "LOCAL ONLY / PRODUCTION UNVERIFIED") process.exit(2);
+process.exit(1);
