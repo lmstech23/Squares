@@ -72,3 +72,38 @@ owns real boards, which is out of scope for a rename. Needs a deliberate check
 of where `hosts.email` is read before it is set.
 
 Observed, not acted on, during S0 fixture planning.
+
+---
+
+## `fs.chmod` mode bits are inert on Windows — use `icacls`
+
+**Added:** 2026-08-30 (S0 fixture tooling)
+**Applies to:** S1 tooling, and anything writing a secret to disk.
+
+`writeFileSync(path, data, { mode: 0o600 })` and `chmodSync(path, 0o600)` do
+not restrict access on Windows. Node can only toggle the read-only attribute
+there; POSIX permission bits have no NTFS equivalent. A file written that way
+reports mode `666` and is protected only by whatever ACL it inherits from its
+directory.
+
+Observed during S0: the fixture manifest holds working admission tokens and was
+believed to be `0600`. It was not.
+
+**Two things to carry forward.**
+
+1. **Harden with `icacls`, and check the exit code.** Grant SYSTEM `(F)`,
+   Administrators `(F)`, and the current user `(M)` by SID rather than by
+   account name, then `/inheritance:r`. `icacls` returns non-zero on failure
+   (verified: exit 2 on a missing path), so a wrapper must throw rather than
+   log-and-continue.
+
+2. **Atomic temp-file-and-rename DISCARDS the target's ACL.** The temp file
+   carries the directory's inherited ACL, and the rename replaces the hardened
+   target with it. Verified directly: an explicit three-ACE file reverted to
+   three inherited ACEs after a rename-over. **Harden the temp file before the
+   rename**, so the file that lands is already protected and there is no
+   unhardened window.
+
+The second point is the one that bites, because the reversion is silent and
+happens on the write that adds the secret rather than the one that created the
+file.
