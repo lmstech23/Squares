@@ -66,7 +66,17 @@ path in `src/lib/confirmation-email.ts` — never a per-square loop. This is a
 deliberate exception to "Game Day is untouched": two email paths would drift,
 and the one that drifts is whichever gets tested less. Decided Aug 28, 2026.
 
-Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits.
+Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits. A `.sql.pending` file is **not** runnable — it is kept for reference and its precondition is in `PHASE-2-BACKLOG.md`.
+
+**RLS and role grants are invisible to `prisma/schema.prisma`.** `migrate diff` reports zero drift whether or not the database is exposed, `db pull` never introspects them, and `migrate` never restores them. On Aug 30, 2026 every table in `public` was found granting `anon` and `authenticated` full DML — 1,300 contributor rows readable and writable over the Data API — caused by `pg_default_acl`, which grants those roles on every **new** table automatically. Closed by `migrations/secure_data_api.sql`.
+
+So after any migration that creates anything in `public`:
+
+```
+node --experimental-strip-types scripts/verify-containment.mts
+```
+
+It is catalog-driven and fails closed, so a new table is checked without anyone adding it to a list. A table that genuinely should be client-readable goes in its `CLIENT_ACCESSIBLE` map with a reason, still requiring RLS and a policy — never a silent pass.
 
 ---
 

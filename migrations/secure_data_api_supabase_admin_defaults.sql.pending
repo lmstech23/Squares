@@ -1,0 +1,78 @@
+-- secure_data_api_supabase_admin_defaults.sql.pending
+--
+-- THE .pending EXTENSION IS DELIBERATE. This file is NOT a runnable migration
+-- and must not sit in migrations/ under a plain .sql name, where anyone
+-- applying the directory in order would hit a guaranteed failure. It is known
+-- to be unexecutable with the credentials this project has (see below), and it
+-- has never been run against production.
+--
+-- It is kept as the exact statements someone with the right role membership
+-- would need. The precondition and the escalation path are in
+-- PHASE-2-BACKLOG.md.
+--
+-- If it ever becomes runnable: Supabase dashboard SQL editor only, after
+-- secure_data_api.sql. Never through the pooler, never inside a script.
+--
+-- WHY IT IS A SEPARATE FILE
+-- secure_data_api.sql corrects the default privileges of the `postgres` role.
+-- This file corrects the same defaults for `supabase_admin`. Altering another
+-- role's default privileges requires membership in that role, and that
+-- permission check is the one plausible failure in the whole containment.
+-- Splitting it out means an ownership failure here cannot leave the main
+-- migration ambiguously half applied.
+--
+-- EXPECT THIS TO FAIL, AND REPORT IT RATHER THAN WORKING AROUND IT
+--   SELECT pg_has_role('postgres','supabase_admin','MEMBER');  -->  false
+-- The Supabase dashboard SQL editor also connects as `postgres`, so it will
+-- most likely raise:
+--   ERROR: 42501: must be member of role "supabase_admin"
+-- If it does: STOP. Do not GRANT supabase_admin TO postgres, do not SET ROLE,
+-- do not attempt any other elevation. Record the failure and open a Supabase
+-- support request instead. Forcing this means granting yourself a role that
+-- owns the auth, storage and realtime schemas, which is a far larger change
+-- than the problem it would fix.
+--
+-- WHAT IS AND IS NOT AT RISK IF IT CANNOT BE APPLIED
+-- Default privileges apply only to objects created BY the named role.
+-- Every table in `public` today is owned by `postgres`, and the S1 sign-up
+-- tables will be created by `postgres` as well. So the `postgres` half in
+-- secure_data_api.sql is what actually protects our future tables, and it is
+-- sufficient on its own for the S1 build to proceed safely.
+-- What stays uncorrected is narrower: tables that `supabase_admin` itself
+-- creates in `public` in future -- Supabase-managed objects introduced by a
+-- platform extension or upgrade -- would still receive anon and authenticated
+-- grants automatically. That is a residual risk to re-check after any Supabase
+-- platform upgrade, not an open hole today.
+--
+-- If it fails, note the failure in PHASE-2-BACKLOG.md and re-run the
+-- verification script; every other check must still pass.
+
+BEGIN;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+  REVOKE ALL ON TABLES FROM anon, authenticated;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+  REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+
+-- Unqualified, for the same reason as in secure_data_api.sql: the global
+-- PUBLIC EXECUTE default on functions is not schema-scoped and cannot be
+-- cancelled by a revoke that names a schema.
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin
+  REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public
+  REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated;
+
+COMMIT;
+
+-- Confirm afterwards (read-only). supabase_admin must no longer appear with
+-- anon or authenticated on public:
+--
+--   SELECT pg_get_userbyid(d.defaclrole) AS creating_role,
+--          coalesce(n.nspname,'<global>') AS schema,
+--          d.defaclobjtype AS objtype,
+--          array_to_string(d.defaclacl,' | ') AS acl
+--   FROM pg_default_acl d
+--   LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+--   ORDER BY 1,2,3;

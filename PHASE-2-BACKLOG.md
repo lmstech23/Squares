@@ -107,3 +107,93 @@ believed to be `0600`. It was not.
 The second point is the one that bites, because the reversion is silent and
 happens on the write that adds the secret rather than the one that created the
 file.
+
+---
+
+## supabase_admin default privileges on `public` remain uncorrected
+
+**Added:** 2026-08-30 (Data API containment)
+**Applies to:** any future Supabase platform upgrade; re-check after each one.
+**Blocks:** nothing. S1 may proceed.
+**File, preserved and NOT executed:**
+`migrations/secure_data_api_supabase_admin_defaults.sql.pending`
+
+The `.pending` extension is deliberate. A known-unexecutable file sitting in
+`migrations/` under a plain `.sql` name is a trap for whoever applies the
+directory in order.
+
+`migrations/secure_data_api.sql` closed anonymous Data API access to all 15
+tables in `public` and corrected the `postgres` default privileges that caused
+it. The matching correction for `supabase_admin` could not be applied.
+
+**Precondition that is not met.** Altering another role's default privileges
+requires membership in that role:
+
+```
+SELECT pg_has_role('postgres','supabase_admin','MEMBER');  -->  false
+```
+
+The Supabase dashboard SQL editor also connects as `postgres`, so it would fail
+the same way. The file was therefore **preserved but never executed** — running
+it would only write a failed transaction into production's log to prove
+something `pg_has_role` already settles.
+
+**Do not force it.** No `GRANT supabase_admin TO postgres`, no `SET ROLE`.
+`supabase_admin` owns the auth, storage and realtime schemas; granting it to
+work around a default-privilege revoke is a far larger change than the problem
+it fixes. Escalate to Supabase support instead.
+
+**Residual risk, stated narrowly.** Default privileges govern only objects
+created *by* the named role. All 15 tables in `public` are owned by `postgres`,
+and S1's six sign-up tables will be created by `postgres` — so the corrected
+`postgres` defaults are what actually protect them, and they are sufficient.
+What stays uncorrected is `supabase_admin` creating a table in `public` in
+future, which a Supabase platform extension or upgrade could do. Such a table
+would receive anon and authenticated grants automatically.
+
+**Standing check after any Supabase platform upgrade:** re-run the verifier and
+confirm group 2 and group 7 still pass. New tables in `public` are the signal.
+
+## Default ACLs granting anon/authenticated outside `public`
+
+**Added:** 2026-08-30 (observed during the same containment)
+**Status:** recorded, deliberately not changed.
+
+`pg_default_acl` also grants anon and authenticated on schemas the containment
+did not touch: `postgres` on `storage` (table/sequence/function), and
+`supabase_admin` on `graphql` and `graphql_public`. These are Supabase-managed
+schemas with their own RLS and policy model — `storage.objects` ships with
+policies, and `graphql_public.graphql` is the intended public entry point.
+
+Not a finding to act on blind. If storage buckets ever hold anything
+non-public, audit `storage.objects` policies specifically rather than revoking
+the schema's default privileges.
+
+## RLS and grants are invisible to `prisma/schema.prisma`
+
+**Added:** 2026-08-30
+**Applies to:** every future schema change, S1 included.
+
+`prisma migrate diff` will never report a missing RLS flag or a stray grant,
+`prisma db pull` will never introspect one, and `prisma migrate` will never
+restore one. If the containment is ever undone it will show as **zero drift**.
+
+The only thing that observes it is `scripts/verify-containment.mts`:
+
+```
+node --experimental-strip-types scripts/verify-containment.mts
+```
+
+**Run it after any migration that creates anything in `public`.** It is
+catalog-driven — it discovers relations rather than enumerating them, so S1's
+six tables are tested the moment they exist without anyone remembering to add
+them. The exposure arrived through automatic grants; the check is automatic to
+match. It fails closed on a table without RLS, any PUBLIC/anon/authenticated
+privilege, a reachable view or function, unsafe `postgres` defaults, missing
+`service_role` access, a missing catalog column, or a probe that never
+completed.
+
+A table that genuinely should be client-readable goes in the script's
+`CLIENT_ACCESSIBLE` map with its reason. That is a reviewed exception, not a
+silent pass: it still must have RLS on and at least one policy, and its
+policies are printed on every run.
