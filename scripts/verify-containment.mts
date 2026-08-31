@@ -72,6 +72,23 @@ const SITE_IS_LOCAL = SITE
   ? ["localhost", "127.0.0.1", "::1"].includes(new URL(SITE).hostname)
   : true;
 
+// --catalog-only is OPT-IN and must never weaken the default. Normal mode runs
+// catalog + HTTP probes + page checks. --catalog-only runs the catalog checks
+// and prints the others as SKIPPED, so a replayed container can be validated
+// without HTTP sections silently reporting on PRODUCTION instead. Container
+// catalog + production HTTP is the false-pass shape this guards against.
+const CATALOG_ONLY = process.argv.includes("--catalog-only");
+
+// Resolved target, printed prominently in BOTH modes. Credentials are never
+// shown — host, port and database name only.
+function describeTarget(): string {
+  const raw = process.env.DATABASE_URL ?? env.get("DATABASE_URL") ?? "";
+  try {
+    const u = new URL(raw);
+    return `${u.hostname}:${u.port || "5432"}${u.pathname}`;
+  } catch { return "<unparseable DATABASE_URL>"; }
+}
+
 const p = new PrismaClient();
 // Two INDEPENDENT conclusions. Database containment and the deployed site are
 // different questions with different evidence, and a pass on one must never
@@ -108,6 +125,13 @@ async function probe(url: string, headers: Record<string, string>, attempts = 3)
   }
   return { res: null, error: `${last} (after ${attempts} attempts)` };
 }
+
+console.log("=".repeat(78));
+console.log(`  MODE:            ${CATALOG_ONLY ? "--catalog-only (HTTP + page checks SKIPPED)" : "full (catalog + HTTP + page checks)"}`);
+console.log(`  DATABASE TARGET: ${describeTarget()}`);
+console.log(`  SITE TARGET:     ${CATALOG_ONLY ? "n/a - skipped" : (SITE || "<unset>")}`);
+console.log(`  SUPABASE HTTP:   ${CATALOG_ONLY ? "n/a - skipped" : (SUPABASE_URL ? new URL(SUPABASE_URL).hostname : "<unset>")}`);
+console.log("=".repeat(78));
 
 // ------------------------------------------------------- 0. discovery ---
 H("0. DISCOVERY — every relation in `public`, from the catalog");
@@ -262,7 +286,14 @@ if (outside.length)
 
 // ------------------------------------------ 7. live anonymous probes ---
 H("7. LIVE ANONYMOUS Data API PROBES (HEAD, metadata only — no row contents)");
-if (!SUPABASE_URL || !ANON) fail("anonymous probes", "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY missing from .env");
+if (CATALOG_ONLY) {
+  console.log("  [SKIP] anonymous Data API probes - --catalog-only");
+  console.log("         RLS (section 1) and catalog privilege (section 3) are the");
+  console.log("         authoritative evidence. This section observes a live PostgREST");
+  console.log("         endpoint that a replayed container does not have - running it");
+  console.log("         here would report on production instead.");
+}
+else if (!SUPABASE_URL || !ANON) fail("anonymous probes", "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY missing from .env");
 else for (const r of rels) {
   const { res, error } = await probe(`${SUPABASE_URL}/rest/v1/${r.name}?select=*&limit=1`,
     { apikey: ANON, Authorization: `Bearer ${ANON}`, Prefer: "count=exact" });
@@ -289,15 +320,20 @@ try {
     checkinStaffAccess: await p.checkinStaffAccess.count(),
   };
   ok("Prisma reads across 6 models", JSON.stringify(counts));
+  // The assertion is that a relational read EXECUTES, not that rows exist. A
+  // freshly replayed database legitimately has zero boards, and an empty
+  // product state is not a containment failure. A throw is caught below.
   const open = await p.board.findMany({ where: { status: "open" }, select: { slug: true }, take: 1 });
-  check(open.length > 0, "Prisma relational read (open boards)", `${open.length} open board(s)`);
+  ok("Prisma relational read executes", `${open.length} open board(s) — row count is informational`);
+  if (open.length === 0) note("no open boards: page checks below have no board to exercise");
 
   // Everything below is the SITE conclusion, tallied separately from
   // containment. Name the host always: NEXT_PUBLIC_URL is a local dev value
   // here (http://localhost:3000), and a bare "page renders — HTTP 200" once
   // reported the dev server as if it were the deployed app.
   scope = "site";
-  if (!SITE) fail("public pages", "no site URL — set VERIFY_SITE_URL or NEXT_PUBLIC_URL");
+  if (CATALOG_ONLY) console.log("  [SKIP] public page checks - --catalog-only");
+  else if (!SITE) fail("public pages", "no site URL — set VERIFY_SITE_URL or NEXT_PUBLIC_URL");
   else {
     const host = new URL(SITE).hostname;
     const where = SITE_IS_LOCAL ? "LOCAL DEV SERVER — not production" : "remote";
@@ -318,7 +354,9 @@ try {
   fail("pooler / Prisma reads", (e as Error).message.replace(/\s+/g, " ").slice(0, 140));
 }
 
-if (SUPABASE_URL && SERVICE) {
+if (CATALOG_ONLY) {
+  console.log("  [SKIP] service_role HTTP reachability - --catalog-only");
+} else if (SUPABASE_URL && SERVICE) {
   const { res, error } = await probe(`${SUPABASE_URL}/rest/v1/hbcu_orgs?select=*&limit=1`,
     { apikey: SERVICE, Authorization: `Bearer ${SERVICE}`, Prefer: "count=exact" });
   if (!res) unknown("service_role reaches hbcu_orgs", `probe never completed: ${error}`);
@@ -346,11 +384,11 @@ if (containmentVerdict === "FAIL") console.log(`      See failures above.`);
 // database says nothing about whether the deployed app still serves.
 const s = tally.site;
 const siteTested = SITE_FROM_ENV && !SITE_IS_LOCAL;
-const siteVerdict = !siteTested
+const siteVerdict = CATALOG_ONLY ? "SKIPPED (--catalog-only)" : !siteTested
   ? "LOCAL ONLY / PRODUCTION UNVERIFIED"
   : s.failures > 0 ? "FAIL" : s.inconclusives > 0 ? "UNPROVEN" : "PASS";
 console.log(`\n  PRODUCTION SITE SMOKE (${siteTested ? SITE : "not set"}): ${siteVerdict}`);
-if (!siteTested)
+if (!siteTested && !CATALOG_ONLY)
   console.log(`      VERIFY_SITE_URL is ${SITE_FROM_ENV ? "a loopback address" : "unset"}, so nothing here\n` +
               `      observed the deployed application. Re-run with\n` +
               `      VERIFY_SITE_URL=https://<production-domain> to reach a verdict.`);
@@ -365,6 +403,7 @@ console.log(`  probe as that role would need the project JWT secret.`);
 // 1 = something actually failed or could not be established.
 await p.$disconnect();
 if (containmentVerdict !== "PASS") process.exit(1);
+if (CATALOG_ONLY) process.exit(0);   // catalog passed; site deliberately not assessed
 if (siteVerdict === "PASS") process.exit(0);
 if (siteVerdict === "LOCAL ONLY / PRODUCTION UNVERIFIED") process.exit(2);
 process.exit(1);
