@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -62,6 +63,17 @@ export default function StripePage() {
         You&apos;ll be redirected to Stripe to complete setup, then brought back
         here.
       </p>
+
+      {/* The only way off this page other than completing Stripe onboarding.
+          Without it a host who opened Connect setup and changed her mind has
+          nothing but the browser Back button — which on mobile is a gesture
+          some people do not know, and in an in-app browser may not exist. */}
+      <Link
+        href="/host/boards"
+        className="mt-4 block text-center text-sm text-gray-500 hover:text-gray-300 transition-colors"
+      >
+        Back to boards
+      </Link>
     </div>
   );
 }
