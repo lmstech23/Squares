@@ -1,0 +1,23 @@
+-- Enable row level security on Prisma's own migration bookkeeping table.
+--
+-- `_prisma_migrations` is created by Prisma, not by 0_init, so no baseline
+-- statement can cover it. It appeared in production the moment
+-- `prisma migrate resolve --applied 0_init` ran, and verify-containment.mts
+-- caught it on the next run: a sixteenth table in `public` with RLS off.
+--
+-- IT WAS NOT EXPOSED. The corrected `postgres` default privileges held --
+-- anon and authenticated received no grant on it at all, and an anonymous
+-- PostgREST probe returned 401. That is the first production evidence that
+-- the default-privilege fix works on a table created by a tool we do not
+-- control. What was missing is the second layer: with RLS off, the table
+-- rested on grants alone.
+--
+-- ORDERING, VERIFIED NOT ASSUMED: Prisma creates `_prisma_migrations` before
+-- it applies any migration file, so on a from-scratch rebuild this statement
+-- finds the table present. Confirmed by replaying an empty database through
+-- `migrate deploy` and observing both migrations apply cleanly.
+--
+-- Row contents are migration names and checksums, not user data. This is
+-- defence in depth, not a leak being closed.
+
+ALTER TABLE public._prisma_migrations ENABLE ROW LEVEL SECURITY;

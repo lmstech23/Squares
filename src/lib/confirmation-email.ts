@@ -62,7 +62,19 @@ function ticketBlocks(tokens: string[], base: string): string {
     .join("");
 }
 
-/** Groups by recipient so one person gets one email even across batches. */
+/**
+ * Groups by recipient so one person gets one email even across batches.
+ *
+ * KNOWN DEFECT, deliberately not fixed here. Grouping on email address
+ * collapses two separately confirmed purchases into a single receipt, which
+ * contradicts the addendum's `grant:{id}` receipt identity — the approved
+ * design is one delivery per grant. Fixing it means choosing between one
+ * delivery row per grant and a redefined recipient digest, and that choice
+ * belongs to S4 against the addendum, which is not yet in the repo.
+ * Engineering it against a spec that lives outside version control is the
+ * off-repo-truth problem the baseline work just finished uncovering.
+ * PHASE-2-BACKLOG.md.
+ */
 function byRecipient(squares: SquareRow[]): Map<string, SquareRow[]> {
   const map = new Map<string, SquareRow[]>();
   for (const sq of squares) {
@@ -122,7 +134,26 @@ export async function sendPendingConfirmations(where: {
   const result = { emailsSent: 0, squaresCovered: 0 };
 
   try {
-    const squares = await prisma.square.findMany({
+    // ATOMIC CLAIM, BEFORE THE NETWORK CALL.
+    //
+    // This was select -> sendEmail -> stamp. The window between selecting a row
+    // and stamping it spanned a call to Resend, and nothing held a lock across
+    // it. The five-minute cron sweeps globally while the Stripe webhook fires on
+    // card confirmation, so two invocations could select the same rows and both
+    // send. The race becomes possible with the first confirmed card
+    // contribution; the duplicate is timing-dependent, but the defect is not.
+    //
+    // `updateManyAndReturn` with `confirmationEmailedAt: null` in the WHERE is
+    // the claim: it stamps and reports exactly the rows this statement changed.
+    // A concurrent caller's identical statement matches zero rows and returns
+    // nothing to send. The same primitive `confirmSquares` uses, for the same
+    // reason.
+    //
+    // The stamp is therefore written BEFORE the email rather than after, which
+    // inverts the previous failure mode: a send failure now leaves a stamped
+    // square with no email instead of an unstamped square that might be mailed
+    // twice. That is why the catch below releases the claim -- see there.
+    const claimed = await prisma.square.updateManyAndReturn({
       where: {
         paymentStatus: "paid",
         confirmationEmailedAt: null,
@@ -130,6 +161,7 @@ export async function sendPendingConfirmations(where: {
         ...(where.batchId ? { batchId: where.batchId } : {}),
         ...(where.boardId ? { boardId: where.boardId } : {}),
       },
+      data: { confirmationEmailedAt: new Date() },
       select: {
         squareId: true,
         position: true,
@@ -137,10 +169,13 @@ export async function sendPendingConfirmations(where: {
         batchId: true,
         board: { select: { gameName: true, boardType: true } },
       },
-      orderBy: { position: "asc" },
     });
 
-    if (squares.length === 0) return result;
+    if (claimed.length === 0) return result;
+
+    // updateManyAndReturn does not accept orderBy; sort after claiming so the
+    // positions listed in the email stay ascending.
+    const squares = [...claimed].sort((a, b) => a.position - b.position);
 
     const boardName = squares[0].board.gameName;
     const isFundraiser = squares[0].board.boardType === "fundraiser";
@@ -195,16 +230,31 @@ export async function sendPendingConfirmations(where: {
       try {
         await sendEmail(email, subject, html + ticketHtml);
       } catch (err) {
-        // Leave them unstamped. The next sweep tries again; a dropped receipt
-        // is worse than a late one.
+        // RELEASE THE CLAIM. These rows were stamped before the send, so
+        // leaving them stamped would silently drop the receipt forever -- the
+        // failure the old ordering avoided. Clearing the stamp returns them to
+        // the pool for the next sweep, which is the same outcome the old code
+        // had, without the duplicate-send window.
+        //
+        // Guarded on the value this call wrote: if a later confirmation has
+        // already re-stamped the row, that stamp is not ours to clear.
         console.warn(`Confirmation email failed for ${email}:`, err);
+        try {
+          await prisma.square.updateMany({
+            where: {
+              squareId: { in: rows.map((r) => r.squareId) },
+              confirmationEmailedAt: { not: null },
+            },
+            data: { confirmationEmailedAt: null },
+          });
+        } catch (releaseErr) {
+          // A release that fails leaves a stamped-but-unmailed square: a
+          // missing receipt, recoverable by hand. Never let it mask the send
+          // failure or abort the remaining recipients.
+          console.warn(`Failed to release email claim for ${email}:`, releaseErr);
+        }
         continue;
       }
-
-      await prisma.square.updateMany({
-        where: { squareId: { in: rows.map((r) => r.squareId) } },
-        data: { confirmationEmailedAt: new Date() },
-      });
 
       result.emailsSent++;
       result.squaresCovered += rows.length;
