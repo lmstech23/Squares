@@ -102,7 +102,7 @@ model Board {
   earlyBirdPriceCents       Int?         @map("early_bird_price_cents")
   earlyBirdEndsAt           DateTime?    @map("early_bird_ends_at") @db.Timestamptz(6)
 
-  host                      Host        @relation(fields: [hostId], references: [id], onUpdate: NoAction)
+  host                      Host        @relation(fields: [hostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   squares                   Square[]
   freeEntries               FreeEntry[]
   event                     Event?
@@ -149,7 +149,7 @@ model Square {
   pricePaidCents    Int?              @map("price_paid_cents")
 
   payment           PaymentReference?
-  board             Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
+  board             Board             @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
   /// Back-relation only. The foreign key lives on admission_passes; the
   /// squares table gains no column. Addendum: admission adds none to Square.
   admissionPasses   AdmissionPass[]
@@ -174,7 +174,7 @@ model FreeEntry {
   verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(6)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  board          Board     @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
+  board          Board     @relation(fields: [boardId], references: [boardId], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([boardId, sequenceNumber])
   @@map("free_entries")
@@ -204,7 +204,7 @@ model Event {
   gateAllowanceTotal       Int       @default(0) @map("gate_allowance_total")
   createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  board            Board             @relation(fields: [boardId], references: [boardId], onUpdate: NoAction)
+  board            Board             @relation(fields: [boardId], references: [boardId], onDelete: NoAction, onUpdate: NoAction)
   supporters       EventSupporter[]
   grants           AdmissionGrant[]
   checkinStaff     CheckinStaffAccess[]
@@ -232,7 +232,7 @@ model EventSupporter {
   activatedAt        DateTime?       @map("activated_at") @db.Timestamptz(6)
   createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  event   Event                     @relation(fields: [eventId], references: [id], onUpdate: NoAction)
+  event   Event                     @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   grants  AdmissionGrant[]
   passes  AdmissionPass[]
   tokens  AttendanceAccessToken[]
@@ -260,8 +260,8 @@ model AdmissionGrant {
   declaredAtPurchase Int?                 @map("declared_at_purchase")
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  event     Event          @relation(fields: [eventId], references: [id], onUpdate: NoAction)
-  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
+  event     Event          @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([squareBatchId])
   @@index([eventSupporterId], map: "idx_admission_grants_supporter")
@@ -287,9 +287,9 @@ model AdmissionPass {
   checkedInByCheckinStaffId     String?             @map("checked_in_by_volunteer_access_id") @db.Uuid
   createdAt                     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  supporter       EventSupporter   @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
-  square          Square?          @relation(fields: [squareId], references: [squareId], onUpdate: NoAction)
-  checkedInBy     CheckinStaffAccess? @relation(fields: [checkedInByCheckinStaffId], references: [id], onUpdate: NoAction)
+  supporter       EventSupporter   @relation(fields: [eventSupporterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  square          Square?          @relation(fields: [squareId], references: [squareId], onDelete: NoAction, onUpdate: NoAction)
+  checkedInBy     CheckinStaffAccess? @relation(fields: [checkedInByCheckinStaffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   checkInLogs     CheckInLog[]
 
   /// The constraint behind concurrency-safe activation: concurrent confirmation
@@ -307,9 +307,9 @@ model CheckInLog {
   at                   DateTime      @default(now()) @db.Timestamptz(6)
   byCheckinStaffId     String        @map("by_volunteer_access_id") @db.Uuid
 
-  pass       AdmissionPass   @relation(fields: [passId], references: [id], onUpdate: NoAction)
-  event      Event           @relation(fields: [eventId], references: [id], onUpdate: NoAction)
-  byCheckinStaff CheckinStaffAccess @relation(fields: [byCheckinStaffId], references: [id], onUpdate: NoAction)
+  pass       AdmissionPass   @relation(fields: [passId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  event      Event           @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  byCheckinStaff CheckinStaffAccess @relation(fields: [byCheckinStaffId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([eventId, at], map: "idx_check_in_logs_event_at")
   @@index([passId], map: "idx_check_in_logs_pass")
@@ -338,7 +338,7 @@ model CheckinStaffAccess {
   revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  event        Event           @relation(fields: [eventId], references: [id], onUpdate: NoAction)
+  event        Event           @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   checkedInPasses AdmissionPass[]
   checkInLogs  CheckInLog[]
 
@@ -356,7 +356,7 @@ model AttendanceAccessToken {
   usedAt           DateTime? @map("used_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onUpdate: NoAction)
+  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([eventSupporterId], map: "idx_attendance_tokens_supporter")
   @@map("attendance_access_tokens")
@@ -369,7 +369,7 @@ model PaymentReference {
   amount          Int
   timestamp       DateTime      @default(now()) @db.Timestamptz(6)
   method          PaymentMethod @default(stripe)
-  square          Square        @relation(fields: [squareId], references: [squareId], onUpdate: NoAction)
+  square          Square        @relation(fields: [squareId], references: [squareId], onDelete: Restrict, onUpdate: NoAction)
 
   @@map("payment_references")
 }
