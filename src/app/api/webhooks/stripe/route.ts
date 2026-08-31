@@ -120,10 +120,41 @@ async function handleAccountUpdated(account: Stripe.Account) {
 
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  // Support both multi-square (squareIds) and legacy single (squareId)
-  const raw = session.metadata?.squareIds || session.metadata?.squareId;
-  if (!raw) return;
-  const squareIds = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  // WHICH SQUARES DID THIS SESSION BUY?
+  //
+  // Two sources, in this order:
+  //
+  //  1. `Square.checkoutSessionId` — the database. Set by the checkout route
+  //     immediately after the session is created, and the only source that
+  //     does not scale with the number of squares.
+  //  2. `metadata.squareIds` / `metadata.squareId` — the fallback.
+  //
+  // The database comes first because Stripe caps a metadata VALUE at 500
+  // characters. A square id is a 36-character uuid plus a separator, so a
+  // comma-joined list holds about thirteen before `sessions.create` starts
+  // failing outright. That was a hard ceiling on how many squares a
+  // contributor could buy at once, expressed as a Stripe error rather than as
+  // anything a product decision ever chose.
+  //
+  // THE FALLBACK IS NOT LEGACY CONVENIENCE — IT IS GAME DAY'S ONLY PATH.
+  // `checkoutSessionId` is written under `isFundraiser ? {...} : {}`, so a Game
+  // Day square never has one and would be invisible to the lookup above. It
+  // also covers any fundraiser session created before this change and still in
+  // flight. Removing it silently breaks Game Day checkout.
+  const bySession = await prisma.square.findMany({
+    where: { checkoutSessionId: session.id },
+    select: { squareId: true },
+  });
+
+  const squareIds =
+    bySession.length > 0
+      ? bySession.map((sq) => sq.squareId)
+      : (session.metadata?.squareIds || session.metadata?.squareId || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+  if (squareIds.length === 0) return;
 
   // Idempotency: if PaymentReference already exists for this session, skip
   const existing = await prisma.paymentReference.findUnique({

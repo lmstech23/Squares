@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { randomUUID } from "crypto";
+import { releaseAdmissionForBatch } from "@/lib/admission";
 import { currentPriceCents } from "@/lib/claim-price";
 import { prepareAdmission } from "@/lib/admission";
 import { baseUrlFromRequest } from "@/lib/base-url";
@@ -399,10 +400,17 @@ export async function POST(request: Request) {
     const baseUrl = baseUrlFromRequest(request);
     const boardUrl = `${baseUrl}/board/${board.slug}`;
 
-    const positions = squares
-      .map((s) => s.position + 1)
-      .sort((a, b) => a - b)
-      .join(", ");
+    const positionNumbers = squares.map((s) => s.position + 1).sort((a, b) => a - b);
+
+    // Stripe caps a metadata VALUE at 500 characters, and a product name is
+    // shown on the receipt. Ninety-seven comma-joined numbers is ~380
+    // characters of receipt line, so summarise past a threshold rather than
+    // embedding the list.
+    const POSITION_LIST_MAX = 12;
+    const positions =
+      positionNumbers.length <= POSITION_LIST_MAX
+        ? positionNumbers.join(", ")
+        : `#${positionNumbers[0]}-#${positionNumbers[positionNumbers.length - 1]}`;
 
     let session;
     try {
@@ -417,7 +425,9 @@ export async function POST(request: Request) {
                   name:
                     squareIds.length === 1
                       ? `Square #${squares[0].position + 1}`
-                      : `${squareIds.length} squares (#${positions})`,
+                      : positionNumbers.length <= POSITION_LIST_MAX
+                        ? `${squareIds.length} squares (#${positions})`
+                        : `${squareIds.length} squares (${positions})`,
                   description: board.gameName,
                 },
                 unit_amount: claimPriceCents,
@@ -426,11 +436,24 @@ export async function POST(request: Request) {
             },
           ],
           customer_email: email,
+          // COMPACT BY NECESSITY. `squareIds: squareIds.join(",")` used to
+          // live here — 36-character uuids plus separators, which overflows
+          // Stripe's 500-character metadata limit at about thirteen squares and
+          // fails session creation. The webhook now resolves squares from
+          // `Square.checkoutSessionId` instead, so the list is not needed.
+          //
+          // Game Day still sends it: those squares never get a
+          // `checkoutSessionId`, so the metadata IS the webhook's only handle
+          // on them. Its 10-square MAX_PER_CLAIM keeps it near 370 characters,
+          // inside the limit.
           metadata: {
             squareId: squareIds[0],
-            squareIds: squareIds.join(","),
             boardId: board.boardId,
             positions,
+            squareCount: String(squareIds.length),
+            ...(isFundraiser
+              ? { batchId: batchId ?? "" }
+              : { squareIds: squareIds.join(",") }),
           },
           success_url: `${boardUrl}?success=true&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${boardUrl}?cancelled=true`,
@@ -442,17 +465,68 @@ export async function POST(request: Request) {
       );
     } catch (stripeError) {
       console.error("Stripe Checkout creation failed:", stripeError);
-      await prisma.square.updateMany({
-        where: { squareId: { in: squareIds }, paymentStatus: "pending" },
-        data: {
-          paymentStatus: "open",
-          playerName: null,
-          playerEmail: null,
-          checkoutExpiresAt: null,
-          stripePaymentId: null,
-          releaseReason: "failed",
-        },
-      });
+
+      // COMPLETE ROLLBACK.
+      //
+      // This used to clear only the Game Day fields, leaving a fundraiser
+      // square `open` while still carrying batchId, holdExpiresAt,
+      // pricePaidCents, claimedAt and playerPhone. An `open` square with a
+      // price contradicts the schema's own rule that price is written when a
+      // square LEAVES open, and a retained batchId keeps an AdmissionGrant
+      // pointing at squares nobody holds.
+      //
+      // Mirrors the release in resolveExpiredHolds, which is the reference for
+      // what "back to open" means on a fundraiser board.
+      try {
+        await prisma.square.updateMany({
+          where: { squareId: { in: squareIds }, paymentStatus: "pending" },
+          data: {
+            paymentStatus: "open",
+            playerName: null,
+            playerEmail: null,
+            playerPhone: null,
+            checkoutExpiresAt: null,
+            stripePaymentId: null,
+            releaseReason: "failed",
+            ...(isFundraiser
+              ? {
+                  batchId: null,
+                  holdExpiresAt: null,
+                  checkoutSessionId: null,
+                  pricePaidCents: null,
+                  claimedAt: null,
+                }
+              : {}),
+          },
+        });
+
+        // The grant and supporter were created by THIS request, inside the
+        // lock transaction, before Stripe was called. They are orphaned only
+        // because this request failed, so this request cleans them up.
+        // Idempotent and guarded: it refuses to delete while any square in the
+        // batch is still live, and never touches an active supporter.
+        if (isFundraiser && batchId) {
+          await releaseAdmissionForBatch(batchId);
+        }
+      } catch (rollbackError) {
+        // DISTINCT, not folded into a generic 500. This is the only path that
+        // can leave squares `pending` with no Stripe session behind them, and
+        // it needs to be findable in logs by its own name.
+        //
+        // Recovery is already covered, verified rather than assumed:
+        //   fundraiser -> resolveHoldBatch selects on batchId, finds no
+        //     checkoutSessionId, and its no-session branch releases the batch
+        //     ("nothing that could still pay").
+        //   game day   -> a failed updateMany writes NOTHING, so the square
+        //     keeps paymentStatus 'pending' AND checkoutExpiresAt, which is
+        //     exactly what the cron's Game Day sweep selects on.
+        // No extra recovery is added here because both paths already resolve.
+        console.error(
+          "CHECKOUT_ROLLBACK_FAILED: squares may remain pending until the cron " +
+            "sweeps them.",
+          { squareIds, batchId, isFundraiser, rollbackError }
+        );
+      }
 
       return NextResponse.json(
         { error: "Payment setup failed. Please try again." },
