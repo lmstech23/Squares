@@ -461,17 +461,91 @@ Setup crew · 8:00–10:00 AM      FULL
 Cases of water                  3 of 6 needed   [ − 2 + ]  [ Sign up ]
 ```
 
-**Capacity is enforced by the unique constraint, not by a counter.** One transaction: insert or find the `HelperSignup`, read the taken positions, insert N `HelperSignupPosition` rows at the lowest free numbers. On unique violation anywhere, roll back, re-read, retry once, then report what is actually left. Two parents tapping the last gate opening at the same moment is the double-booking problem from the grid, and it gets the proven answer rather than a `filledCount` column that drifts.
+### The API sets a TARGET TOTAL, never a delta — ruled 2026-08-31
 
-**All or nothing.** A supporter who asked for 3 cases and can only get 2 is told what remains and re-confirms. Never silently give them fewer — a host reading "3 cases" who receives 2 has a real problem at 8am.
+**This replaces the additive wording earlier versions of this section carried.**
+The supporter submits the quantity she wants to hold **after** the request
+completes, not an amount to add or remove:
 
-Adding to an existing commitment inserts more position rows against the same `HelperSignup`. There is no counter to update and no second commitment to create — the unique constraint makes that the only possible shape, which is the point.
+| current | target | result |
+|---|---|---|
+| 0 | 2 | 2 positions created |
+| 2 | 2 | **no-op** |
+| 2 | 4 | 2 positions added |
+| 4 | 2 | 2 positions removed, commitment stands |
+| 2 | 0 | commitment cancelled |
+
+A `SHIFT` uses the same model with valid targets of **0 or 1**.
+
+**This is what makes replay harmless, and it is why no claim idempotency key
+exists.** A delta API is not idempotent: a supporter who double-taps "Sign up"
+for 2 cases ends up owing 4, and a request that timed out after succeeding adds
+2 more on retry. With a target total, the second request computes a delta of
+zero and changes nothing. Same for cancellation.
+
+That closes the gap without a request-id column, an `If-Match` header, or any
+new dedupe mechanism — the operation is idempotent by shape rather than by
+bookkeeping. **Do not add a claim idempotency key unless some later requirement
+actually needs one.**
+
+**The UI must express the same model.** The `[− 2 +]` stepper is the supporter's
+DESIRED TOTAL, not "add 2". A stepper that means "add" while the server means
+"set" is the same class of mismatch as a toggle that silently reassigns an
+unsaved draft.
+
+### Reduction deletes the HIGHEST-numbered positions first
+
+Positions are fungible reusable capacity markers, not stable credentials — the
+documented divergence from `AdmissionPass.sequenceNumber`. Nothing distinguishes
+one case of water from another, so *which* rows go is a free choice, and leaving
+it unspecified would let two conformant implementations differ.
+
+Highest-first keeps the occupied range dense at `1..n`, which pairs with the
+existing rule that a new claim takes **the lowest free numbers**. Together they
+mean a slot tends toward contiguous occupancy rather than accumulating holes.
+
+**Capacity is enforced by the unique constraint, not by a counter.** One
+transaction, holding `SELECT ... FOR UPDATE` on the `SignupSlot` row:
+
+```
+lock the slot row
+read this supporter's current positions
+read every occupied position on the slot
+compute the delta needed to reach the requested target
+validate against capacity
+insert at the lowest free numbers, or delete the highest-numbered first
+commit
+```
+
+On unique violation anywhere, roll back, re-read, retry once, then report what
+is actually left. Two parents tapping the last gate opening at the same moment
+is the double-booking problem from the grid, and it gets the proven answer
+rather than a `filledCount` column that drifts.
+
+**The slot row lock is required, not an optimization.** Capacity is not a
+database constraint on claiming — `unique (slotId, position)` prevents two
+people taking the same seat, but the ceiling itself is applied in code. S2's
+capacity edit takes a row lock on the same slot via its conditional `UPDATE`, so
+with this lock a capacity reduction and a claim serialize. Without it, capacity
+is advisory and a claim can slip past a ceiling that was lowered a moment
+earlier.
+
+**All or nothing.** A supporter who asked for 3 cases and can only get 2 is told
+what remains and re-confirms. Never silently give them fewer — a host reading
+"3 cases" who receives 2 has a real problem at 8am.
+
+There is never a second commitment to create: `unique (slotId, eventSupporterId)`
+makes one-per-person-per-slot the only possible shape, which is the point.
 
 ### Cancellation frees the positions
 
 This is where sign-ups deliberately **diverge from passes**. `AdmissionPass.sequenceNumber` is monotonic and never reused, because a pass is an entitlement and reuse would be a security question. A slot position is a seat, not a credential. Cancelling deletes the commitment, cascades its positions, and those numbers become claimable again.
 
-Partial cancellation on an `ITEM` — dropping from 4 cases to 2 — deletes 2 position rows and leaves the commitment standing. The displayed quantity follows automatically because it was never stored. On a `SHIFT` there is nothing partial to do; dropping the one position drops the commitment.
+Partial reduction on an `ITEM` — dropping from 4 cases to 2 — is expressed as a
+target of 2, which removes the **two highest-numbered** position rows and leaves
+the commitment standing. The displayed quantity follows automatically because it
+was never stored. On a `SHIFT` there is nothing partial to do: the only targets
+are 1 and 0, and 0 drops the commitment.
 
 Cancel writes a `SignupLog` row. Nothing else is retained.
 
