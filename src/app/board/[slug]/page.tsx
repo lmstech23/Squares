@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
+import { earlyBirdActive } from "@/lib/claim-price";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
@@ -166,10 +167,15 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
 
     // Whether the early bird price is still in effect. Decided here rather
     // than in the view, which stays pure.
-    const earlyBirdActive =
-      board.earlyBirdPriceCents != null &&
-      board.earlyBirdEndsAt != null &&
-      board.earlyBirdEndsAt > new Date();
+    // The SAME predicate claim-price.ts charges on. This was an inline copy of
+    // the comparison, which is exactly the drift the shared helper exists to
+    // prevent: a promotion keyed on its own arithmetic can advertise a discount
+    // the checkout no longer applies.
+    const earlyBirdIsActive = earlyBirdActive({
+      squarePrice: board.squarePrice,
+      earlyBirdPriceCents: board.earlyBirdPriceCents,
+      earlyBirdEndsAt: board.earlyBirdEndsAt,
+    });
 
     return (
       <FundraiserView
@@ -184,7 +190,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         squarePrice={board.squarePrice}
         earlyBirdPriceCents={board.earlyBirdPriceCents}
         earlyBirdEndsAt={board.earlyBirdEndsAt}
-        earlyBirdActive={earlyBirdActive}
+        earlyBirdActive={earlyBirdIsActive}
         timezone={board.timezone}
         raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
         goalCents={board.fundraisingGoalCents}

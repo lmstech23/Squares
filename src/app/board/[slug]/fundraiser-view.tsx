@@ -69,6 +69,14 @@ interface Props {
   } | null;
 }
 
+function shortDate(date: Date, timeZone: string | null): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: timeZone ?? "America/New_York",
+  }).format(date);
+}
+
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
     minimumFractionDigits: 0,
@@ -105,7 +113,6 @@ export default function FundraiserView({
   // Selection lives on the board, so the checkout button can say how many
   // tickets are being bought before the sheet opens.
   const router = useRouter();
-  const [picked, setPicked] = useState<string[]>([]);
 
   // A hold this browser started, remembered at claim time. The server
   // timestamp is the truth; this is only how we know to show a countdown to
@@ -212,6 +219,36 @@ export default function FundraiserView({
 
   const currentPrice = showSchedule ? earlyBirdPriceCents : squarePrice;
 
+  // Early-bird promotion, from the SAME predicate that decides what is charged
+  // (claim-price.ts). Keying a badge on `earlyBirdPriceCents != null` alone
+  // would keep advertising the discount after the window closed.
+  // `earlyBirdActive` is the PROP, decided by the caller from
+  // earlyBirdActive() in claim-price.ts — the same predicate
+  // currentPriceCents() charges on. The view stays pure and does not re-derive
+  // "is the window still open" from a timestamp.
+  const showEarlyBird =
+    earlyBirdActive && earlyBirdPriceCents != null && earlyBirdEndsAt != null;
+
+  // CTA language follows what the buyer actually receives.
+  //
+  // PRECEDENCE IS EXPLICIT, not `&&` ordering, so a Phase B board that is both
+  // ticketed and prize-bearing cannot silently change wording when
+  // prizePoolPercent goes above zero.
+  //
+  //   hasEvent  -> "Purchase tickets"        admission is something they need
+  //                                          at a gate; on a board that is
+  //                                          both, that is the more
+  //                                          consequential fact
+  //   hasPrize  -> "Get entries"             a drawing, gated on
+  //                                          prizePoolPercent > 0, never on
+  //                                          board type
+  //   otherwise -> "Support this fundraiser"
+  const ctaLabel = hasEvent
+    ? `Purchase tickets — ${money(currentPrice)}`
+    : hasPrize
+      ? `Get entries — ${money(currentPrice)}`
+      : `Support this fundraiser — ${money(currentPrice)}`;
+
   // Clamped at 100% when raised exceeds the goal — the real figure still shows
   // above the bar. v2 §7.
   const pct =
@@ -225,20 +262,49 @@ export default function FundraiserView({
         {/* What is this */}
         <h1 className="text-xl font-bold leading-tight">{title}</h1>
         {causeDescription && (
-          <p className="text-sm text-gray-400 mt-1.5 leading-relaxed">
+          /* The reason a stranger gives. Someone arriving from a group text
+             reads this before anything else, so it is body copy, not the
+             metadata line it used to be under the title. */
+          <p className="text-base text-gray-200 mt-2.5 leading-relaxed">
             {causeDescription}
           </p>
         )}
-        <p className="text-sm text-gray-500 mt-2">
-          {/* Same string the host header renders, from the same helper in
-              claim-price.ts. Previously this logic lived only here, which is
-              why the host view showed a bare full price. */}
-          {priceScheduleLabel(
-            { squarePrice, earlyBirdPriceCents, earlyBirdEndsAt, timezone },
-            new Date()
-          )}
-          {hostName && <span> · hosted by {hostName}</span>}
-        </p>
+
+        {/* Price. When an early-bird window is OPEN this is a promotion: the
+            price you pay now is the headline, the deadline and the regular
+            price are the fine print underneath.
+
+            `showEarlyBird` comes from earlyBirdActive() in claim-price.ts — the
+            same predicate currentPriceCents() charges on. A badge keyed only on
+            earlyBirdPriceCents being set would keep advertising a discount
+            after the window closed. */}
+        {showEarlyBird ? (
+          <div className="mt-3 rounded-lg border border-green-800/60 bg-green-950/30 px-3.5 py-3">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-300">
+                Early bird
+              </span>
+              <span className="text-xl font-bold text-white tabular-nums">
+                {money(earlyBirdPriceCents!)}
+              </span>
+              <span className="text-sm text-gray-400">per square</span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              Through {shortDate(earlyBirdEndsAt!, timezone)} · then{" "}
+              {money(squarePrice)}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 mt-2">
+            {priceScheduleLabel(
+              { squarePrice, earlyBirdPriceCents, earlyBirdEndsAt, timezone },
+              new Date()
+            )}
+          </p>
+        )}
+        {hostName && (
+          <p className="text-xs text-gray-600 mt-2">hosted by {hostName}</p>
+        )}
 
         {/* How's it going. `raised` is a sum of pricePaidCents, never a count
             multiplied by a price — invariant 43. The qualifier matters: a bare
@@ -350,9 +416,7 @@ export default function FundraiserView({
             disabled={openCount === 0}
             className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {openCount === 0
-              ? "Every square is claimed"
-              : `Claim a square — ${money(currentPrice)}`}
+            {openCount === 0 ? "Every square is claimed" : ctaLabel}
           </button>
         </div>
         )}
@@ -360,30 +424,22 @@ export default function FundraiserView({
         {/* The board is the visualization; the button is the action. Nobody
             should have to study the grid to work out what to do. */}
         <div className="mt-6">
-          <FundraiserGrid
-            squares={squares}
-            selected={picked}
-            onToggle={(squareId) =>
-              setPicked((prev) =>
-                prev.includes(squareId)
-                  ? prev.filter((id) => id !== squareId)
-                  : prev.length >= 10
-                    ? prev
-                    : [...prev, squareId]
-              )
-            }
-          />
+          {/* PROGRESS AND AVAILABILITY, NOT A PICKER. Purchase is
+              quantity-first: the sheet assigns the next open squares. A grid
+              that also sold squares would be a second purchase model, and two
+              models means two sets of edge cases for one job. */}
+          <FundraiserGrid squares={squares} />
         </div>
 
+        {/* selectedCount is always 0: nothing on this page selects squares any
+            more — the sheet assigns them from a quantity. The prop stays in the
+            HowItWorks API because Game Day still passes a real count. */}
         <div className="mt-6">
           <HowItWorks
             hasEvent={hasEvent}
             hasPrize={hasPrize}
-            selectedCount={picked.length}
-            onCheckout={() => {
-              setReclaim(picked);
-              setClaiming(true);
-            }}
+            selectedCount={0}
+            onCheckout={() => setClaiming(true)}
           />
         </div>
 

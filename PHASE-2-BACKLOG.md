@@ -453,3 +453,37 @@ whether it exists in Vercel. Needed: a destination on the **platform** account
 listening for `checkout.session.completed` at
 `https://beta.daali.app/api/webhooks/stripe-platform`, its signing secret in
 Vercel, then a redeploy.
+
+## Should fundraiser boards have a true per-supporter cap?
+
+**Added:** 2026-08-31
+**Status:** open product question. Today the answer is accidentally "no".
+
+`Board.maxSquaresPerPlayer` exists but is **Game Day only**:
+
+- `api/checkout/route.ts` enforces it at lines 270 and 374, both behind
+  `!isFundraiser`
+- it is hard-coded to `10` at creation, `api/boards/route.ts:420`
+- no fundraiser form exposes it, and it never reaches the fundraiser view
+
+So a fundraiser contributor may claim any number of squares across repeated
+checkouts, and nothing stops them. That is not a decision anyone made — it is
+what falls out of the Game Day guard.
+
+The contributor UI uses `MAX_PER_CLAIM` (`src/lib/claim-limits.ts`), which is a
+per-TRANSACTION affordance and says so. It is not a per-person cap and must not
+be described as one.
+
+**Answering the question needs three things, not one:**
+
+1. a field on the fundraiser creation form — reusing `maxSquaresPerPlayer`
+   would be reusing a Game Day rule for a different meaning
+2. server enforcement on the fundraiser path, counting across a supporter's
+   prior confirmed squares rather than per request
+3. a ruling on whether invariant 16 covers it. It is not in the invariant's
+   list today. If a cap is a term of the deal, it should lock after the first
+   confirmed contribution; if it is aspirational like the goal, it should not.
+
+Worth considering alongside: whether a cap should apply per `EventSupporter`
+(identity-keyed by email, so it survives separate checkouts) or per square
+claim. The supporter identity already exists and is the natural unit.
