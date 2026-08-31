@@ -9,6 +9,7 @@ import ScoreEntry from "./score-entry";
 import CashModeToggle from "./cash-mode-toggle";
 import CashReservePanel from "./cash-reserve-panel";
 import SquareList from "./square-list";
+import { priceScheduleLabel } from "@/lib/claim-price";
 import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
@@ -269,8 +270,23 @@ export default async function HostBoardPage({ params }: Props) {
           ← Back to Boards
         </Link>
         <h1 className="text-xl font-bold">{board.gameName}</h1>
+        {/* The CURRENT contribution price, including an active early-bird
+            window. This read `${board.squarePrice / 100} per square`
+            unconditionally, so a host with early bird running saw the full
+            price while her contributors were being charged the early one —
+            the host could not see what people were actually paying.
+            priceScheduleLabel is the same predicate claim-price.ts charges on;
+            display never re-derives the rule. */}
         <p className="text-sm text-gray-500 mt-0.5">
-          ${board.squarePrice / 100} per square
+          {priceScheduleLabel(board)}
+        </p>
+        {/* Raised is the SUM of locked pricePaidCents over confirmed squares,
+            never price × count — invariant 43. With an early-bird window there
+            is no single price to multiply by. This reuses the aggregate already
+            computed above for FundraiserPanel; no extra query. */}
+        <p className="text-sm text-gray-400 mt-0.5">
+          {`$${(((board.finalRaisedCents ?? raised._sum.pricePaidCents) ?? 0) / 100).toFixed(2)} raised`}
+          {` · ${byStatus("paid").length} of ${board.totalSquares} squares confirmed`}
         </p>
         {board.causeDescription && (
           <p className="text-sm text-gray-400 mt-1.5">{board.causeDescription}</p>

@@ -1,5 +1,6 @@
 "use client";
 
+import { priceScheduleLabel } from "@/lib/claim-price";
 import { useEffect, useState } from "react";
 import FundraiserGrid from "./fundraiser-grid";
 import ClaimSheet from "./claim-sheet";
@@ -75,14 +76,6 @@ function money(cents: number): string {
 }
 
 /** "Sept 15" in the board's own timezone, never the server's. */
-function shortDate(date: Date, timeZone: string | null): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: timeZone ?? "America/New_York",
-  }).format(date);
-}
-
 export default function FundraiserView({
   title,
   causeDescription,
@@ -175,13 +168,12 @@ export default function FundraiserView({
           </p>
         )}
         <p className="text-sm text-gray-500 mt-2">
-          {showSchedule ? (
-            <>
-              {money(earlyBirdPriceCents!)} per square through{" "}
-              {shortDate(earlyBirdEndsAt, timezone)}, then {money(squarePrice)}
-            </>
-          ) : (
-            <>{money(squarePrice)} per square</>
+          {/* Same string the host header renders, from the same helper in
+              claim-price.ts. Previously this logic lived only here, which is
+              why the host view showed a bare full price. */}
+          {priceScheduleLabel(
+            { squarePrice, earlyBirdPriceCents, earlyBirdEndsAt, timezone },
+            new Date()
           )}
           {hostName && <span> · hosted by {hostName}</span>}
         </p>
