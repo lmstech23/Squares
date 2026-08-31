@@ -278,17 +278,22 @@ capacity                   capacity >= 1
 
 Both come straight from the field table: *"`startsAt`, `endsAt` — `SHIFT` only. Null on `ITEM`"* and *"`unitLabel` — `ITEM` only."*
 
-**UNRESOLVED — is a `SHIFT` required to have both `startsAt` and `endsAt`?**
+### SHIFT times — ruled 2026-08-31
 
-This document is **silent**. It says the columns are `DateTime?`, that they are SHIFT-only, and that they are null on ITEM. It never says a SHIFT must have them, nor whether an open-ended shift ("Main gate, come when you can") is allowed. §12 notes only that *"`SignupSlot.startsAt` exists"* as the hook for future reminder emails, which implies it is usually present without requiring it.
+**A `SHIFT` requires `startsAt`. `endsAt` is optional.**
 
-Three readings, all defensible, none stated:
+```
+slotType = 'ITEM' OR startsAt IS NOT NULL
+slotType != 'ITEM' OR (startsAt IS NULL AND endsAt IS NULL)
+endsAt IS NULL OR endsAt > startsAt
+unitLabel IS NULL OR slotType = 'ITEM'
+```
 
-1. `SHIFT` requires **both** — `startsAt IS NOT NULL AND endsAt IS NOT NULL`
-2. `SHIFT` requires **`startsAt` only**, `endsAt` optional
-3. Neither required — a `SHIFT` is just a slot the host chose to call a shift
+**Why start is required.** A shift with no start time is really a role or an item — "someone to handle the grill" is a thing, not a time — and allowing it collapses the distinction the two `slotType` values exist to draw. The moment a `SHIFT` can have no time, `SHIFT` and `ITEM` differ only by which label the host happened to pick, and the enum stops meaning anything.
 
-**No CHECK for this is written until it is ruled.** Adding the strict version and being wrong means a migration to relax it; adding nothing and tightening later is a data-cleanup problem. Reported rather than inferred.
+**Why end is not.** Requiring one would force a host to invent a time for work that finishes when it finishes. "Cleanup after the game" ends when the lot is clear. A made-up end time is worse than an absent one: it appears on the sheet, a helper plans around it, and it was never true.
+
+`endsAt > startsAt` where both are present, so an open-ended shift is expressible and a backwards one is not.
 
 **`Event.boardId` stays required and unique.** No migration. There is no standalone sheet (invariant 43). If standalone ever ships it is a deliberate schema decision made then, with a real onboarding flow behind it, not an accident preserved now.
 

@@ -224,6 +224,7 @@ model Event {
   grants           AdmissionGrant[]
   checkinStaff     CheckinStaffAccess[]
   checkInLogs      CheckInLog[]
+  signupSheet      SignupSheet?
 
   @@map("events")
 }
@@ -250,7 +251,10 @@ model EventSupporter {
   event   Event                     @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   grants  AdmissionGrant[]
   passes  AdmissionPass[]
-  tokens  AttendanceAccessToken[]
+  tokens  SupporterAccessToken[]
+  signups HelperSignup[]
+  signupLogs SignupLog[]
+  notifications NotificationDelivery[]
 
   @@unique([eventId, identityKey], map: "event_supporters_event_identity_key")
   @@map("event_supporters")
@@ -273,6 +277,11 @@ model AdmissionGrant {
   donateAdmissions   Boolean              @default(false) @map("donate_admissions")
   /// Unused since v2.0 removed the declaration model. Retained, nullable.
   declaredAtPurchase Int?                 @map("declared_at_purchase")
+  /// The help checkbox. INTENT ONLY — it never claims, reserves or holds a
+  /// slot (invariant 36). Interest is a one-way OR across grants, read as
+  /// EXISTS (grant WHERE wantsToHelp), never stored on the supporter.
+  /// Sign-up addendum §4.
+  wantsToHelp        Boolean              @default(false) @map("wants_to_help")
   createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
 
   event     Event          @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -362,20 +371,35 @@ model CheckinStaffAccess {
   @@map("volunteer_access")
 }
 
-/// 20-minute single-use link for Manage attendance. Hashed — the raw value
-/// exists only in the email. Flow: v2 §6A.
-model AttendanceAccessToken {
+/// Supporter-scoped access link — sign-up addendum §3.
+///
+/// REUSABLE, not single-use. A supporter returns to this link to change her
+/// commitment, and §5b's SIGNUP_LINK dedupe key is `supporter:{id}` precisely so
+/// a second contribution does not mail a second copy of a link she already has.
+/// `usedAt` is gone: a token burned on first open contradicts both.
+///
+/// PHYSICALLY RENAMED from `attendance_access_tokens`, unlike the S0 rename
+/// which pinned with @@map. S0 pinned because `volunteer_access` held issued
+/// records and a rolling deploy would break the gate mid-event. This table had
+/// zero rows and zero code references, so there was nothing to break and
+/// pinning would have left a third naming layer.
+///
+/// `expiresAt` is event-lifecycle based, not a short fixed window — the link
+/// must work from confirmation until the host stops needing helpers, which is
+/// weeks. The exact expression is an S3 decision; S1 only needs the column.
+model SupporterAccessToken {
   id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   eventSupporterId String    @map("event_supporter_id") @db.Uuid
-  tokenHash        String    @map("token_hash")
+  /// Hashed at rest. A database read never yields a working credential.
+  tokenHash        String    @unique @map("token_hash")
   expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
-  usedAt           DateTime? @map("used_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@index([eventSupporterId], map: "idx_attendance_tokens_supporter")
-  @@map("attendance_access_tokens")
+  @@index([eventSupporterId], map: "idx_supporter_access_tokens_supporter")
+  @@map("supporter_access_tokens")
 }
 
 model PaymentReference {
@@ -561,4 +585,224 @@ model HbcuOrg {
   createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@map("hbcu_orgs")
+}
+
+//
+// Sign-up sheets — fundraiser-signup-addendum.md §3 (build step S1).
+//
+// Event ──optional──▶ SignupSheet ──▶ SignupSlot × N
+//                                          │
+//                     EventSupporter ──▶ HelperSignup ──▶ HelperSignupPosition × N
+//
+// No sign-up column lands on Board, Square, or AdmissionPass. AdmissionGrant
+// gains `wantsToHelp` and nothing else — intent, never entitlement.
+//
+// A helper signup grants no square, no drawing entry, no admission pass, and no
+// check-in authority (invariants 34, 41). Check-in authority originates only
+// from a host-issued CheckinStaffAccess link.
+//
+
+/// One sheet per event. Optional — an event without one simply has no sheet.
+model SignupSheet {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  eventId      String    @unique @map("event_id") @db.Uuid
+  title        String?
+  instructions String?
+  /// The host closes sign-ups independently of board close. An event happens
+  /// after the campaign ends, so the two lifecycles are not the same one.
+  isOpen       Boolean   @default(true) @map("is_open")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event Event        @relation(fields: [eventId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  slots SignupSlot[]
+
+  @@map("signup_sheets")
+}
+
+/// A named thing with N openings. ONE TABLE FOR BOTH KINDS: six people on the
+/// gate and six cases of water are both `capacity = 6`. A second table would
+/// duplicate every claim, cancel and concurrency path for no gain.
+model SignupSlot {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sheetId   String    @map("sheet_id") @db.Uuid
+  slotType  SlotType  @map("slot_type")
+  name      String
+  /// SHIFT requires startsAt; endsAt is optional. A shift with no start is
+  /// really a role or an item, which collapses the SHIFT/ITEM distinction —
+  /// but requiring an end would force a host to invent a time for work that
+  /// finishes when it finishes. Enforced by CHECK constraints in the migration.
+  startsAt  DateTime? @map("starts_at") @db.Timestamptz(6)
+  endsAt    DateTime? @map("ends_at") @db.Timestamptz(6)
+  /// Claimable positions. `capacity >= 1` is a CHECK, not a validation.
+  capacity  Int
+  /// ITEM only. "case of water", "dozen cookies".
+  unitLabel String?   @map("unit_label")
+  notes     String?
+  /// Host-ordered. Deliberately NOT derived from time — an ITEM has none.
+  sortOrder Int       @default(0) @map("sort_order")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  sheet     SignupSheet            @relation(fields: [sheetId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  signups   HelperSignup[]
+  positions HelperSignupPosition[]
+  logs      SignupLog[]
+
+  @@index([sheetId, sortOrder], map: "idx_signup_slots_sheet_order")
+  @@map("signup_slots")
+}
+
+/// One commitment per supporter per slot — the row a human thinks about.
+///
+/// THERE IS NO `quantity` COLUMN. Quantity is count(HelperSignupPosition).
+/// Storing it would state the same fact twice, and the drift is real: a partial
+/// failure leaves quantity = 4 against three positions, and the roster and the
+/// slot remaining count then disagree. The API still accepts `quantity: 4` as
+/// input; the database keeps no second copy of the answer.
+model HelperSignup {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slotId           String   @map("slot_id") @db.Uuid
+  eventSupporterId String   @map("event_supporter_id") @db.Uuid
+  note             String?
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  slot      SignupSlot             @relation(fields: [slotId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  supporter EventSupporter         @relation(fields: [eventSupporterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  positions HelperSignupPosition[]
+
+  /// One commitment per person per slot.
+  @@unique([slotId, eventSupporterId], map: "helper_signups_slot_supporter_key")
+  /// FK TARGET ONLY. Exists so HelperSignupPosition can reference
+  /// (helperSignupId, slotId) compositely — see that model.
+  @@unique([id, slotId], map: "helper_signups_id_slot_key")
+  @@index([eventSupporterId], map: "idx_helper_signups_supporter")
+  @@map("helper_signups")
+}
+
+/// One row per claimed capacity position — the row the database thinks about.
+///
+/// `slotId` is DENORMALIZED ON PURPOSE so that (slotId, position) — the
+/// capacity rule — is a plain single-table unique index. Postgres cannot
+/// express the alternative: a partial unique index predicate may only reference
+/// columns on its own table, and slotType lives on SignupSlot.
+///
+/// THE COMPOSITE FOREIGN KEY IS WHAT MAKES THAT DENORMALIZATION TRUSTWORTHY.
+/// Two independent FKs would let a position carrying the setup shift slotId
+/// attach to a water commitment: both FKs satisfied, (slotId, position) still
+/// unique, and the roster quietly wrong with no constraint to catch it.
+/// (helperSignupId, slotId) -> HelperSignup (id, slotId) makes that row
+/// impossible to insert rather than merely unlikely.
+///
+/// A SHIFT commitment holds exactly one position. That rule reads slot.slotType
+/// from another table, so it cannot be a CHECK — src/lib/signups.ts is its sole
+/// enforcement point.
+model HelperSignupPosition {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  helperSignupId String @map("helper_signup_id") @db.Uuid
+  slotId         String @map("slot_id") @db.Uuid
+  /// 1…capacity. Freed for reuse on cancellation — a position is a seat, not a
+  /// credential, which is where sign-ups deliberately diverge from passes.
+  position       Int
+
+  signup HelperSignup @relation(fields: [helperSignupId, slotId], references: [id, slotId], onDelete: Cascade, onUpdate: NoAction)
+  slot   SignupSlot   @relation(fields: [slotId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// Capacity safety under concurrency. No mutable counter exists anywhere.
+  @@unique([slotId, position], map: "helper_signup_positions_slot_position_key")
+  @@map("helper_signup_positions")
+}
+
+/// Every claim, addition, cancel and host removal (invariant 40).
+///
+/// FKs are NON-NULLABLE under Restrict: the audit trail is preserved by
+/// preventing deletion of the referenced rows, not by nulling these columns.
+/// A log entry that has forgotten which slot it described is not an audit
+/// trail. It references slotId and eventSupporterId and NEVER helperSignupId,
+/// so cancellation — which deletes the commitment and cascades its positions —
+/// touches nothing this table depends on.
+model SignupLog {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slotId           String       @map("slot_id") @db.Uuid
+  eventSupporterId String       @map("event_supporter_id") @db.Uuid
+  action           SignupAction
+  actorType        ActorType    @map("actor_type")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  slot      SignupSlot     @relation(fields: [slotId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([slotId, createdAt], map: "idx_signup_logs_slot_created")
+  @@map("signup_logs")
+}
+
+/// Outbound delivery record — sign-up addendum §5b. Schema only in S1; the
+/// sender and the retry cron are S4.
+///
+/// The dedupe key names THE THING BEING COMMUNICATED, not the supporter:
+///   SIGNUP_LINK            supporter:{eventSupporterId}   one per supporter, ever
+///   CONTRIBUTION_CONFIRMED grant:{admissionGrantId}       one per contribution
+/// A supporter-scoped key would be right for the link and WRONG for receipts —
+/// a parent who buys in September and again in October deserves two.
+model NotificationDelivery {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationType  NotificationType   @map("notification_type")
+  dedupeKey         String             @map("dedupe_key")
+  /// For querying and the host panel. NOT part of any uniqueness rule.
+  eventSupporterId  String             @map("event_supporter_id") @db.Uuid
+  status            NotificationStatus @default(pending)
+  /// Incremented when an attempt BEGINS, not when it settles.
+  attempts          Int                @default(0)
+  /// Lease held by a worker. Null when unclaimed.
+  lockedAt          DateTime?          @map("locked_at") @db.Timestamptz(6)
+  /// Fencing token — a new UUID on every claim. A stale worker holding an old
+  /// token can never overwrite a newer result.
+  lockToken         String?            @map("lock_token")
+  nextAttemptAt     DateTime           @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  providerMessageId String?            @map("provider_message_id")
+  lastError         String?            @map("last_error")
+  sentAt            DateTime?          @map("sent_at") @db.Timestamptz(6)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([notificationType, dedupeKey], map: "notification_deliveries_type_key_key")
+  /// The retry cron claim query scans exactly these two columns every run.
+  @@index([status, nextAttemptAt], map: "idx_notification_deliveries_claim")
+  @@map("notification_deliveries")
+}
+
+enum SlotType {
+  SHIFT
+  ITEM
+
+  @@map("slot_type")
+}
+
+enum SignupAction {
+  CLAIMED
+  CANCELLED
+  HOST_REMOVED
+
+  @@map("signup_action")
+}
+
+enum ActorType {
+  SUPPORTER
+  HOST
+
+  @@map("actor_type")
+}
+
+enum NotificationType {
+  CONTRIBUTION_CONFIRMED
+  SIGNUP_LINK
+
+  @@map("notification_type")
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+
+  @@map("notification_status")
 }

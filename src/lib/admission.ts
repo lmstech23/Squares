@@ -157,11 +157,28 @@ export async function releaseAdmissionForBatch(
 
   const supporter = await prisma.eventSupporter.findUnique({
     where: { id: grant.eventSupporterId },
-    select: { id: true, status: true, _count: { select: { grants: true } } },
+    select: {
+      id: true,
+      status: true,
+      _count: { select: { grants: true, signups: true } },
+    },
   });
 
   // Active means she has passes. Never delete her, whatever else is true.
-  if (!supporter || supporter.status !== "pending" || supporter._count.grants > 0) {
+  //
+  // A supporter holding ANY HelperSignup is never deleted either, at any
+  // status — sign-up addendum §9, invariant 42. With donors-only absolute this
+  // clause is unreachable today: every helper is `active`, and the status check
+  // above already stops there. It is here anyway as the safety net for any
+  // future path that lets a non-active supporter hold a commitment. Deleting a
+  // supporter out from under a live commitment is the kind of thing that gets
+  // discovered at 6am on event day.
+  if (
+    !supporter ||
+    supporter.status !== "pending" ||
+    supporter._count.grants > 0 ||
+    supporter._count.signups > 0
+  ) {
     return { grantsDeleted: 1, supportersDeleted: 0 };
   }
 
