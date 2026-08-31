@@ -51,10 +51,10 @@ function ticketBlocks(tokens: string[], base: string): string {
       (token, i) => `
       <tr><td style="padding:16px 0;border-top:1px solid #e5e5e5;">
         <p style="margin:0 0 8px;font:600 14px system-ui,sans-serif;">
-          Ticket ${i + 1} of ${tokens.length}
+          Pass ${i + 1} of ${tokens.length}
         </p>
         <img src="${base}/api/tickets/${encodeURIComponent(token)}/qr"
-             alt="Ticket ${i + 1} QR code"
+             alt="Admission pass ${i + 1} QR code"
              width="160" height="160"
              style="display:block;border:0;" />
       </td></tr>`
@@ -207,7 +207,7 @@ export async function sendPendingConfirmations(where: {
           ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:8px;">
                <tr><td style="padding-bottom:4px;">
                  <p style="margin:0;font:600 14px system-ui,sans-serif;">
-                   ${passes.length} ${passes.length === 1 ? "Ticket" : "Tickets"}
+                   ${passes.length} ${passes.length === 1 ? "Pass" : "Passes"}
                  </p>
                  <p style="margin:4px 0 0;font:13px system-ui,sans-serif;color:#666;">
                    Show a code at the gate. Each admits one person, so you can
@@ -217,7 +217,7 @@ export async function sendPendingConfirmations(where: {
                    batchId
                      ? `<p style="margin:8px 0 0;font:13px system-ui,sans-serif;">
                           <a href="${base}/passes/${encodeURIComponent(batchId)}"
-                             style="color:#166534;">View your tickets</a>
+                             style="color:#166534;">View your passes</a>
                           — keep this link in case the email is gone.
                         </p>`
                      : ""

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ADMISSION } from "@/lib/board-vocabulary";
 
 // One ticket, individually shareable — fundraiser-board-v2.md §6.
 //
@@ -29,7 +30,7 @@ export default function PassRow({ token, ordinal, total, used, label }: Props) {
     // opened. Clipboard is the fallback everywhere else.
     try {
       if (navigator.share) {
-        await navigator.share({ title: `Ticket ${ordinal} of ${total}`, url });
+        await navigator.share({ title: `${ADMISSION.One} ${ordinal} of ${total}`, url });
         return;
       }
     } catch {
@@ -50,7 +51,7 @@ export default function PassRow({ token, ordinal, total, used, label }: Props) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">
-            Ticket {ordinal} of {total}
+            {ADMISSION.One} {ordinal} of {total}
           </p>
           {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
           {used && (
@@ -74,7 +75,7 @@ export default function PassRow({ token, ordinal, total, used, label }: Props) {
             render identically here and in the email. */}
         <img
           src={`/api/tickets/${encodeURIComponent(token)}/qr`}
-          alt={`Ticket ${ordinal} QR code`}
+          alt={`${ADMISSION.One} ${ordinal} QR code`}
           width={200}
           height={200}
           className={`rounded bg-white p-2 ${used ? "opacity-40" : ""}`}

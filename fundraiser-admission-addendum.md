@@ -52,16 +52,20 @@ Not worth it. Most buyers at a school tailgate are local parents bringing the pe
 UI naming is fixed:
 
 ```
-Square #23
-Entry #23      the drawing entry, derived from the Square — no table
-4 Tickets      event admission
+Square          a position on a Game Day board
+Ticket          the purchased unit on an event fundraiser
+Entry           the purchased unit on a prize-only fundraiser
+Contribution    the purchased unit on a standard fundraiser
+Pass            event admission credential
 ```
 
-**Reversed from v1.x and v2.0, deliberately.** Those drafts used *Drawing Ticket* and *Admission Pass*, on the theory that "ticket" was already taken by the drawing.
+**Revised 2026-08-31.** The previous table named event admission "4 Tickets", which collided with the purchase unit once fundraiser boards started calling a purchased square a ticket: a supporter who ticks "I won't be attending" then holds **1 ticket and 0 tickets**. That sentence must not be constructible, so admission is now always a **pass**.
 
-Contributors do not talk that way. People say **tickets** for getting into an event and **entries** for a drawing. Same disambiguation, words a parent would actually use. See v2 §6C.
+The reasoning that produced the earlier reversal still stands and is preserved: contributors say **tickets** for getting into an event and **entries** for a drawing. What changed is which noun carries which job. A supporter buys **tickets**; the credential that admits them is a **pass**. Both are words a parent uses, and neither is now overloaded.
 
-**Never call a drawing entry a ticket** anywhere a human can read it.
+Named by one resolver, `purchaseUnit()` in `src/lib/board-vocabulary.ts`, keyed on the same `hasEvent` / `hasPrize` predicates that drive the CTA. `hasEvent` wins on a board that is both.
+
+**Never call a drawing entry a ticket**, and **never call an admission pass a ticket**, anywhere a human can read it.
 
 Internal model names are unchanged: `AdmissionPass`, `AdmissionGrant`, `EventSupporter`, `passSequenceCursor`. Display strings only — renaming models for a copy decision is churn.
 

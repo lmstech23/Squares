@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
 
 // Claim sheet — fundraiser-board-v2.md §6.
 //
@@ -32,6 +33,8 @@ interface Props {
   openSquares: OpenSquare[];
   priceCents: number;
   hasEvent: boolean;
+  /// prizePoolPercent > 0. Only used to name the purchase unit.
+  hasPrize: boolean;
   cashModeEnabled: boolean;
   stripeConnected: boolean;
   /// Where a direct payment should be sent. At least one is present on a
@@ -63,6 +66,7 @@ export default function ClaimSheet({
   openSquares,
   priceCents,
   hasEvent,
+  hasPrize,
   cashModeEnabled,
   stripeConnected,
   handles,
@@ -101,8 +105,8 @@ export default function ClaimSheet({
   //
   // NOTHING INTERNAL IS RENAMED: Square, columns, APIs, variables and schema
   // concepts are untouched. This is copy only.
-  const unit = hasEvent ? "ticket" : "square";
-  const units = hasEvent ? "tickets" : "squares";
+  // One shared resolver — src/lib/board-vocabulary.ts. Never branched locally.
+  const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
 
   // The next open squares in board-position order. `openSquares` arrives sorted
   // by position, so slicing takes the lowest-numbered available.
@@ -128,7 +132,7 @@ export default function ClaimSheet({
 
   async function submit() {
     if (count === 0) {
-      setError(`Choose at least one ${unit}.`);
+      setError(`Choose at least one ${u.one}.`);
       return;
     }
     // Name and email are both required: EventSupporter.name and .email are
@@ -209,7 +213,7 @@ export default function ClaimSheet({
         <div className="flex items-start justify-between gap-3 mb-4">
           {/* The heading used to duplicate the first control. With a
               quantity-first flow the question IS the heading. */}
-          <h2 className="text-lg font-semibold">How many {units}?</h2>
+          <h2 className="text-lg font-semibold">How many {u.many}?</h2>
           <button
             type="button"
             onClick={onClose}
@@ -232,7 +236,7 @@ export default function ClaimSheet({
             quick buttons are shortcuts, not limits. */}
         <div className="mb-4">
           <label htmlFor="quantity" className={labelClass}>
-            How many {units}?
+            How many {u.many}?
           </label>
           <div className="flex gap-2 mb-2">
             {[1, 2, 5, 10]
@@ -274,7 +278,7 @@ export default function ClaimSheet({
             className={inputClass}
           />
           <p className="text-xs text-gray-600 mt-1.5">
-            {maxQuantity} {maxQuantity === 1 ? `${unit} is` : `${units} are`} left.
+            {maxQuantity} {maxQuantity === 1 ? `${u.one} is` : `${u.many} are`} left.
           </p>
         </div>
 
@@ -282,7 +286,7 @@ export default function ClaimSheet({
             assignment is never a surprise on the receipt. */}
         <div className="rounded-lg bg-gray-900 border border-gray-800 px-3 py-3 mb-4">
           <p className="text-sm">
-            {count} {count === 1 ? unit : units} —{" "}
+            {count} {count === 1 ? u.one : u.many} —{" "}
             <span className="font-semibold">{money(total)}</span>
           </p>
           {selectedPositions.length > 0 && (
@@ -292,11 +296,10 @@ export default function ClaimSheet({
                   to avoid rendering it would be solving a display problem with
                   a product rule. */}
               {selectedPositions.length === 1
-                ? `${unit === "ticket" ? "Ticket" : "Square"} #${selectedPositions[0]}`
+                ? `${u.One} #${selectedPositions[0]}`
                 : selectedPositions.length <= 12
-                  ? `${unit === "ticket" ? "Tickets" : "Squares"} ` +
-                    selectedPositions.map((n) => `#${n}`).join(" · ")
-                  : `${unit === "ticket" ? "Tickets" : "Squares"} #${selectedPositions[0]}–#${
+                  ? `${u.Many} ` + selectedPositions.map((n) => `#${n}`).join(" · ")
+                  : `${u.Many} #${selectedPositions[0]}–#${
                       selectedPositions[selectedPositions.length - 1]
                     }`}
             </p>
@@ -370,7 +373,7 @@ export default function ClaimSheet({
                     you end up with — so they read as one sentence either way. */}
                 {donateAdmissions
                   ? "My contribution still supports the fundraiser, but I don't need admission tickets."
-                  : `Includes ${count} admission ${count === 1 ? "pass" : "passes"}.`}
+                  : `Includes ${count} admission ${count === 1 ? ADMISSION.one : ADMISSION.many}.`}
               </span>
             </span>
           </label>
@@ -447,7 +450,7 @@ export default function ClaimSheet({
               )}
             </ul>
             <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-              Your {units} are held until the host marks your payment received.
+              Your {u.many} are held until the host marks your payment received.
             </p>
           </div>
         )}

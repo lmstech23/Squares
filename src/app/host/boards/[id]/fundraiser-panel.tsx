@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { purchaseUnit } from "@/lib/board-vocabulary";
 
 // Fundraiser host dashboard — fundraiser-board-v2.md §9.
 //
@@ -28,6 +29,9 @@ interface AwaitingSquare {
 interface Props {
   boardId: string;
   status: string;
+  /// Name the purchase unit with the shared resolver — lib/board-vocabulary.
+  hasEvent: boolean;
+  hasPrize: boolean;
   finalRaisedCents: number | null;
   raisedCents: number;
   goalCents: number | null;
@@ -49,6 +53,8 @@ function money(cents: number): string {
 export default function FundraiserPanel({
   boardId,
   status,
+  hasEvent,
+  hasPrize,
   finalRaisedCents,
   raisedCents,
   goalCents,
@@ -59,6 +65,9 @@ export default function FundraiserPanel({
   awaitingSquares,
   pendingBatches,
 }: Props) {
+  // Same resolver as the contributor board: host and contributor never see
+  // different nouns for the same purchase unit.
+  const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +146,7 @@ export default function FundraiserPanel({
         <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
           <p className="text-sm font-medium mb-1">Awaiting payment</p>
           <p className="text-xs text-gray-500 mb-3">
-            Confirm each square as the money arrives. They do not have to be
+            Confirm each {u.one} as the money arrives. They do not have to be
             resolved together.
           </p>
           <div className="space-y-1.5">
@@ -215,7 +224,7 @@ export default function FundraiserPanel({
                 className="flex items-center justify-between gap-2 text-xs bg-blue-950/30 border border-blue-900/30 rounded-lg px-3 py-2"
               >
                 <span>
-                  {b.count} {b.count === 1 ? "square" : "squares"}, held{" "}
+                  {b.count} {b.count === 1 ? u.one : u.many}, held{" "}
                   {b.heldMinutes} min
                 </span>
                 {b.expired && (

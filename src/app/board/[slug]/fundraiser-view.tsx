@@ -1,6 +1,7 @@
 "use client";
 
 import { priceScheduleLabel } from "@/lib/claim-price";
+import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import FundraiserGrid from "./fundraiser-grid";
@@ -243,13 +244,13 @@ export default function FundraiserView({
   //                                          prizePoolPercent > 0, never on
   //                                          board type
   //   otherwise -> "Support this fundraiser"
-  const unit = hasEvent ? "ticket" : "square";
-  const units = hasEvent ? "tickets" : "squares";
+  // One shared resolver — src/lib/board-vocabulary.ts. Never branched locally.
+  const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
 
   const ctaLabel = hasEvent
-    ? `Purchase tickets — ${money(currentPrice)}`
+    ? `Purchase ${u.many} — ${money(currentPrice)}`
     : hasPrize
-      ? `Get entries — ${money(currentPrice)}`
+      ? `Get ${u.many} — ${money(currentPrice)}`
       : `Support this fundraiser — ${money(currentPrice)}`;
 
   // Clamped at 100% when raised exceeds the goal — the real figure still shows
@@ -290,7 +291,7 @@ export default function FundraiserView({
               <span className="text-xl font-bold text-white tabular-nums">
                 {money(earlyBirdPriceCents!)}
               </span>
-              <span className="text-sm text-gray-400">per {unit}</span>
+              <span className="text-sm text-gray-400">per {u.one}</span>
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
               Through {shortDate(earlyBirdEndsAt!, timezone)} · then{" "}
@@ -302,7 +303,7 @@ export default function FundraiserView({
             {priceScheduleLabel(
               { squarePrice, earlyBirdPriceCents, earlyBirdEndsAt, timezone },
               new Date(),
-              unit
+              u.one
             )}
           </p>
         )}
@@ -338,7 +339,7 @@ export default function FundraiserView({
           {supporterCount} {supporterCount === 1 ? "supporter" : "supporters"} so
           far
           <span className="text-gray-600"> · </span>
-          {openCount} {openCount === 1 ? unit : units} left
+          {openCount} {openCount === 1 ? u.one : u.many} left
         </p>
 
         {/* Confirmation — v2 §6. Not a generic success page.
@@ -361,7 +362,7 @@ export default function FundraiserView({
             {confirmation.hasEvent && confirmation.admissionPasses > 0 && (
               <p className="text-sm text-green-200/80 mt-1">
                 {confirmation.admissionPasses}{" "}
-                {confirmation.admissionPasses === 1 ? "Ticket" : "Tickets"}
+                {confirmation.admissionPasses === 1 ? ADMISSION.One : ADMISSION.Many}
                 {confirmation.passesUrl && (
                   <>
                     {" · "}
@@ -369,7 +370,7 @@ export default function FundraiserView({
                       href={confirmation.passesUrl}
                       className="underline underline-offset-4 hover:text-green-100"
                     >
-                      View your tickets
+                      View your passes
                     </a>
                   </>
                 )}
@@ -416,7 +417,7 @@ export default function FundraiserView({
             disabled={openCount === 0}
             className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {openCount === 0 ? `Every ${unit} is claimed` : ctaLabel}
+            {openCount === 0 ? `Every ${u.one} is claimed` : ctaLabel}
           </button>
         </div>
         )}
@@ -450,6 +451,7 @@ export default function FundraiserView({
               .map((sq) => ({ squareId: sq.squareId, position: sq.position }))}
             priceCents={currentPrice}
             hasEvent={hasEvent}
+            hasPrize={hasPrize}
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
             handles={handles}

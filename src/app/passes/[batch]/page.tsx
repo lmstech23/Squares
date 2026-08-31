@@ -22,8 +22,10 @@ interface Props {
   params: Promise<{ batch: string }>;
 }
 
+import { ADMISSION } from "@/lib/board-vocabulary";
+
 export const metadata: Metadata = {
-  title: "Your tickets — Daali",
+  title: "Your passes — Daali",
   // A ticket page is a credential. Keep it out of search results.
   robots: { index: false, follow: false },
 };
@@ -85,7 +87,7 @@ export default async function PassesPage({ params }: Props) {
 
         {passes.length === 0 ? (
           <div className="mt-6 rounded-lg border border-gray-800 bg-gray-900 p-4">
-            <p className="text-sm">No tickets on this purchase.</p>
+            <p className="text-sm">No passes on this purchase.</p>
             <p className="text-xs text-gray-500 mt-1">
               Admissions were donated. Your contribution still counts toward the
               goal.
@@ -94,7 +96,7 @@ export default async function PassesPage({ params }: Props) {
         ) : (
           <>
             <p className="text-sm text-gray-400 mt-5">
-              {passes.length} {passes.length === 1 ? "ticket" : "tickets"}. Each
+              {passes.length} {passes.length === 1 ? ADMISSION.one : ADMISSION.many}. Each
               admits one person — share one on its own and keep the rest.
             </p>
             <div className="mt-4 space-y-3">
@@ -113,7 +115,7 @@ export default async function PassesPage({ params }: Props) {
         )}
 
         <p className="text-xs text-gray-600 mt-6 leading-relaxed">
-          Keep this link. It always shows your current tickets, so you can come
+          Keep this link. It always shows your current passes, so you can come
           back to it if the email is gone.
         </p>
       </div>

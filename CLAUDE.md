@@ -168,11 +168,30 @@ Price is fixed the moment a square leaves `open`, at claim or at cash reservatio
 
 ## Vocabulary — enforced in code and UI
 
+The purchase unit is named by what the buyer actually gets. One resolver,
+`purchaseUnit()` in `src/lib/board-vocabulary.ts`, keyed on the same
+`hasEvent` / `hasPrize` predicates that drive the CTA. **Never branch this copy
+inside a component** — the point is that a screen written six months from now
+cannot say "squares" on a fundraiser.
+
 ```
-Square #23                 a spot on the board
-Drawing Ticket #23         an entry in the prize drawing (derived from the square)
-Admission Pass             entitlement for one person to enter the event
-Supporter                  one person's identity on one event, across purchases
+Square          a position on a Game Day board — and genuinely what it is
+Ticket          the purchased unit on an event fundraiser
+Entry           the purchased unit on a prize-only fundraiser
+Contribution    the purchased unit on a standard fundraiser (no event, no prize)
+Pass            event admission credential. ALWAYS "pass", never "ticket"
+Supporter       one person's identity on one event, across purchases
 ```
 
-**Never call an admission pass a ticket** anywhere a human can read it.
+**Reserve "pass" for admission.** A supporter buys fundraiser **tickets**; what
+gets them through the gate is an admission **pass**. Both were briefly called
+"ticket", which reads fine at one-to-one and falls apart the moment someone
+ticks "I won't be attending" and holds 1 ticket and 0 tickets. That sentence
+must not be constructible.
+
+Precedence on a board that is both ticketed and prize-bearing: **`hasEvent`
+wins.** Admission is something the buyer needs at a gate; a drawing is a chance.
+
+Display only. `Square`, database columns, API fields, routes (`/tickets/[token]`,
+`/api/tickets/[token]/qr`) and every schema concept are unchanged. Game Day
+remains squares throughout.

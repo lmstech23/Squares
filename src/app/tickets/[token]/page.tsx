@@ -16,7 +16,7 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: "Your ticket — Daali",
+  title: "Your pass — Daali",
   // A ticket is a credential. Keep it out of search results.
   robots: { index: false, follow: false },
 };
@@ -84,7 +84,7 @@ export default async function TicketPage({ params }: Props) {
                 per token by an API route, not a static asset. */}
             <img
               src={`/api/tickets/${encodeURIComponent(token)}/qr`}
-              alt="Ticket QR code"
+              alt="Admission pass QR code"
               width={240}
               height={240}
               className={`rounded bg-white p-3 ${pass.status === "used" ? "opacity-40" : ""}`}
@@ -99,7 +99,7 @@ export default async function TicketPage({ params }: Props) {
         </div>
 
         <p className="text-xs text-gray-600 mt-4 leading-relaxed">
-          Show this code at the gate. Keep the link — it is the ticket.
+          Show this code at the gate. Keep the link — it is the pass.
         </p>
       </div>
     </div>

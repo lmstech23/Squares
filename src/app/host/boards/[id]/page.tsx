@@ -1,6 +1,7 @@
 import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { purchaseUnit } from "@/lib/board-vocabulary";
 import { redirect, notFound } from "next/navigation";
 import ShareCard from "./share-card";
 import BoardGrid from "./grid";
@@ -106,6 +107,13 @@ export default async function HostBoardPage({ params }: Props) {
     // price, early-bird and prize terms call the same one when they get edit
     // surfaces rather than each growing their own.
     const contributionsLocked = await hasConfirmedContribution(board.boardId);
+
+    // One resolver, host and contributor — src/lib/board-vocabulary.ts.
+    const hostUnit = purchaseUnit({
+      boardType: board.boardType,
+      hasEvent: board.event != null,
+      hasPrize: board.prizePoolPercent > 0,
+    });
 
     // Prefill datetime-local in the EVENT's own timezone, not the server's.
     // Rendering a UTC instant into a wall-clock box without converting is how a
@@ -305,7 +313,9 @@ export default async function HostBoardPage({ params }: Props) {
             priceScheduleLabel is the same predicate claim-price.ts charges on;
             display never re-derives the rule. */}
         <p className="text-sm text-gray-500 mt-0.5">
-          {priceScheduleLabel(board)}
+          {/* The SAME noun her contributors see. She is texting parents "go buy
+              your $25 ticket"; her own board must not say "$25 per square". */}
+          {priceScheduleLabel(board, new Date(), hostUnit.one)}
         </p>
         {/* Raised is the SUM of locked pricePaidCents over confirmed squares,
             never price × count — invariant 43. With an early-bird window there
@@ -313,7 +323,7 @@ export default async function HostBoardPage({ params }: Props) {
             computed above for FundraiserPanel; no extra query. */}
         <p className="text-sm text-gray-400 mt-0.5">
           {`$${(((board.finalRaisedCents ?? raised._sum.pricePaidCents) ?? 0) / 100).toFixed(2)} raised`}
-          {` · ${byStatus("paid").length} of ${board.totalSquares} squares confirmed`}
+          {` · ${byStatus("paid").length} of ${board.totalSquares} ${hostUnit.many} confirmed`}
         </p>
         {board.causeDescription && (
           <p className="text-sm text-gray-400 mt-1.5">{board.causeDescription}</p>
@@ -349,6 +359,8 @@ export default async function HostBoardPage({ params }: Props) {
         <FundraiserPanel
           boardId={board.boardId}
           status={board.status}
+          hasEvent={board.event != null}
+          hasPrize={board.prizePoolPercent > 0}
           finalRaisedCents={board.finalRaisedCents}
           raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
           goalCents={board.fundraisingGoalCents}
@@ -382,6 +394,7 @@ export default async function HostBoardPage({ params }: Props) {
             rows={contributors}
             boardName={board.gameName}
             hasEvent={board.event != null}
+            hasPrize={board.prizePoolPercent > 0}
           />
         </div>
       </div>

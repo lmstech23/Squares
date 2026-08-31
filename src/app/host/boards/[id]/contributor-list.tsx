@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { purchaseUnit } from "@/lib/board-vocabulary";
 
 // Contributor list — fundraiser-board-v2.md §9.
 //
@@ -29,6 +30,8 @@ interface Props {
   rows: ContributorRow[];
   boardName: string;
   hasEvent: boolean;
+  /// prizePoolPercent > 0. Names the purchase unit; see lib/board-vocabulary.
+  hasPrize: boolean;
 }
 
 type SortKey = "name" | "date";
@@ -49,7 +52,10 @@ const STATUS_STYLE: Record<ContributorRow["status"], string> = {
   MIXED: "text-yellow-400 border-yellow-900/50 bg-yellow-950/30",
 };
 
-export default function ContributorList({ rows, boardName, hasEvent }: Props) {
+export default function ContributorList({ rows, boardName, hasEvent, hasPrize }: Props) {
+  // The SAME resolver the contributor board uses. A host texting parents "buy
+  // your $25 ticket" must not be looking at a screen that says "square".
+  const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("date");
 
@@ -76,7 +82,7 @@ export default function ContributorList({ rows, boardName, hasEvent }: Props) {
   // rows. Built in the browser — no endpoint, nothing to secure.
   function exportCsv() {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const header = ["Name", "Email", hasEvent ? "Tickets" : "Squares", "Date", "Status"];
+    const header = ["Name", "Email", u.Many, "Date", "Status"];
     const body = visible.map((r) =>
       [
         esc(r.name),
@@ -103,7 +109,7 @@ export default function ContributorList({ rows, boardName, hasEvent }: Props) {
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
         <p className="text-sm font-medium">Contributors</p>
         <p className="text-xs text-gray-500 mt-1">
-          Nobody has claimed a square yet.
+          Nobody has claimed a {u.one} yet.
         </p>
       </div>
     );
@@ -159,13 +165,7 @@ export default function ContributorList({ rows, boardName, hasEvent }: Props) {
               <div className="flex items-center gap-3 flex-shrink-0">
                 <span className="text-xs text-gray-400 tabular-nums">
                   {r.tickets}{" "}
-                  {hasEvent
-                    ? r.tickets === 1
-                      ? "ticket"
-                      : "tickets"
-                    : r.tickets === 1
-                      ? "square"
-                      : "squares"}
+                  {r.tickets === 1 ? u.one : u.many}
                 </span>
                 <span className="text-xs text-gray-500 tabular-nums w-14 text-right">
                   {shortDate(r.claimedAt)}
