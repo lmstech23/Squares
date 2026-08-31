@@ -304,3 +304,75 @@ nothing at runtime and Prisma parses the file fine.
 change into a diff that carries schema declarations and a security baseline
 makes the part that matters harder to review. Fix it on its own, and check
 whether other files carry the same artifact from the same write path.
+
+---
+
+# S1 checklist — verification steps queued before the sign-up build
+
+**Added:** 2026-08-31, queued behind `prisma migrate resolve --applied 0_init`
+so they are not lost when that step is authorized.
+
+## 1. Confirm the connecting role over DIRECT_URL
+
+```sql
+SELECT current_user;
+```
+
+Run this **over `DIRECT_URL`**, in the S1 verifier run, and assert the answer is
+`postgres`.
+
+**Why it is not a formality.** The four `ALTER DEFAULT PRIVILEGES` lines in
+`0_init` are scoped `FOR ROLE postgres`. Default privileges govern only objects
+created **by the named role**. If S1's six tables are created over a connection
+authenticating as anything other than `postgres` — a different pooler user, a
+Supabase-managed role, a migration run under another identity — those tables
+fall outside the scope of the revoke entirely and will receive whatever default
+privileges that other role carries. The protection is role-scoped, not
+database-scoped, and asserting the role is what makes it real rather than
+assumed.
+
+`scripts/verify-containment.mts` already asserts `current_user = 'postgres'`,
+but over `DATABASE_URL` (the pooler). The migration path uses `DIRECT_URL`.
+**Assert it on the connection that actually creates the tables.**
+
+## 2. Make the RLS table-name-set diff repeatable, not a one-time proof
+
+The three-way diff run on 2026-08-31 — production catalog vs `0_init`
+`CREATE TABLE` vs `0_init` `ENABLE ROW LEVEL SECURITY`, all 15 identical — was
+a **one-time proof for the current 15 tables**. It is not a standing check.
+
+**RLS is per-table.** There is no schema-wide form of
+`ENABLE ROW LEVEL SECURITY`. Coverage is 15 individual statements whose names
+happen to match, so coverage **can** drift table by table: a sixteenth table
+added to a baseline without a matching RLS line is a silent gap, and only a
+name-set diff catches it.
+
+Before S1 merges, turn that diff into a repeatable check that covers the six
+new tables automatically:
+
+- derive the name set from the migration file(s), not a hardcoded list
+- derive the name set from the live catalog
+- fail on any name present in one set and absent from the other, in either
+  direction
+- run it in the same pass as `verify-containment.mts`
+
+Note the related asymmetry while doing it: `REVOKE ... ON ALL TABLES IN SCHEMA
+public` is schema-wide **at execution time only** — it covers tables existing
+when it runs, never tables created later. Only the `ALTER DEFAULT PRIVILEGES`
+lines cover the future case. A baseline that revokes and then creates a table
+afterwards leaves that table exposed.
+
+## 3. Sequence statements are currently no-ops — do not read them as coverage
+
+No model uses `@default(autoincrement())`; production has **zero** sequences in
+`public`. So these three lines in `0_init` act on an empty set today:
+
+```
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, anon, authenticated;
+GRANT  ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+ALTER DEFAULT PRIVILEGES ... REVOKE ALL ON SEQUENCES FROM anon, authenticated;
+```
+
+If S1 introduces an `autoincrement()` column, the **default-privilege** line is
+the one that protects the resulting sequence. The two `ALL SEQUENCES` lines
+operate at execution time and would not cover a sequence created later.
