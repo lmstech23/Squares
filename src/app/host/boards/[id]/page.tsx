@@ -10,6 +10,8 @@ import CashModeToggle from "./cash-mode-toggle";
 import CashReservePanel from "./cash-reserve-panel";
 import SquareList from "./square-list";
 import { priceScheduleLabel } from "@/lib/claim-price";
+import { hasConfirmedContribution, LOCK_REASON } from "@/lib/board-lock";
+import EditFundraiserButton from "./edit-fundraiser-button";
 import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
@@ -99,6 +101,31 @@ export default async function HostBoardPage({ params }: Props) {
       where: { boardId: board.boardId, paymentStatus: "paid" },
       _sum: { pricePaidCents: true },
     });
+
+    // Invariant 16. Shared predicate — lib/board-lock.ts — so contribution
+    // price, early-bird and prize terms call the same one when they get edit
+    // surfaces rather than each growing their own.
+    const contributionsLocked = await hasConfirmedContribution(board.boardId);
+
+    // Prefill datetime-local in the EVENT's own timezone, not the server's.
+    // Rendering a UTC instant into a wall-clock box without converting is how a
+    // host "corrects" a time by five hours without touching anything.
+    const eventDetail = board.event
+      ? await prisma.event.findUnique({
+          where: { id: board.event.id },
+          select: { name: true, venue: true, startsAt: true, endsAt: true, timezone: true },
+        })
+      : null;
+
+    const forInput = (d: Date | null, tz: string): string => {
+      if (!d) return "";
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(d);
+      const g = (t: string) => parts.find((x) => x.type === t)?.value ?? "";
+      return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+    };
 
     const byStatus = (status: string) =>
       board.squares.filter((sq) => sq.paymentStatus === status);
@@ -291,12 +318,24 @@ export default async function HostBoardPage({ params }: Props) {
         {board.causeDescription && (
           <p className="text-sm text-gray-400 mt-1.5">{board.causeDescription}</p>
         )}
-        <div className="mt-2 mb-6">
+        <div className="mt-2 mb-6 space-y-3">
           <EditDetailsButton
             boardId={board.boardId}
             gameName={board.gameName}
             teamCol=""
             teamRow=""
+          />
+          <EditFundraiserButton
+            boardId={board.boardId}
+            hasEvent={eventDetail != null}
+            locked={contributionsLocked}
+            lockReason={LOCK_REASON}
+            initialName={eventDetail?.name ?? ""}
+            initialVenue={eventDetail?.venue ?? ""}
+            initialStartsAt={forInput(eventDetail?.startsAt ?? null, eventDetail?.timezone ?? "America/New_York")}
+            initialEndsAt={forInput(eventDetail?.endsAt ?? null, eventDetail?.timezone ?? "America/New_York")}
+            initialTimezone={eventDetail?.timezone ?? "America/New_York"}
+            initialGoal={board.fundraisingGoalCents != null ? String(board.fundraisingGoalCents / 100) : ""}
           />
         </div>
 

@@ -376,3 +376,33 @@ ALTER DEFAULT PRIVILEGES ... REVOKE ALL ON SEQUENCES FROM anon, authenticated;
 If S1 introduces an `autoincrement()` column, the **default-privilege** line is
 the one that protects the resulting sequence. The two `ALL SEQUENCES` lines
 operate at execution time and would not cover a sequence created later.
+
+## Invariant 16 wording gap — "event date" is narrower than the code
+
+**Added:** 2026-08-31, while writing the first enforcement of invariant 16.
+**Severity:** documentation. The code is deliberately stricter than the text.
+
+Money doc invariant 16 locks, on boards with an event, the **"event date"** —
+singular. `src/lib/board-lock.ts` locks `startsAt`, `endsAt` **and** `timezone`.
+
+**Why the code is broader.** An event stored as `2026-10-24T14:27Z` in
+`America/New_York` reads 10:27am Eastern. Re-label the board `America/Chicago`
+and the same stored instant reads 9:27am — the wall-clock time a supporter was
+told has moved, with `startsAt` and `endsAt` untouched. Locking the date alone
+leaves that bypass open, and an invariant that can be sidestepped by editing a
+timezone string protects a column rather than a contributor. `endsAt` is
+included because it is half of the event date; a supporter who planned around a
+stated end time is as affected by moving it.
+
+**The wording should say something closer to** "the event's scheduled time,
+including its timezone" **rather than "event date".**
+
+Flagged, not resolved — per the rule that a document gap is reported rather
+than chosen. If the addendum lands narrower than the code, narrow the code to
+match rather than leaving the two disagreeing.
+
+**Related, not yet enforced anywhere:** contribution price, early-bird terms and
+prize terms are also locked by invariant 16 and currently have no edit surface
+at all, so nothing guards them. When any of them gets one it must call
+`hasConfirmedContribution` from `lib/board-lock.ts` rather than growing its own
+check.
