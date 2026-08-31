@@ -56,3 +56,7 @@ Direct_URL*
 # ...but migrations are source. Without this, a new migration is silently
 # never committed, which is how add_fundraiser_boards.sql nearly got lost.
 !migrations/*.sql
+# Prisma's own migration directory is a SEPARATE path and was NOT covered by
+# the line above. prisma/migrations/0_init/migration.sql was silently ignored —
+# the same failure mode, one directory over.
+!prisma/migrations/**/*.sql

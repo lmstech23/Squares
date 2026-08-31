@@ -66,6 +66,10 @@ path in `src/lib/confirmation-email.ts` — never a per-square loop. This is a
 deliberate exception to "Game Day is untouched": two email paths would drift,
 and the one that drifts is whichever gets tested less. Decided Aug 28, 2026.
 
+**`prisma/migrations/0_init` is this repo's first reproducible database history — it is not a consolidation of an existing one.** There was never a replayable base. Replaying the eleven hand-applied files against a clean database fails on the very first one: `add_monetization.sql` expects `hosts` to exist, and nothing in version control ever created `hosts`, `boards`, or `squares`. They were made by `db push` or by hand and never recorded. Eleven files patched an undocumented state. `0_init` is built from the physical catalog and is the first thing in this project that can rebuild the database from nothing.
+
+Those eleven files stay at repo-root `migrations/` as **provenance**. They must never move into `prisma/migrations/` — Prisma reads only that directory, so their *location* is what keeps them out of the replay chain. A header comment would not.
+
 Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores `*.sql` with a `!migrations/*.sql` exception — without it a new migration silently never commits. A `.sql.pending` file is **not** runnable — it is kept for reference and its precondition is in `PHASE-2-BACKLOG.md`.
 
 **RLS and role grants are invisible to `prisma/schema.prisma`.** `migrate diff` reports zero drift whether or not the database is exposed, `db pull` never introspects them, and `migrate` never restores them. On Aug 30, 2026 every table in `public` was found granting `anon` and `authenticated` full DML — 1,300 contributor rows readable and writable over the Data API — caused by `pg_default_acl`, which grants those roles on every **new** table automatically. Closed by `migrations/secure_data_api.sql`.

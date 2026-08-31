@@ -11,7 +11,11 @@ datasource db {
 model Host {
   id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                   String?
-  email                  String   @unique
+  /// Nullable and not unique, matching the database. Four of five hosts hold
+  /// '' — a surrogate for a value the product never supplied. Whether a host's
+  /// email belongs here or in auth.users is an open product decision tracked in
+  /// PHASE-2-BACKLOG.md; the schema must not assert an answer it does not have.
+  email                  String?
   stripeAccountId        String?             @map("stripe_account_id")
   createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   supabaseUserId         String?  @unique @map("supabase_user_id")
@@ -108,8 +112,19 @@ model Board {
   event                     Event?
   creditTransactions        CreditTransaction[]
 
-  @@index([pendingExpiresAt], map: "idx_boards_pending_expiry")
-  @@index([expiredAt], map: "idx_boards_expired_cleanup")
+  /// Two PARTIAL indexes exist on this table and are deliberately NOT
+  /// declared here: idx_boards_pending_expiry (WHERE status = pending_payment)
+  /// and idx_boards_expired_cleanup (WHERE status = expired). Prisma 6.19.2
+  /// cannot represent a predicate, so declaring them as plain @@index made
+  /// migrate diff propose recreating them unqualified forever — a name
+  /// collision that would also silently widen the index. They are defined in
+  /// prisma/migrations/0_init/migration.sql.
+  ///
+  /// ON A PRISMA UPGRADE: do NOT auto-convert these to declarations. Compare
+  /// each PHYSICAL predicate (pg_get_indexdef) against what the new Prisma
+  /// would generate, one index at a time, BEFORE changing anything here. A
+  /// declaration that does not reproduce the predicate exactly is worse than
+  /// no declaration — it silently widens the index.
   @@map("boards")
 }
 
@@ -176,7 +191,7 @@ model FreeEntry {
 
   board          Board     @relation(fields: [boardId], references: [boardId], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([boardId, sequenceNumber])
+  @@unique([boardId, sequenceNumber], map: "free_entries_board_sequence_key")
   @@map("free_entries")
 }
 
@@ -237,7 +252,7 @@ model EventSupporter {
   passes  AdmissionPass[]
   tokens  AttendanceAccessToken[]
 
-  @@unique([eventId, identityKey])
+  @@unique([eventId, identityKey], map: "event_supporters_event_identity_key")
   @@map("event_supporters")
 }
 
@@ -263,7 +278,7 @@ model AdmissionGrant {
   event     Event          @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
-  @@unique([squareBatchId])
+  @@unique([squareBatchId], map: "admission_grants_square_batch_key")
   @@index([eventSupporterId], map: "idx_admission_grants_supporter")
   @@map("admission_grants")
 }
@@ -294,7 +309,8 @@ model AdmissionPass {
 
   /// The constraint behind concurrency-safe activation: concurrent confirmation
   /// cannot double-mint. Safe because the cursor never reuses a value.
-  @@unique([eventSupporterId, sequenceNumber])
+  @@unique([eventSupporterId, sequenceNumber], map: "admission_passes_supporter_sequence_key")
+  @@index([squareId], map: "idx_admission_passes_square")
   @@map("admission_passes")
 }
 
@@ -391,7 +407,15 @@ model CreditTransaction {
   type            credit_tx_type
   amount          Int
   balanceAfter    Int            @map("balance_after")
-  stripeSessionId String?        @unique @map("stripe_session_id")
+  /// NOT @unique here. The physical index is PARTIAL
+  /// (credit_transactions_stripe_session_id_key ... WHERE stripe_session_id IS
+  /// NOT NULL) and Prisma 6.19.2 cannot express the predicate. Declaring
+  /// @unique asserted a plain unique index that does not exist and made every
+  /// migrate dev generate a colliding CREATE. Defined in 0_init.
+  /// On a Prisma upgrade, compare the physical predicate against what the new
+  /// version would generate before re-adding @unique. Do not auto-convert.
+  /// PaymentReference.stripeSessionId keeps its @unique — that index is real.
+  stripeSessionId String?        @map("stripe_session_id")
   boardId         String?        @map("board_id") @db.Uuid
   note            String?
   createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -514,4 +538,27 @@ enum credit_tx_type {
   purchase
   admin_grant
   board_created
+}
+
+/// Existed in production before this schema file did. Modelled here so a
+/// migration never proposes dropping it. Shape taken from the catalog, not
+/// from the onboard route: 10 columns, `status` defaulting to 'pending'.
+///
+/// Written only by src/app/api/hbcu/onboard/route.ts, which uses the
+/// service-role key over PostgREST — the one Supabase Data API path in the
+/// application. RLS and grants on this table are NOT representable here; see
+/// migrations/secure_data_api.sql.
+model HbcuOrg {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgName      String    @map("org_name")
+  school       String
+  city         String
+  fundPurpose  String?   @map("fund_purpose")
+  contactName  String    @map("contact_name")
+  contactEmail String    @map("contact_email")
+  logoUrl      String?   @map("logo_url")
+  status       String?   @default("pending")
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("hbcu_orgs")
 }
