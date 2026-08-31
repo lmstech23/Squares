@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ADMISSION } from "@/lib/board-vocabulary";
 import { useRouter } from "next/navigation";
 
 // Event panel — fundraiser-board-v2.md §9, addendum §6.
@@ -144,7 +145,7 @@ export default function EventPanel({
       {grants.length > 0 && (
         <div className="mt-4">
           <p className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2">
-            Tickets by purchase
+            {ADMISSION.Many} by purchase
           </p>
           <div className="space-y-1.5">
             {grants.map((g) => (
@@ -156,8 +157,8 @@ export default function EventPanel({
                   <p className="text-sm truncate">{g.name}</p>
                   <p className="text-xs text-gray-500 truncate">
                     {g.donated
-                      ? "Donated — no tickets"
-                      : `${g.tickets} ${g.tickets === 1 ? "ticket" : "tickets"}`}
+                      ? `Donated — no ${ADMISSION.many}`
+                      : `${g.tickets} ${g.tickets === 1 ? ADMISSION.one : ADMISSION.many}`}
                     {g.usedCount > 0 && ` · ${g.usedCount} scanned`}
                   </p>
                 </div>
@@ -175,8 +176,8 @@ export default function EventPanel({
                     {busy === g.grantId
                       ? "…"
                       : g.donated
-                        ? "Give them tickets"
-                        : "Donate tickets"}
+                        ? `Give them ${ADMISSION.many}`
+                        : `Donate ${ADMISSION.many}`}
                   </button>
                 ) : (
                   <span className="flex-shrink-0 text-xs text-gray-600">

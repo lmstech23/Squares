@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ADMISSION } from "@/lib/board-vocabulary";
 
 // The gate — fundraiser-board-v2.md §6B.
 //
@@ -304,7 +305,7 @@ export default function GateSurface({
                         {r.phone ? ` · ${r.phone}` : ""}
                       </p>
                       <p className="text-xs text-gray-400 mt-0.5">
-                        {r.total} {r.total === 1 ? "ticket" : "tickets"} ·{" "}
+                        {r.total} {r.total === 1 ? ADMISSION.one : ADMISSION.many} ·{" "}
                         {r.used} used · {remaining} remaining
                       </p>
                     </div>
