@@ -406,3 +406,50 @@ prize terms are also locked by invariant 16 and currently have no edit surface
 at all, so nothing guards them. When any of them gets one it must call
 `hasConfirmedContribution` from `lib/board-lock.ts` rather than growing its own
 check.
+
+## resolveExpiredHolds confirms without writing a PaymentReference
+
+**Added:** 2026-08-31
+**Severity:** edge case — *now*. It was affecting **every card payment** until
+the Stripe webhook was configured on 2026-08-31.
+
+`src/lib/checkout-holds.ts` calls `confirmSquares` when Stripe reports a session
+paid, but never creates a `PaymentReference`. Only three paths create one:
+`api/webhooks/stripe/route.ts:151`, `api/checkout/resume/route.ts:163`, and
+`api/host/boards/[id]/confirm-cash/route.ts:79`.
+
+A square confirmed by the cron is therefore `paid` with **no payment record**.
+`raised` is unaffected — it sums `Square.pricePaidCents` (invariant 43), not
+payment rows — so money figures stay correct. What is missing is the audit
+trail: `PaymentReference.timestamp` is the confirmation moment, and for these
+squares it does not exist.
+
+**How this was found, and why the severity moved.** Diagnosing a contributor
+seeing a false "hold expired", the walkthrough's square #1 was `paid` with no
+`PaymentReference` — which is what proved the webhook had never fired and the
+cron backstop had confirmed it ~12.7 minutes later. At that point *every* card
+payment took this path. The webhook is now live (Connect destination, connected
+accounts, snapshot payloads), confirmed by a test purchase that settled in
+seconds and did produce a `PaymentReference`. So the cron is back to being what
+it was designed as: a backstop for a missed or delayed webhook.
+
+The presence or absence of a `PaymentReference` on a paid card square is a
+useful signal — it distinguishes a webhook confirmation from a cron rescue.
+
+## Destination 2 not created — host credit purchases still fail silently
+
+**Added:** 2026-08-31
+
+`/api/webhooks/stripe-platform` handles credit purchases, which run on the
+PLATFORM Stripe account rather than a host's connected account, and verifies
+against `STRIPE_PLATFORM_WEBHOOK_SECRET`. No Stripe destination points at it.
+
+Same failure shape as the Connect webhook had: a purchase completes at Stripe,
+nothing tells the app, and there is no cron backstop for credits the way there
+is for squares.
+
+`STRIPE_PLATFORM_WEBHOOK_SECRET` is also absent from local `.env`; confirm
+whether it exists in Vercel. Needed: a destination on the **platform** account
+listening for `checkout.session.completed` at
+`https://beta.daali.app/api/webhooks/stripe-platform`, its signing secret in
+Vercel, then a redeploy.

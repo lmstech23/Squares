@@ -2,6 +2,7 @@
 
 import { priceScheduleLabel } from "@/lib/claim-price";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import FundraiserGrid from "./fundraiser-grid";
 import ClaimSheet from "./claim-sheet";
 import HoldTimer from "./hold-timer";
@@ -103,6 +104,7 @@ export default function FundraiserView({
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
   // Selection lives on the board, so the checkout button can say how many
   // tickets are being bought before the sheet opens.
+  const router = useRouter();
   const [picked, setPicked] = useState<string[]>([]);
 
   // A hold this browser started, remembered at claim time. The server
@@ -133,6 +135,66 @@ export default function FundraiserView({
       // Unreadable or disabled storage — no countdown, nothing broken.
     }
   }, [slug]);
+
+  // (a) The server is the authority on whether a hold is still live.
+  //
+  // `hold` is only a note this browser wrote to sessionStorage at claim time;
+  // nothing cleared it on a successful return, so a confirmed purchase kept
+  // rendering a countdown that eventually announced a release that was never
+  // going to happen. Reconcile it against the statuses the page just rendered:
+  // a hold whose squares are no longer pending is over, whether they were paid,
+  // reserved, or released.
+  const heldStatuses = hold
+    ? hold.squareIds
+        .map((id) => squares.find((sq) => sq.squareId === id)?.paymentStatus)
+        .filter((st): st is string => st != null)
+    : [];
+
+  const holdResolvedByServer =
+    hold != null && heldStatuses.length > 0 && !heldStatuses.includes("pending");
+
+  useEffect(() => {
+    if (!holdResolvedByServer) return;
+    try {
+      sessionStorage.removeItem(`daali-hold-${slug}`);
+    } catch {
+      // Storage unavailable — the render guard below still suppresses the UI.
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHold(null);
+  }, [holdResolvedByServer, slug]);
+
+  // (c) A completed checkout can land back here before Stripe's webhook has
+  // been delivered — the redirect and the webhook race, and the redirect
+  // usually wins by a moment. The page is `force-dynamic`, so it renders the
+  // truth AT REQUEST TIME and then never updates: no polling, no refresh on
+  // focus. A contributor whose payment confirmed a second after landing sat
+  // looking at "$0 raised · 99 open" with no reason to reload.
+  //
+  // `confirmation` is non-null only on return from checkout, which makes it a
+  // reliable "just got back" signal. Refresh until this purchase's squares read
+  // paid, then stop. Bounded, so a genuinely failed payment does not poll
+  // forever.
+  const confirmedPositions = confirmation?.positions ?? [];
+  const purchaseSettled =
+    confirmedPositions.length > 0 &&
+    confirmedPositions.every(
+      (pos) => squares.find((sq) => sq.position + 1 === pos)?.paymentStatus === "paid"
+    );
+
+  useEffect(() => {
+    if (!confirmation || purchaseSettled) return;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      if (tries > 10) {
+        clearInterval(id);
+        return;
+      }
+      router.refresh();
+    }, 2000);
+    return () => clearInterval(id);
+  }, [confirmation, purchaseSettled, router]);
 
   function clearHold() {
     try {
@@ -254,10 +316,11 @@ export default function FundraiserView({
           </div>
         )}
 
-        {hold && (
+        {hold && !holdResolvedByServer && (
           <div className="mt-5">
             <HoldTimer
               expiresAt={hold.holdExpiresAt}
+              heldStatuses={heldStatuses}
               onReclaim={() => {
                 setReclaim(hold.squareIds);
                 clearHold();

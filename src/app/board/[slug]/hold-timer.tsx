@@ -17,6 +17,18 @@ import { useEffect, useState } from "react";
 interface Props {
   /** Server-set holdExpiresAt, as an ISO string. */
   expiresAt: string;
+  /**
+   * Server payment status of the squares this hold covers, as the page last
+   * rendered them.
+   *
+   * A countdown is only ever about squares that are still `pending`. Without
+   * this the component knew nothing but a timestamp written into sessionStorage
+   * at claim time, so it announced "your hold expired" for squares that had
+   * been PAID minutes earlier — a contributor watching a confirmation banner
+   * and a release warning at the same time. The timestamp cannot answer
+   * "did this purchase succeed"; only the server can.
+   */
+  heldStatuses: string[];
   /** Re-open the claim sheet with the same squares preselected. */
   onReclaim: () => void;
   onDismiss: () => void;
@@ -26,13 +38,28 @@ function remainingMs(expiresAt: string): number {
   return new Date(expiresAt).getTime() - Date.now();
 }
 
-export default function HoldTimer({ expiresAt, onReclaim, onDismiss }: Props) {
+export default function HoldTimer({
+  expiresAt,
+  heldStatuses,
+  onReclaim,
+  onDismiss,
+}: Props) {
   const [left, setLeft] = useState(() => remainingMs(expiresAt));
 
   useEffect(() => {
     const id = setInterval(() => setLeft(remainingMs(expiresAt)), 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
+
+  // A hold only exists while squares are pending. Anything else — paid,
+  // reserved_cash, or released back to open — means the hold is over and the
+  // server has already said so. Render nothing rather than a countdown or an
+  // expiry warning about a settled purchase.
+  //
+  // Checked BEFORE the timer is consulted, deliberately: a paid square must
+  // never reach the expiry branch, whatever the clock says.
+  const stillPending = heldStatuses.some((st) => st === "pending");
+  if (heldStatuses.length > 0 && !stillPending) return null;
 
   const expired = left <= 0;
 
