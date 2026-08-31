@@ -22,7 +22,6 @@ import { useState } from "react";
 // Not collected here: payout handles. That is Game Day behavior — winners are
 // asked for a handle after the draw, four people rather than a hundred.
 
-import { MAX_PER_CLAIM } from "@/lib/claim-limits";
 
 interface OpenSquare {
   squareId: string;
@@ -76,8 +75,10 @@ export default function ClaimSheet({
   // back what they had — but the quantity control still drives everything, and
   // changing it falls through to normal assignment.
   const reclaiming = (initialPicked?.length ?? 0) > 0;
+  // No MAX_PER_CLAIM clamp: a reclaim restores exactly what was held, and
+  // inventory is the only fundraiser ceiling.
   const [quantity, setQuantity] = useState(
-    reclaiming ? Math.min(initialPicked!.length, MAX_PER_CLAIM) : 1
+    reclaiming ? initialPicked!.length : 1
   );
   const [useReclaim, setUseReclaim] = useState(reclaiming);
 
@@ -92,6 +93,16 @@ export default function ClaimSheet({
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Contributor-facing noun. A board with an event sells TICKETS — the square
+  // is an implementation detail the buyer never asked about. Without an event
+  // nothing is admitted, so "ticket" would name something they do not receive
+  // and the word stays "square". Same hasEvent predicate as the CTA.
+  //
+  // NOTHING INTERNAL IS RENAMED: Square, columns, APIs, variables and schema
+  // concepts are untouched. This is copy only.
+  const unit = hasEvent ? "ticket" : "square";
+  const units = hasEvent ? "tickets" : "squares";
 
   // The next open squares in board-position order. `openSquares` arrives sorted
   // by position, so slicing takes the lowest-numbered available.
@@ -111,11 +122,13 @@ export default function ClaimSheet({
   const total = count * priceCents;
 
   // Per TRANSACTION, and never more than are actually open.
-  const maxQuantity = Math.min(MAX_PER_CLAIM, openSquares.length);
+  // INVENTORY IS THE ONLY CEILING on a fundraiser board. No MAX_PER_CLAIM
+  // here — see src/lib/claim-limits.ts for why that constant is Game Day only.
+  const maxQuantity = openSquares.length;
 
   async function submit() {
     if (count === 0) {
-      setError("Pick at least one square.");
+      setError(`Choose at least one ${unit}.`);
       return;
     }
     // Name and email are both required: EventSupporter.name and .email are
@@ -194,7 +207,9 @@ export default function ClaimSheet({
     <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50">
       <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
-          <h2 className="text-lg font-semibold">Claim your squares</h2>
+          {/* The heading used to duplicate the first control. With a
+              quantity-first flow the question IS the heading. */}
+          <h2 className="text-lg font-semibold">How many {units}?</h2>
           <button
             type="button"
             onClick={onClose}
@@ -210,54 +225,80 @@ export default function ClaimSheet({
           </div>
         )}
 
-        {/* How many — the whole purchase model. Up to MAX_PER_CLAIM per
-            checkout, never more than are open. */}
+        {/* How many — free entry, bounded only by what is open.
+            MAX_PER_CLAIM is a GAME DAY concept: 10 of 100 makes sense for a
+            game with a prize pool, and is backwards for a fundraiser, where a
+            contributor who wants 20 is the best thing that can happen. The
+            quick buttons are shortcuts, not limits. */}
         <div className="mb-4">
-          <span className={labelClass}>How many?</span>
-          <div className="grid grid-cols-5 gap-2">
-            {Array.from({ length: maxQuantity }, (_, i) => i + 1).map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => {
-                  setQuantity(n);
-                  // Any deliberate quantity change leaves the reclaim set
-                  // behind and returns to normal assignment.
-                  setUseReclaim(false);
-                }}
-                className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                  count === n
-                    ? "border-green-500 bg-green-950/20 text-white"
-                    : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
+          <label htmlFor="quantity" className={labelClass}>
+            How many {units}?
+          </label>
+          <div className="flex gap-2 mb-2">
+            {[1, 2, 5, 10]
+              .filter((n) => n <= maxQuantity)
+              .map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => {
+                    setQuantity(n);
+                    setUseReclaim(false);
+                  }}
+                  className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
+                    count === n
+                      ? "border-green-500 bg-green-950/20 text-white"
+                      : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
           </div>
-          {maxQuantity === MAX_PER_CLAIM && (
-            <p className="text-xs text-gray-600 mt-2">
-              Up to {MAX_PER_CLAIM} per checkout. You can come back for more.
-            </p>
-          )}
-          {maxQuantity < MAX_PER_CLAIM && (
-            <p className="text-xs text-gray-600 mt-2">
-              {maxQuantity} {maxQuantity === 1 ? "square is" : "squares are"} left.
-            </p>
-          )}
+          <input
+            id="quantity"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={maxQuantity}
+            value={quantity}
+            onChange={(e) => {
+              const raw = parseInt(e.target.value, 10);
+              // Clamp on the way in. Minimum 1, maximum whatever is actually
+              // open — inventory is the only ceiling.
+              setQuantity(
+                Number.isNaN(raw) ? 1 : Math.max(1, Math.min(raw, maxQuantity))
+              );
+              setUseReclaim(false);
+            }}
+            className={inputClass}
+          />
+          <p className="text-xs text-gray-600 mt-1.5">
+            {maxQuantity} {maxQuantity === 1 ? `${unit} is` : `${units} are`} left.
+          </p>
         </div>
 
         {/* What you are getting, by number. Shown before checkout so the
             assignment is never a surprise on the receipt. */}
         <div className="rounded-lg bg-gray-900 border border-gray-800 px-3 py-3 mb-4">
           <p className="text-sm">
-            {count} {count === 1 ? "square" : "squares"} —{" "}
+            {count} {count === 1 ? unit : units} —{" "}
             <span className="font-semibold">{money(total)}</span>
           </p>
           {selectedPositions.length > 0 && (
             <p className="text-xs text-gray-500 mt-1 tabular-nums">
-              {selectedPositions.length === 1 ? "Square " : "Squares "}
-              {selectedPositions.map((n) => `#${n}`).join(" · ")}
+              {/* Summarised past a dozen. Ninety-seven numbers is not
+                  information, it is a wall — and reintroducing a purchase cap
+                  to avoid rendering it would be solving a display problem with
+                  a product rule. */}
+              {selectedPositions.length === 1
+                ? `${unit === "ticket" ? "Ticket" : "Square"} #${selectedPositions[0]}`
+                : selectedPositions.length <= 12
+                  ? `${unit === "ticket" ? "Tickets" : "Squares"} ` +
+                    selectedPositions.map((n) => `#${n}`).join(" · ")
+                  : `${unit === "ticket" ? "Tickets" : "Squares"} #${selectedPositions[0]}–#${
+                      selectedPositions[selectedPositions.length - 1]
+                    }`}
             </p>
           )}
         </div>
@@ -320,9 +361,16 @@ export default function ClaimSheet({
                   drops by one. Say that. */}
               <span className="block text-sm">I won&apos;t be attending</span>
               <span className="block text-xs text-gray-600 mt-0.5">
+                {/* The pairing read as a contradiction because the LABEL is an
+                    action ("I won't be attending") while this line described
+                    current state ("1 ticket, one per square"). The specified
+                    copy replaced only the checked branch, leaving the unchecked
+                    one to look like a rebuttal of the label above it.
+                    Both branches now describe the same thing — what admission
+                    you end up with — so they read as one sentence either way. */}
                 {donateAdmissions
                   ? "My contribution still supports the fundraiser, but I don't need admission tickets."
-                  : `${count} ${count === 1 ? "ticket" : "tickets"}, one per square.`}
+                  : `Includes ${count} admission ${count === 1 ? "pass" : "passes"}.`}
               </span>
             </span>
           </label>
@@ -399,7 +447,7 @@ export default function ClaimSheet({
               )}
             </ul>
             <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-              Your squares are held until the host marks your payment received.
+              Your {units} are held until the host marks your payment received.
             </p>
           </div>
         )}

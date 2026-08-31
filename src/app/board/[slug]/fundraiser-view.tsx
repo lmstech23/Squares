@@ -243,6 +243,9 @@ export default function FundraiserView({
   //                                          prizePoolPercent > 0, never on
   //                                          board type
   //   otherwise -> "Support this fundraiser"
+  const unit = hasEvent ? "ticket" : "square";
+  const units = hasEvent ? "tickets" : "squares";
+
   const ctaLabel = hasEvent
     ? `Purchase tickets — ${money(currentPrice)}`
     : hasPrize
@@ -287,7 +290,7 @@ export default function FundraiserView({
               <span className="text-xl font-bold text-white tabular-nums">
                 {money(earlyBirdPriceCents!)}
               </span>
-              <span className="text-sm text-gray-400">per square</span>
+              <span className="text-sm text-gray-400">per {unit}</span>
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
               Through {shortDate(earlyBirdEndsAt!, timezone)} · then{" "}
@@ -298,7 +301,8 @@ export default function FundraiserView({
           <p className="text-sm text-gray-500 mt-2">
             {priceScheduleLabel(
               { squarePrice, earlyBirdPriceCents, earlyBirdEndsAt, timezone },
-              new Date()
+              new Date(),
+              unit
             )}
           </p>
         )}
@@ -334,7 +338,7 @@ export default function FundraiserView({
           {supporterCount} {supporterCount === 1 ? "supporter" : "supporters"} so
           far
           <span className="text-gray-600"> · </span>
-          {openCount} {openCount === 1 ? "square" : "squares"} left
+          {openCount} {openCount === 1 ? unit : units} left
         </p>
 
         {/* Confirmation — v2 §6. Not a generic success page.
@@ -342,14 +346,10 @@ export default function FundraiserView({
             only means something when there is a drawing, and Phase A has none. */}
         {confirmation && confirmation.positions.length > 0 && (
           <div className="rounded-lg border border-green-900/50 bg-green-950/30 p-4 mt-5">
-            <p className="text-sm font-medium text-green-200">
-              🎉{" "}
-              {confirmation.positions.length === 1
-                ? `Square #${confirmation.positions[0]} is yours.`
-                : `Squares ${confirmation.positions
-                    .map((p) => `#${p}`)
-                    .join(" · ")} are yours.`}
-            </p>
+            {/* The "🎉 Square #4 is yours." line is deliberately absent. A
+                fundraiser contributor bought a ticket, not a grid position; the
+                square number names an internal detail they never chose and
+                cannot use. Game Day keeps its own confirmation copy. */}
             {/* Entry lines only on a prize board — "Entry #23" means nothing
                 when there is no drawing. Gated on the prize, not board type. */}
             {hasPrize && (
@@ -416,7 +416,7 @@ export default function FundraiserView({
             disabled={openCount === 0}
             className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {openCount === 0 ? "Every square is claimed" : ctaLabel}
+            {openCount === 0 ? `Every ${unit} is claimed` : ctaLabel}
           </button>
         </div>
         )}

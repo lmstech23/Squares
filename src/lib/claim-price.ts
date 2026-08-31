@@ -57,15 +57,25 @@ export function earlyBirdActive(board: PricedBoard, now: Date = new Date()): boo
  */
 export function priceScheduleLabel(
   board: PricedBoard & { timezone?: string | null },
-  now: Date = new Date()
+  now: Date = new Date(),
+  /**
+   * The noun for one unit, singular. Defaults to "square".
+   *
+   * A contributor on a fundraiser board with an event bought a TICKET; the
+   * square is an implementation detail they never asked about. The host, who
+   * runs a board of squares, still sees "square". Same pricing logic, different
+   * audience — which is why this is a parameter rather than two functions that
+   * can drift.
+   */
+  unit: string = "square"
 ): string {
   const money = (cents: number) =>
     `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
-  if (!earlyBirdActive(board, now)) return `${money(board.squarePrice)} per square`;
+  if (!earlyBirdActive(board, now)) return `${money(board.squarePrice)} per ${unit}`;
   const through = new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     timeZone: board.timezone ?? "America/New_York",
   }).format(board.earlyBirdEndsAt!);
-  return `${money(board.earlyBirdPriceCents!)} per square through ${through}, then ${money(board.squarePrice)}`;
+  return `${money(board.earlyBirdPriceCents!)} per ${unit} through ${through}, then ${money(board.squarePrice)}`;
 }
