@@ -723,8 +723,25 @@ model SignupLog {
   id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slotId           String       @map("slot_id") @db.Uuid
   eventSupporterId String       @map("event_supporter_id") @db.Uuid
+  /// The DIRECTION of the committed change, not the row lifecycle. A positive
+  /// delta is CLAIMED even when the commitment already existed; a negative one
+  /// is CANCELLED even when the commitment survives.
   action           SignupAction
   actorType        ActorType    @map("actor_type")
+  /// The supporter's resulting held quantity after this change. An IMMUTABLE
+  /// HISTORICAL FACT, never a live count.
+  ///
+  /// NOT A SECOND SOURCE OF CURRENT TRUTH. Current quantity is
+  /// count(HelperSignupPosition) and nothing else — invariant 39. This column
+  /// is what that count WAS at one past instant, and no code may read the
+  /// latest row to answer "how many does she hold now". It exists because
+  /// direction alone cannot distinguish 4 -> 2 from 2 -> 0, and on an ITEM slot
+  /// it cannot distinguish a net-zero fidget from a real loss.
+  ///
+  /// NOT NULL with no default, uniformly for SHIFT and ITEM. A SHIFT always
+  /// writes 1 or 0; making it nullable would reintroduce the special case this
+  /// column exists to remove.
+  quantityAfter    Int          @map("quantity_after")
   createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   slot      SignupSlot     @relation(fields: [slotId], references: [id], onDelete: Restrict, onUpdate: NoAction)

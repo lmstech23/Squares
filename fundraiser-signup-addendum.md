@@ -186,8 +186,9 @@ Splitting commitment from position fixes it without a trick. "Daaliyah is bringi
 | Field | Type | Notes |
 |---|---|---|
 | `id`, `slotId`, `eventSupporterId` | | |
-| `action` | enum | `CLAIMED` · `CANCELLED` · `HOST_REMOVED` |
+| `action` | enum | `CLAIMED` · `CANCELLED` · `HOST_REMOVED`. The DIRECTION of the change |
 | `actorType` | enum | `SUPPORTER` · `HOST` |
+| `quantityAfter` | Int | The supporter's resulting held quantity. **NOT NULL, no default** |
 | `createdAt` | DateTime | |
 
 A helper cancelling at 6am the day of an event is exactly the thing a host will want to see and the thing nobody will remember. The log is small and it is the difference between "nobody showed up" and "three people cancelled overnight."
@@ -222,6 +223,47 @@ decision the supporter made once.
 mutation.** A quantity change and its audit event commit together or roll back
 together. Writing after the commit leaves a window where positions moved and no
 record exists, which is precisely the 6am case this table exists for.
+
+### `quantityAfter` — magnitude, ruled 2026-08-31
+
+Direction alone cannot tell `4 -> 2` from `2 -> 0`: both are `CANCELLED`, by the
+same supporter, on the same slot. On a `SHIFT` that is harmless, because a
+commitment holds exactly one and `CANCELLED` can only mean `1 -> 0`. On an
+`ITEM` it loses the thing the host is actually asking at 6am — not "did anyone
+cancel" but "am I short, and by how much".
+
+Worse, without magnitude a supporter who goes `4 -> 2 -> 4` writes two rows and
+ends where she started, while one who goes `4 -> 0` writes one. Reading the log,
+the net-zero fidget looks like more activity than the real loss.
+
+`quantityAfter` records the supporter's **resulting held quantity** after the
+change that row represents:
+
+| Transition | Action | `quantityAfter` |
+|---|---|---|
+| ITEM 0 -> 2 | `CLAIMED` | 2 |
+| ITEM 2 -> 4 | `CLAIMED` | 4 |
+| ITEM 4 -> 2 | `CANCELLED` | 2 |
+| ITEM 2 -> 0 | `CANCELLED` | 0 |
+| SHIFT 0 -> 1 | `CLAIMED` | 1 |
+| SHIFT 1 -> 0 | `CANCELLED` | 0 |
+| 2 -> 2 | no row | — |
+
+**Resulting total, not a delta.** Direction is already in `action`, and a
+sequence of resulting totals reconstructs every delta while a sequence of deltas
+cannot reconstruct a total without a known starting point.
+
+**`NOT NULL`, no default, uniformly for both slot types.** A `SHIFT` writes 1 or
+0 like anything else. Making it nullable "because SHIFT is obvious" would
+reintroduce exactly the special case this column removes, and a nullable audit
+field is one a reader has to interpret.
+
+**IT IS NOT A SECOND SOURCE OF CURRENT TRUTH.** Invariant 39 still holds:
+current quantity is `count(HelperSignupPosition)` and nothing else. This column
+is an immutable historical fact — what that count was at one instant — and no
+code may read the most recent row to answer what a supporter holds now. The
+distinction matters because a stored live count is exactly what invariant 39
+exists to forbid, and the two would be indistinguishable to a careless reader.
 
 **No retention or cleanup policy in S1 — ruled 2026-08-31.** The log grows without bound and that is acceptable at this size. If it ever needs trimming, that is a deliberate decision made with a real row count in hand, not a default chosen now.
 
@@ -794,7 +836,7 @@ Appended to money doc §9 and admission addendum §10. **Invariant 32 is amended
 36. The help checkbox records intent only. It never claims, reserves, or holds a slot.
 37. A `pending` or `reserved_cash` contribution grants no sign-up access.
 38. Slot capacity is enforced by unique `(slotId, position)` on `HelperSignupPosition`. Commitment uniqueness is enforced by unique `(slotId, eventSupporterId)` on `HelperSignup`. No mutable counter exists anywhere, and no constraint reaches across tables.
-39. Quantity is never stored. A commitment's quantity is the count of its position rows, and a `SHIFT` commitment holds exactly one. Position rows are bound to their commitment's slot by composite foreign key and cascade on delete.
+39. **Current** quantity is never stored. A commitment's quantity is the count of its position rows, and a `SHIFT` commitment holds exactly one. Position rows are bound to their commitment's slot by composite foreign key and cascade on delete. `SignupLog.quantityAfter` is not an exception: it is an immutable record of what that count *was* at one past instant, and no code may read it to answer what is held now.
 40. Cancellation deletes positions and frees those numbers for reuse. **The log records committed quantity changes, and its action is the DIRECTION of the change, not whether the `HelperSignup` row was created or deleted.** A positive delta writes `CLAIMED`; a negative delta caused by the supporter writes `CANCELLED`; a host reducing or removing a commitment writes `HOST_REMOVED`; a zero delta writes nothing. The row is written in the same transaction as the position mutation.
 41. Check-in authority originates only from a host-issued `CheckinStaffAccess` link. No sign-up action creates, implies, or extends it.
 42. A supporter with at least one helper signup is never deleted by cleanup, at any status.
