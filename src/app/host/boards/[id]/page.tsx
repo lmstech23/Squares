@@ -19,6 +19,7 @@ import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
 import ContributorList, { type ContributorRow } from "./contributor-list";
 import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
+import SignupPanel from "./signup-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,30 @@ export default async function HostBoardPage({ params }: Props) {
       where: { boardId: board.boardId, paymentStatus: "paid" },
       _sum: { pricePaidCents: true },
     });
+
+    // Sign-up sheet and slots, fetched HERE rather than in the panel. The rest
+    // of this page fetches server-side and passes down; a client fetch-on-mount
+    // would add a loading flash and a one-off loading state for no benefit.
+    // `filled` is a live count of position rows — there is no filledCount
+    // column to drift.
+    const signupSheet = board.event
+      ? await prisma.signupSheet.findUnique({
+          where: { eventId: board.event.id },
+          select: { id: true, title: true, instructions: true, isOpen: true },
+        })
+      : null;
+
+    const signupSlots = signupSheet
+      ? await prisma.signupSlot.findMany({
+          where: { sheetId: signupSheet.id },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true, slotType: true, name: true, startsAt: true, endsAt: true,
+            capacity: true, unitLabel: true, notes: true, sortOrder: true,
+            _count: { select: { positions: true } },
+          },
+        })
+      : [];
 
     // Invariant 16. Shared predicate — lib/board-lock.ts — so contribution
     // price, early-bird and prize terms call the same one when they get edit
@@ -386,6 +411,26 @@ export default async function HostBoardPage({ params }: Props) {
               grants={grantRows}
               links={checkinStaffLinks}
             />
+
+            <div className="mt-4">
+              <SignupPanel
+                boardId={board.boardId}
+                eventTimezone={eventDetail?.timezone ?? "America/New_York"}
+                sheet={signupSheet}
+                slots={signupSlots.map((sl) => ({
+                  id: sl.id,
+                  slotType: sl.slotType as "SHIFT" | "ITEM",
+                  name: sl.name,
+                  startsAt: sl.startsAt ? sl.startsAt.toISOString() : null,
+                  endsAt: sl.endsAt ? sl.endsAt.toISOString() : null,
+                  capacity: sl.capacity,
+                  unitLabel: sl.unitLabel,
+                  notes: sl.notes,
+                  sortOrder: sl.sortOrder,
+                  filled: sl._count.positions,
+                }))}
+              />
+            </div>
           </div>
         )}
 

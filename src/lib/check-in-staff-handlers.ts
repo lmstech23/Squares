@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getHost } from "@/lib/auth";
 import { newCheckinStaffToken, hashToken } from "@/lib/check-in-staff";
+import { authorizeBoardEvent } from "@/lib/host-auth";
 
 // Shared implementation for the check-in staff link routes.
 //
@@ -11,28 +11,10 @@ import { newCheckinStaffToken, hashToken } from "@/lib/check-in-staff";
 // deploy will still call it; two implementations would drift, and the one that
 // drifts is whichever gets tested less.
 
-async function authorize(boardId: string) {
-  const host = await getHost();
-  if (!host) return { error: "Unauthorized" as const, status: 401 };
-
-  const board = await prisma.board.findUnique({
-    where: { boardId },
-    select: { hostId: true, event: { select: { id: true } } },
-  });
-
-  if (!board || board.hostId !== host.id) {
-    return { error: "Board not found." as const, status: 404 };
-  }
-  if (!board.event) {
-    return { error: "This board has no event." as const, status: 400 };
-  }
-  return { eventId: board.event.id };
-}
-
 /** Create a staff link. The raw token is returned once and never stored. */
 export async function createCheckinStaffLink(request: Request, boardId: string) {
   try {
-    const auth = await authorize(boardId);
+    const auth = await authorizeBoardEvent(boardId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -67,7 +49,7 @@ export async function createCheckinStaffLink(request: Request, boardId: string) 
 /** Revoke a staff link. Revoked, never deleted — check-in history refers to it. */
 export async function revokeCheckinStaffLink(request: Request, boardId: string) {
   try {
-    const auth = await authorize(boardId);
+    const auth = await authorizeBoardEvent(boardId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
