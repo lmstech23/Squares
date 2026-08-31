@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import { setDonateFlag } from "@/lib/confirm-square";
+import { ADMISSION } from "@/lib/board-vocabulary";
 
 // ============================================================
 // HOST: Toggle a purchase's donate setting after the fact
@@ -67,7 +68,7 @@ export async function POST(
         return NextResponse.json(
           {
             error:
-              `${n} ${n === 1 ? "ticket has" : "tickets have"} already been ` +
+              `${n} ${n === 1 ? `${ADMISSION.one} has` : `${ADMISSION.many} have`} already been ` +
               `scanned at the gate, so this purchase can't be donated.`,
           },
           { status: 409 }

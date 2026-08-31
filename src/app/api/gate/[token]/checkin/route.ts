@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveGateSession } from "@/lib/check-in-staff";
+import { ADMISSION } from "@/lib/board-vocabulary";
 
 // Gate check-in — fundraiser-board-v2.md §6B.
 //
@@ -46,7 +47,7 @@ export async function POST(
       return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     }
     if (!body.passToken && !body.passId) {
-      return NextResponse.json({ error: "No ticket given." }, { status: 400 });
+      return NextResponse.json({ error: `No ${ADMISSION.one} given.` }, { status: 400 });
     }
 
     // Scoped to this staff member's event. A token from another event scans as
@@ -67,14 +68,14 @@ export async function POST(
 
     if (!pass) {
       return NextResponse.json(
-        { error: "Not a ticket for this event." },
+        { error: `Not a ${ADMISSION.one} for this event.` },
         { status: 404 }
       );
     }
 
     if (pass.status === "void") {
       return NextResponse.json(
-        { error: "This ticket was cancelled and is no longer valid." },
+        { error: `This ${ADMISSION.one} was cancelled and is no longer valid.` },
         { status: 409 }
       );
     }
@@ -136,7 +137,7 @@ export async function POST(
     // the host needs to see that it happened and was reversed.
     if (pass.status !== "used") {
       return NextResponse.json(
-        { error: "That ticket has not been scanned." },
+        { error: `That ${ADMISSION.one} has not been scanned.` },
         { status: 409 }
       );
     }
