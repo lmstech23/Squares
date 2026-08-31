@@ -912,10 +912,10 @@ Prize boards are **deferred**, by decision, not by configuration. `prizePoolPerc
 | A4b | **Fundraiser host dashboard** (§9) + contributor confirmation page (§6) | ✅ |
 | A5 | Claim flow: quantity, picker, batching, `pricePaidCents`, **admission preparation** | ✅ |
 | A6 | Hold timer + resolve-then-release cron | ✅ |
-| A8 | **Admission activation** — shared `confirmSquare`, minting, backfill | — |
-| A7 | CLOSING + finalization — `finalRaisedCents` only | — |
-| A9 | Passes screen, host donate-flag toggle | — |
-| A10 | Check-in surface, QR, roster, search, check-in, undo | — |
+| A8 | **Admission activation** — shared `confirmSquare`, minting, backfill | ✅ `0a55b79` |
+| A7 | CLOSING + finalization — `finalRaisedCents` only | ✅ `6ec9686` |
+| A9 | Passes screen, host donate-flag toggle | ✅ `da6aa39` |
+| A10 | Check-in surface, QR, roster, search, check-in, undo | ✅ `99bb516` |
 
 **A1–A6 is the live-next-week set.** A7 isn't needed until the campaign actually closes, weeks later, and can land while squares are selling.
 

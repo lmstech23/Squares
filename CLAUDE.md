@@ -37,8 +37,58 @@ Sign-up addendum §2.
 
 The fundraiser spec was written long before any of it was built, and a brief was once written against a schema nobody had checked. That is the failure this section exists to prevent.
 
-Done: **A1**, **A1b**, **A2**, **A3** — both migrations written, board type picker, fundraiser form and API branch.
-Next: **A4** — fundraiser grid and contributor board (v2 §6, §7).
+**Phase A is complete. A1 through A10 are all built and deployed**, verified
+against the code on 2026-08-31 rather than from a status column — both status
+tables were stale and said otherwise.
+
+```
+A1  A1b  A2  A3  A4  A4b  A5  A6      done
+A8   admission activation   0a55b79   done  — minting inside the confirmation
+                                              transaction, shared confirmSquares
+A7   CLOSING + final total  6ec9686   done
+A9   passes screen, donate  da6aa39   done
+A10  check-in surface, QR   99bb516   done
+```
+
+Sign-up / volunteer sheets are a separate sequence, S0–S5, specified in
+`fundraiser-signup-addendum.md` §12:
+
+```
+S0  application rename VolunteerAccess -> CheckinStaffAccess   d36129d  done
+S1  schema — SignupSheet, SignupSlot, HelperSignup,
+    HelperSignupPosition, SignupLog, NotificationDelivery       NOT STARTED
+S2  host slot builder                                          not started
+S3  sign-up sheet screen — token auth, claim, cancel            not started
+S4  confirmation emails carrying the link                       not started
+S5  checkout checkbox, redirect, unified roster                 not started
+```
+
+**S1 is next and has no blockers.** The addendum's dependency note — *"S3 onward
+depends on A8"* — is satisfied: A8 shipped in `0a55b79`, so eligibility can read
+`EventSupporter.status = active`. Confirmed by reading `src/lib/confirm-square.ts`,
+not the table: `mintPasses` runs inside `confirmSquares`, takes
+`SELECT … FOR UPDATE` on the supporter row, and CAS-writes `status: "active"`.
+
+### Before S1 creates a single table
+
+Three preconditions from the baseline and containment work. Full reasoning in
+`PHASE-2-BACKLOG.md` under "S1 checklist"; the short form, because a backlog
+file nobody opens is not a control:
+
+1. **Assert `SELECT current_user` = `postgres` over `DIRECT_URL`.** The
+   `ALTER DEFAULT PRIVILEGES` lines in `0_init` are scoped `FOR ROLE postgres`
+   and govern only objects *that role* creates. Tables created by any other
+   role fall outside the revoke entirely. `verify-containment.mts` asserts this
+   over `DATABASE_URL` (the pooler); migrations run over `DIRECT_URL`, and the
+   assertion belongs on the connection that creates the tables.
+2. **Make the RLS table-name-set diff repeatable** across the six new tables,
+   deriving both name sets rather than hardcoding either. RLS is per-table —
+   there is no schema-wide `ENABLE ROW LEVEL SECURITY` — so coverage drifts
+   table by table and only a name-set diff catches it.
+3. **Do not count the three sequence statements as coverage.** No model uses
+   `autoincrement()` and production has zero sequences in `public`, so they act
+   on an empty set. If S1 adds one, the default-privilege line is what protects
+   it.
 
 Board dates are stored in UTC and entered as wall clock in `Board.timezone`
 (one zone per board, covering early bird, close, draw, and event). Convert with
@@ -91,13 +141,26 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 | Document | Authority over |
 |---|---|
 | `fundraiser-money-state-machine.md` | Money, drawing eligibility, pricing. Invariants 1–22 and 42–44. **Wins every conflict** |
-| `fundraiser-admission-addendum.md` | Admission model and schema. Invariants 23–41 |
+| `fundraiser-admission-addendum.md` | Admission model and schema. **v2.0.** Invariants 23–33 |
 | `fundraiser-board-v2.md` | All fundraiser flows and screens. **Flow authority for fundraiser work** |
-| `slice-1-handoff.md` | Admission Slice 1 (A8) build brief. Derives from the three above |
+| `fundraiser-signup-addendum.md` | **Sign-up sheets and volunteer flow. v1.6.** Authority for S0–S5 |
+| `slice-1-handoff.md` | Admission Slice 1 (A8) build brief. Derives from the three above. **Numbering corrected to 23–33** |
 | `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
 
-Consistent as of admission addendum v1.7.
+Consistent as of admission addendum **v2.0** and sign-up addendum **v1.6**,
+reconciled 2026-08-31.
+
+**The sign-up addendum was missing from this repository until then.** S0 was
+built from a copy in a Downloads folder, and this file cited a "§2" nobody
+could open. Two versions existed side by side there — v1.5.1 and v1.6, which
+disagree about S0 — and v1.6 is the one that was built. That is the same
+off-repo-truth failure the baseline exercise uncovered. **If a spec is not in
+this repository, it is not authoritative; import it before building from it.**
+
+Note that admission **v2.0** and sign-up **v1.6** are different documents, not
+two versions of one. Every admission copy outside this repo is v1.2 or older
+and is superseded.
 
 **If two documents disagree, that is a bug. Report it. Do not choose.**
 

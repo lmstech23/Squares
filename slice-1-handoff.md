@@ -8,10 +8,14 @@
 | Document | Authority over |
 |---|---|
 | `fundraiser-money-state-machine.md` | Money and drawing eligibility. Invariants 1–22. **Wins every conflict** |
-| `fundraiser-admission-addendum.md` v1.4 | Admission model and schema. Invariants 23–41 |
+| `fundraiser-admission-addendum.md` **v2.0** | Admission model and schema. Invariants **23–33** |
 | `fundraiser-board-v2.md` | Fundraiser flows and screens, including §16 build order |
 
-These three are consistent with each other as of v1.4. Every invariant-range pointer reads 23–41. There is no companion file to reconcile. If you find a contradiction, stop and report it rather than choosing.
+**Superseded numbering — corrected 2026-08-31.** This brief was written against admission addendum **v1.4**, where the range was 23–41. The addendum is now **v2.0**: the declaration model is gone, and invariants 23–41 were replaced by **23–33**. The deleted invariants covered the attendance picker, the per-supporter ceiling, the Manage-attendance screen and token auth — surface that no longer exists, so nothing is missing.
+
+The original line here read *"These three are consistent with each other as of v1.4. Every invariant-range pointer reads 23–41."* That was true at v1.4 and is false now; it is corrected rather than deleted so the drift is visible.
+
+If you find a contradiction, stop and report it rather than choosing.
 
 ---
 

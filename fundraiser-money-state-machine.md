@@ -2,7 +2,7 @@
 
 **Status:** Draft — pending sign-off
 **Authority:** This document is the source of truth for anything involving dollars or drawing eligibility on Fundraiser boards. Where `fundraiser-board-v2.md` and this document disagree, **this document wins.**
-**Extended by:** `fundraiser-admission-addendum.md` — event admission. Invariants 23–41 live there. They extend this list and never override 1–22.
+**Extended by:** `fundraiser-admission-addendum.md` — event admission. Invariants 23–33 live there. They extend this list and never override 1–22.
 **Scope:** Fundraiser boards only. Game Day boards are unchanged and out of scope.
 
 Sign off on the invariants in Section 9 before any of this is built. The product spec will be written around them.
@@ -338,7 +338,7 @@ Every one of these must hold at all times.
 43. `raised` is the sum of `pricePaidCents` over confirmed squares. No code path may derive it from a board-level price.
 44. The price schedule is a boundary in **time**, evaluated once per claim. It is never a function of how many squares have sold, so no counter, lock, or ordering guarantee is required.
 
-Invariants 23–41 govern event admission and are defined in `fundraiser-admission-addendum.md`. They are numbered continuously with this list so a single sequence covers both documents. Admission never moves money, never touches `raised`, and never alters drawing eligibility.
+Invariants 23–33 govern event admission and are defined in `fundraiser-admission-addendum.md`. They are numbered continuously with this list so a single sequence covers both documents. Admission never moves money, never touches `raised`, and never alters drawing eligibility.
 
 ---
 
