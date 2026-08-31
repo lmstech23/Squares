@@ -192,6 +192,37 @@ Splitting commitment from position fixes it without a trick. "Daaliyah is bringi
 
 A helper cancelling at 6am the day of an event is exactly the thing a host will want to see and the thing nobody will remember. The log is small and it is the difference between "nobody showed up" and "three people cancelled overnight."
 
+**Action is the DIRECTION of the committed quantity change — ruled 2026-08-31.**
+Not whether the `HelperSignup` row was created or deleted:
+
+| Transition | Action |
+|---|---|
+| 0 -> 2 | `CLAIMED` |
+| 2 -> 4 | `CLAIMED` |
+| SHIFT 0 -> 1 | `CLAIMED` |
+| 4 -> 2 | `CANCELLED` |
+| 2 -> 0 | `CANCELLED` |
+| SHIFT 1 -> 0 | `CANCELLED` |
+| 2 -> 2 | **nothing** |
+| host reduces or removes | `HOST_REMOVED` |
+
+The earlier wording defined these by row lifecycle, which stopped working the
+moment the API became a target total: under that reading a 2 -> 4 was an
+"addition" with no enum value, and a 4 -> 2 was neither a claim nor a cancel and
+so was not required to be logged at all. Direction covers every transition with
+the three values that already exist. **No fourth action value.**
+
+**A no-op writes nothing.** The log records committed state changes, not HTTP
+requests. The target-total API is idempotent by shape, and an audit trail that
+grew a row per replayed request would make the log the one thing in the feature
+that is *not* idempotent — a double-tap would leave two entries describing one
+decision the supporter made once.
+
+**The log row is written inside the same transaction as the position
+mutation.** A quantity change and its audit event commit together or roll back
+together. Writing after the commit leaves a window where positions moved and no
+record exists, which is precisely the 6am case this table exists for.
+
 **No retention or cleanup policy in S1 — ruled 2026-08-31.** The log grows without bound and that is acceptable at this size. If it ever needs trimming, that is a deliberate decision made with a real row count in hand, not a default chosen now.
 
 ### AttendanceAccessToken → SupporterAccessToken
@@ -547,7 +578,11 @@ the commitment standing. The displayed quantity follows automatically because it
 was never stored. On a `SHIFT` there is nothing partial to do: the only targets
 are 1 and 0, and 0 drops the commitment.
 
-Cancel writes a `SignupLog` row. Nothing else is retained.
+Every committed quantity change writes a `SignupLog` row, in the same
+transaction: `CLAIMED` for an increase, `CANCELLED` for a supporter-driven
+decrease, `HOST_REMOVED` when the host reduces or removes a commitment. A
+request that changes nothing writes nothing. Beyond that row, nothing is
+retained.
 
 ### Managing a sign-up without an account
 
@@ -760,7 +795,7 @@ Appended to money doc §9 and admission addendum §10. **Invariant 32 is amended
 37. A `pending` or `reserved_cash` contribution grants no sign-up access.
 38. Slot capacity is enforced by unique `(slotId, position)` on `HelperSignupPosition`. Commitment uniqueness is enforced by unique `(slotId, eventSupporterId)` on `HelperSignup`. No mutable counter exists anywhere, and no constraint reaches across tables.
 39. Quantity is never stored. A commitment's quantity is the count of its position rows, and a `SHIFT` commitment holds exactly one. Position rows are bound to their commitment's slot by composite foreign key and cascade on delete.
-40. Cancellation deletes positions and frees those numbers for reuse. Every claim, addition, cancel, and host removal writes a `SignupLog` row.
+40. Cancellation deletes positions and frees those numbers for reuse. **The log records committed quantity changes, and its action is the DIRECTION of the change, not whether the `HelperSignup` row was created or deleted.** A positive delta writes `CLAIMED`; a negative delta caused by the supporter writes `CANCELLED`; a host reducing or removing a commitment writes `HOST_REMOVED`; a zero delta writes nothing. The row is written in the same transaction as the position mutation.
 41. Check-in authority originates only from a host-issued `CheckinStaffAccess` link. No sign-up action creates, implies, or extends it.
 42. A supporter with at least one helper signup is never deleted by cleanup, at any status.
 43. Sign-Up Sheets exist only on board-linked events. There is no standalone sheet and `Event.boardId` stays required.
