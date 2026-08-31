@@ -113,6 +113,8 @@ Event ──optional──▶ SignupSheet ──▶ SignupSlot × N
 
 No sign-up column lands on `Board`, `Square`, `AdmissionGrant`, or `AdmissionPass`.
 
+**RLS — ruled 2026-08-31.** All six new tables get `ENABLE ROW LEVEL SECURITY` with **zero client policies** in S1, and the `REVOKE`/`GRANT` posture of `prisma/migrations/0_init`. Nothing authenticates as `anon` or `authenticated` against them; every read is server-side through Prisma. The RLS and grant statements ship **in the same migration** as the `CREATE TABLE`s.
+
 **No sign-up or token record is written inside the confirmation transaction.** The one exception is the `NotificationDelivery` row, which may be enqueued there because it is a local insert — see §5b. No provider call of any kind happens inside that transaction.
 
 ### SignupSheet
@@ -190,11 +192,30 @@ Splitting commitment from position fixes it without a trick. "Daaliyah is bringi
 
 A helper cancelling at 6am the day of an event is exactly the thing a host will want to see and the thing nobody will remember. The log is small and it is the difference between "nobody showed up" and "three people cancelled overnight."
 
+**No retention or cleanup policy in S1 — ruled 2026-08-31.** The log grows without bound and that is acceptable at this size. If it ever needs trimming, that is a deliberate decision made with a real row count in hand, not a default chosen now.
+
 ### AttendanceAccessToken → SupporterAccessToken
 
 The admission addendum left `AttendanceAccessToken` in place as *"the right table if a self-service path ever returns."* It has returned. The emailed sign-up link is exactly a supporter-scoped, opaque, revocable token.
 
 Rename it, rescope it to `eventSupporterId`, and use it here. Do not create a second token table.
+
+**PHYSICAL RENAME — ruled 2026-08-31.** Model *and* table: `attendance_access_tokens` → `supporter_access_tokens`. No `@@map` pinning to the old name.
+
+This is the opposite of S0, and the difference is the reason. S0 pinned because `volunteer_access` held issued records and a physical rename during a rolling deploy would break the gate mid-event. This table holds **zero rows and has zero code references** — verified before the ruling — so there is nothing to break, and pinning would leave a third naming layer for no benefit.
+
+**Single-use is dropped. `usedAt` is removed.** The old table modelled a 20-minute single-use link. A sign-up link is **reusable**: a supporter returns to change her commitment, and §5b's `SIGNUP_LINK` dedupe key is `supporter:{id}` precisely so a second contribution does not mail a second copy of a link she already has. A `usedAt` that burns the token on first open contradicts both.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | | |
+| `eventSupporterId` | String | Scope. Indexed |
+| `tokenHash` | String | **Unique.** Hashed at rest — a database read never yields a working credential |
+| `expiresAt` | DateTime | **Event-lifecycle based**, not a short fixed window |
+| `revokedAt` | DateTime? | Revocable per invariant wording. Null while live |
+| `createdAt` | DateTime | |
+
+**`expiresAt` is set from the event, not from a countdown.** The link has to work from the moment a contribution confirms until the host stops needing helpers, which is a span of weeks, not minutes. A fixed short window would expire the link before the event it exists to staff. The exact expression — event end plus a grace period, or event start — is an S3 decision made where the sheet is actually served; S1 only needs the column to be a `DateTime` with no default.
 
 ### Constraints
 
@@ -207,9 +228,67 @@ HelperSignupPosition (helperSignupId, slotId) → HelperSignup (id, slotId)  cas
 SupporterAccessToken.tokenHash                   unique
 ```
 
+**Delete behaviour — ruled 2026-08-31.** `Restrict` / `NoAction` everywhere, with exactly one exception:
+
+```
+HelperSignupPosition → HelperSignup            ON DELETE CASCADE
+every other foreign key                        ON DELETE RESTRICT / NO ACTION
+```
+
+`SignupLog` keeps **non-nullable** `slotId` and `eventSupporterId` under `Restrict`. The audit trail is preserved by *preventing deletion of the referenced rows*, not by nulling the log's own columns — a log entry that has forgotten which slot it described is not an audit trail.
+
+**No current product requirement conflicts with that.** Checked before ruling:
+
+- **Cancellation** deletes the `HelperSignup` and cascades its positions. `SignupLog` references `slotId` and `eventSupporterId`, **never `helperSignupId`**, so cancellation touches nothing the log depends on. §6: *"Cancel writes a `SignupLog` row. Nothing else is retained."*
+- **`HOST_REMOVED`** is the same delete plus a log row. Same reasoning.
+- **Slot deletion is not a specified operation.** S2 is *"create, edit, reorder, close"* — no delete. Capacity edits downward below the filled count are refused (§8) rather than deleting anything.
+- **Supporter deletion** is guarded by invariant 42 and §9: a supporter holding any `HelperSignup` is never deleted.
+
+If slot deletion is ever specified, it collides with this design and needs its own ruling — soft-delete the slot, or reopen the log FK question. It does not exist today.
+
+**Indexes — ruled 2026-08-31.** Beyond the uniques above:
+
+```
+SignupSlot (sheetId, sortOrder)                  host panel ordering
+HelperSignup (eventSupporterId)                  "what did I sign up for"
+SignupLog (slotId, createdAt)                    per-slot history, newest first
+NotificationDelivery (status, nextAttemptAt)     the retry cron's claim query
+```
+
+The last is load-bearing rather than cosmetic: §5b's worker scans for eligible rows on exactly those two columns every run.
+
+**Capacity — ruled 2026-08-31.** `capacity >= 1` is a database `CHECK`, not a validation. Row-local, so no cross-table limit applies.
+
+**Row-local SHIFT/ITEM consistency** is expressed as `CHECK` constraints where this document is explicit — see below. The cross-table rule (a `SHIFT` commitment holds exactly one position) stays in `src/lib/signups.ts`, because it must read `slot.slotType` from another table.
+
 The second gives one commitment per person per slot. The third is what makes capacity safe under concurrency. Both are plain single-table unique indexes.
 
 **A `SHIFT` commitment is valid only with exactly one position, and that is enforced in code.** A check constraint would need to read `slot.slotType` and hits the same cross-table limit as the original partial index did. `src/lib/signups.ts` is the sole owner of claims (§14) and the only place that can enforce it. Nothing else may insert a `HelperSignup` or a `HelperSignupPosition`.
+
+### Row-local SHIFT / ITEM checks
+
+Two rules in §3 are explicit and row-local, so they are database `CHECK`
+constraints rather than convention:
+
+```
+ITEM has no times          slotType = 'ITEM'  ->  startsAt IS NULL AND endsAt IS NULL
+unitLabel is ITEM-only     slotType = 'SHIFT' ->  unitLabel IS NULL
+capacity                   capacity >= 1
+```
+
+Both come straight from the field table: *"`startsAt`, `endsAt` — `SHIFT` only. Null on `ITEM`"* and *"`unitLabel` — `ITEM` only."*
+
+**UNRESOLVED — is a `SHIFT` required to have both `startsAt` and `endsAt`?**
+
+This document is **silent**. It says the columns are `DateTime?`, that they are SHIFT-only, and that they are null on ITEM. It never says a SHIFT must have them, nor whether an open-ended shift ("Main gate, come when you can") is allowed. §12 notes only that *"`SignupSlot.startsAt` exists"* as the hook for future reminder emails, which implies it is usually present without requiring it.
+
+Three readings, all defensible, none stated:
+
+1. `SHIFT` requires **both** — `startsAt IS NOT NULL AND endsAt IS NOT NULL`
+2. `SHIFT` requires **`startsAt` only**, `endsAt` optional
+3. Neither required — a `SHIFT` is just a slot the host chose to call a shift
+
+**No CHECK for this is written until it is ruled.** Adding the strict version and being wrong means a migration to relax it; adding nothing and tightening later is a data-cleanup problem. Reported rather than inferred.
 
 **`Event.boardId` stays required and unique.** No migration. There is no standalone sheet (invariant 43). If standalone ever ships it is a deliberate schema decision made then, with a real onboarding flow behind it, not an accident preserved now.
 
@@ -462,6 +541,8 @@ The admission addendum deletes orphaned grants and, with them, `pending` support
 
 **Amend: a supporter with any `HelperSignup` row is never deleted, regardless of status.**
 
+**Lands in `src/lib/admission.ts` — ruled 2026-08-31.** `releaseAdmissionForBatch` is where supporter cleanup already happens; the guard goes beside the existing `status !== "pending"` and `_count.grants > 0` conditions rather than in a new module. §14 is corrected to say so.
+
 With donors-only absolute, this guard is unreachable by design — every helper is `active`, and cleanup never touches active supporters. Add it anyway. It costs one clause, and it is the safety net for any future path that lets a non-`active` supporter hold a signup. Deleting a supporter out from under a live commitment is the kind of thing that gets discovered at 6am on event day.
 
 ---
@@ -558,7 +639,7 @@ S2 alone is useful — a host can build the sheet before anyone can claim from i
 | `src/app/api/host/boards/[id]/volunteer-access/route.ts` | Shared handler moves to `/check-in-staff`; this path stays as an alias |
 | `src/app/api/gate/[token]/checkin/route.ts` | Symbol references only |
 | `src/app/host/boards/[id]/event-panel.tsx` | Copy + new route path |
-| `src/lib/admission.ts` | Rename references only |
+| `src/lib/admission.ts` | Rename references only, **plus the invariant-42 cleanup guard** — `releaseAdmissionForBatch` must refuse to delete a supporter holding any `HelperSignup`. Ruled 2026-08-31; earlier versions of this table listed only the rename, which did not reflect where §9 actually lands |
 
 ---
 
@@ -632,3 +713,101 @@ what protects the resulting sequence; the two `ALL SEQUENCES` grant/revoke lines
 operate at execution time and would not cover a sequence created afterwards.
 
 Run `scripts/verify-containment.mts` immediately after S1's tables exist.
+
+
+---
+
+## S1 migration plan
+
+**Ruled 2026-08-31. Not yet implemented.** One migration, one transaction.
+
+### Ordering, and why it is not a style choice
+
+```
+1  enums
+2  the six CREATE TABLEs  +  AdmissionGrant.wantsToHelp  +  the token rename
+3  constraints, indexes, CHECKs
+4  ENABLE ROW LEVEL SECURITY on the six new tables
+5  REVOKE / GRANT  (the 0_init posture)
+```
+
+**Tables first, then RLS and grants, in the SAME migration.** The two statements
+that carry the containment —
+
+```
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC, anon, authenticated;
+GRANT  ALL ON ALL TABLES IN SCHEMA public TO service_role;
+```
+
+— are `ALL TABLES IN SCHEMA`, which Postgres resolves **at execution time**.
+They cover the tables that exist when they run and never tables created
+afterwards. Running them before the `CREATE TABLE`s would apply them to the
+pre-S1 set and leave all six new tables ungoverned.
+
+This is the mirror image of the `0_init` ordering rule and does not contradict
+it. In `0_init` the **default privileges** are revoked *before* any table is
+created, so nothing is ever briefly exposed; the `ALL TABLES` statements come
+after. S1 inherits the corrected defaults, so a new table is already born
+without `anon` grants — and the explicit statements still have to run last to
+reach it.
+
+Splitting RLS into a follow-up migration would leave a window where six tables
+holding supporter identity exist with RLS off. In the same transaction there is
+no window.
+
+### Expected verification result
+
+`scripts/verify-containment.mts` must report **22 relations**:
+
+```
+16  current   15 application tables + _prisma_migrations
++6  new       SignupSheet, SignupSlot, HelperSignup,
+              HelperSignupPosition, SignupLog, NotificationDelivery
+--
+22
+```
+
+`SupporterAccessToken` is a **rename, not an addition** — `attendance_access_tokens`
+becomes `supporter_access_tokens` and the count is unchanged by it. Any other
+number means something was created or dropped that this plan did not intend, and
+is a stop-and-report.
+
+Expected: `DATABASE CONTAINMENT: PASS`, 22 relations, 0 failures, 0
+inconclusive. The verifier is catalog-driven, so it discovers all six without
+being told they exist, and fails closed on any table without RLS.
+
+### The composite foreign key, preserved
+
+```
+HelperSignup            @@unique([id, slotId])          FK target only
+
+HelperSignupPosition
+  (helperSignupId, slotId)  ->  HelperSignup (id, slotId)   ON DELETE CASCADE
+```
+
+`HelperSignupPosition.slotId` is denormalized so that `(slotId, position)` — the
+capacity rule — can be a plain single-table unique index. That denormalization is
+only trustworthy if the position's `slotId` is *structurally* forced to equal its
+commitment's `slotId`.
+
+**Two independent foreign keys would not do it.** A position could reference
+Daaliyah's water commitment while carrying the setup shift's `slotId`; both FKs
+would be satisfied, `(slotId, position)` would still be unique, and the roster
+would be quietly wrong in a way no constraint would catch. The composite
+reference makes that row impossible to insert rather than merely unlikely.
+
+The parent's `@@unique([id, slotId])` exists for no other purpose than to be the
+target of that reference. It costs one index and it is what converts "trustworthy
+by convention" into "trustworthy by construction".
+
+### Preconditions, in order
+
+1. `SELECT current_user` over `DIRECT_URL` — must be `postgres`, **before** the
+   first `CREATE TABLE`. The `ALTER DEFAULT PRIVILEGES` lines in `0_init` are
+   scoped `FOR ROLE postgres` and govern only what that role creates.
+2. Capture the pre-state catalog for the diff.
+3. After the migration: name-set diff, both sides derived, failing on any name
+   present in one and absent from the other.
+4. No new model uses `@default(autoincrement())`. The three `ALL SEQUENCES`
+   statements act on an empty set today and are not coverage; if S1 adds a
+   sequence, the **default-privilege** line is what protects it.
