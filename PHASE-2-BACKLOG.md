@@ -199,3 +199,108 @@ A table that genuinely should be client-readable goes in the script's
 `CLIENT_ACCESSIBLE` map with its reason. That is a reviewed exception, not a
 silent pass: it still must have RLS on and at least one policy, and its
 policies are printed on every run.
+
+---
+
+# Confirmation email — five confirmed defects
+
+**Added:** 2026-08-30, from a read-only audit of every email caller.
+**Production state at time of audit:** 16 paid squares, all `payment_method = cash`,
+9 communication units, **0 unstamped**. Zero confirmed card squares exist, so the
+webpath below has never run in production.
+
+**Nothing here is a confirmed duplicate delivery.** Database patterns identify
+duplicate-send CANDIDATES only — a supporter may legitimately contribute twice.
+There is no `RESEND_API_KEY` in the local environment, so Resend history could
+not be correlated by recipient, template, purchase key and time. Two recipients
+show a **plausible duplicate pattern**; neither is established as a duplicate.
+
+## 1. No atomic delivery claim — webhook and cron can select the same rows
+
+`sendPendingConfirmations` runs `findMany` (unstamped, paid) → group → `sendEmail`
+→ `updateMany` stamp. **No transaction, no lock, no claim step.** The window
+between selecting a row and stamping it spans a network call to Resend.
+
+The cron fires every five minutes with a global filter; the Stripe webhook fires
+on card confirmation. Two invocations can select the same rows and both send.
+
+The race becomes possible with the first confirmed card contribution, and can
+produce duplicate receipts whenever webhook delivery overlaps another sweep.
+**The defect exists now; the duplicate is timing-dependent.**
+
+Fix shape: claim before sending — stamp under a conditional `updateMany` that
+matches only still-unstamped rows, send only what the claim returned, and clear
+the stamp on send failure. That inverts the current order deliberately.
+
+## 2. Global sweep combines boards and applies `squares[0]` branding
+
+The cron calls `sendPendingConfirmations({})` — no `boardId`, no `batchId` — so
+the sweep spans every board. But `boardName` and `isFundraiser` are read from
+`squares[0]` only. Every recipient in that sweep receives the **first** board's
+name and the first board's copy.
+
+Worse, `byRecipient` keys on email address alone, so one person holding squares
+on two boards receives a single email listing both boards' positions under one
+board's name, with fundraiser-vs-Game-Day wording chosen by whichever board
+sorted first.
+
+Latent only because production has one active board.
+
+## 3. Board-level webhook fallback mails unrelated supporters
+
+`handleCheckoutCompleted` calls `sendPendingConfirmations({ boardId })` whenever
+the confirmed square has no `batchId`. That sweeps the whole board and mails
+every unstamped recipient on it, not the purchaser.
+
+**Implemented and reachable in code, but production-unexercised.** The five
+units with no `batchId` are all cash and prove nothing about card behaviour.
+
+## 4. `confirm-cash` writes `PaymentReference` after the transaction commits
+
+`src/app/api/host/boards/[id]/confirm-cash/route.ts`: `confirmSquares` runs
+inside `prisma.$transaction`, then `paymentReference.create` runs **outside** it.
+A failure between the two leaves a `paid` square with no `PaymentReference`.
+
+The Stripe webhook puts the same create **inside** its transaction. The two
+confirmation paths do not behave the same way, and the cash path is the weaker
+one. Do not assume they are symmetric.
+
+## 5. `delete-expired` will fail on an aged board still holding squares
+
+`src/app/api/cron/delete-expired/route.ts` calls `board.deleteMany` for boards
+expired past 30 days. `squares_board_id_fkey` is physically **`ON DELETE
+RESTRICT`**, so deleting a board that still has squares raises a foreign-key
+violation and the route returns 500.
+
+Has not fired because no board has both expired and aged past the cutoff.
+
+## Semantic gap — recipient coalescing contradicts receipt identity
+
+**Not a defect in the above sense, and not the design working.** `byRecipient`
+groups on email address, collapsing two separately confirmed purchases into one
+receipt. That contradicts v1.5's `grant:{id}` receipt identity.
+
+**S4 must decide this deliberately:** either one delivery row per grant, matching
+the invariant, or a redefined recipient digest with its own identity rule. **The
+approved design says per grant.** Until S4 rules, do not treat coalescing as
+correct behaviour merely because it is the current behaviour.
+
+## Encoding artifact in prisma/schema.prisma
+
+**Added:** 2026-08-31
+**Severity:** cosmetic. No behavioural effect.
+
+`prisma/schema.prisma` contains a mangled character in a comment:
+
+```
+// Dismiss feature (Addendum K) ? soft-hide from host dashboard
+```
+
+The `?` is a corrupted em-dash, almost certainly from a UTF-8 file being
+written through a cp1252 path on Windows. It is inside a comment, so it changes
+nothing at runtime and Prisma parses the file fine.
+
+**Deliberately NOT fixed in the baseline commit.** Mixing a cosmetic character
+change into a diff that carries schema declarations and a security baseline
+makes the part that matters harder to review. Fix it on its own, and check
+whether other files carry the same artifact from the same write path.
