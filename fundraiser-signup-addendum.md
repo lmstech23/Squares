@@ -522,6 +522,117 @@ Sign-Up Sheet · open
 
 Editing a slot's capacity **downward below its filled count is refused**, with the count shown. Removing a person is a deliberate `HOST_REMOVED` action, not a side effect of typing a smaller number.
 
+### S2 rulings — 2026-08-31
+
+§8 gave a panel sketch and one rule. Everything below was unspecified and is now
+decided. **S2 is create, edit, reorder, and sheet open/close. Nothing else.**
+
+**1. Open / closed.** `SignupSheet.isOpen = false` stops **supporter claiming**
+and nothing else:
+
+| | isOpen = false |
+|---|---|
+| New supporter claims | **blocked** |
+| Existing supporters cancelling | **allowed** |
+| Supporters opening the sheet | **allowed** — their commitments and read-only availability |
+| Host editing sheet and slots | **allowed** |
+
+Closing is administration of the supporter-facing surface, not of the host's own
+tools. Reversible, no confirmation modal. A helper who cannot cancel after close
+simply does not show up, which is worse for the host than being told.
+
+**2. Slot deletion is NOT part of S2.** No hard delete, no soft delete, no
+archive field, no change to the S1 `Restrict` FKs or to `SignupLog`. S2 supports
+create, edit, reorder, and sheet open/close. If deletion is ever wanted it is a
+separate ruling with its own migration.
+
+**3. Capacity editing.**
+
+| Current fill | New capacity | |
+|---|---|---|
+| 0 | any value >= 1, either direction | allowed |
+| n | > n | allowed |
+| n | = n | allowed — simply zero openings |
+| n | < n | **refused**, with the current filled count shown |
+
+Increasing is always allowed. `capacity = filled` is **not** a separate
+"slot closed" state; it means there are no openings, and nothing in the model or
+the UI should treat it as a status.
+
+**4. Route shape: board-scoped.** `/api/host/boards/[id]/...`, reusing the
+existing board-ownership authorization that already resolves the event. §14's
+`/api/host/events/[id]/slots/` example is stale and is corrected — every other
+host route in this codebase is board-scoped, and a parallel event-scoped
+resolver would be a second authorization concept for one feature.
+
+**5. Sheet creation is an explicit host action.** No `SignupSheet` is
+auto-created with an event; an event can exist without volunteer needs. The
+no-sheet state shows a CTA.
+
+**6. Title and instructions are both editable**, with the existing default title
+applied at creation. "Two lines at most" is UX guidance, enforced as a
+reasonable application-level length limit — **not** a schema constraint.
+
+**7. Reordering is a full-list deterministic rewrite.** The client submits the
+ordered slot ids for the sheet; the server validates they belong to that sheet
+and form exactly the expected set, then rewrites `sortOrder` from that list.
+
+No `(sheetId, sortOrder)` uniqueness constraint. Gaps are irrelevant — ordering
+needs only relative comparison — and `sortOrder` is normalized to 0..n-1 after a
+successful reorder, so gaps and duplicates cannot accumulate.
+
+**8. "3 cancellations" is removed from the panel summary.** `SignupLog` is
+append-only, so a raw `CANCELLED` count is a historical event count that
+includes cancel-and-reclaim cycles by the same person. The panel shows current
+operational state — filled and open capacity. No new metric, no retention
+window.
+
+**9. S2 writes no `SignupLog` rows.** Sheet and slot administration is not
+logged. The log remains for helper-commitment actions: `CLAIMED`, `CANCELLED`,
+`HOST_REMOVED`. `HOST_REMOVED` belongs with helper management, not slot
+administration, and no new enum values are added.
+
+**10. Slot validation** is application-level plus the S1 database constraints:
+name required, `capacity >= 1`, and the existing SHIFT/ITEM timestamp and
+`unitLabel` rules. **Shift times are NOT required to fall inside the event
+window** — setup and cleanup happen outside it. No speculative schema
+constraints.
+
+**11. Empty states.** No sheet: *"Create volunteer sign-up."* Sheet with no
+slots: *"Add your first volunteer need."* Slots with no signups show available
+capacity normally.
+
+**12. Component structure.** A dedicated `signup-panel.tsx` mounted inside the
+existing event panel, rather than growing `event-panel.tsx`.
+
+### Capacity edits must be one atomic statement
+
+**A read-then-write cannot hold rule 3.** Two tabs both read `filled = 3`, both
+decide `capacity = 3` is legal, and both write — or worse, one lowers to 3 while
+a claim lands position 4. The check and the write have to be the same statement:
+
+```sql
+UPDATE signup_slots
+   SET capacity = $newCapacity
+ WHERE id = $slotId
+   AND $newCapacity >= (SELECT count(*) FROM helper_signup_positions
+                         WHERE slot_id = signup_slots.id)
+```
+
+Zero rows affected means refused; the handler then reads the current filled
+count to put a real number in the message. One round trip decides, and the
+`UPDATE` takes a row lock on the slot for the rest of the transaction.
+
+**S3 must cooperate.** Capacity is not a database constraint on claiming —
+capacity safety comes from `unique (slotId, position)`, and the ceiling itself
+is applied in code. So the claim path in `src/lib/signups.ts` must
+`SELECT ... FOR UPDATE` the slot row before allocating positions. With that,
+capacity edits and claims serialize on the same row. Without it, a capacity
+reduction and a claim can still interleave, and capacity is advisory rather than
+enforced. This is recorded here because it is an S2 decision that constrains S3.
+
+
+
 ### The unified roster
 
 This is the payoff, and it is one query because helpers key to `EventSupporter.identityKey`:
@@ -632,7 +743,8 @@ S2 alone is useful — a host can build the sheet before anyone can claim from i
 | `src/lib/email.ts` | **NEW** — the sender. Built in S4, shared with the §12 confirmation email |
 | `src/lib/cron/retry-notifications.ts` | **NEW** — sweeps eligible `failed` rows and stale `pending` leases |
 | `src/app/host/boards/[id]/signup-panel.tsx` | **NEW** — slot builder and roster |
-| `src/app/api/host/events/[id]/slots/route.ts` | **NEW** |
+| `src/app/api/host/boards/[id]/signup-sheet/route.ts` | **NEW** — create sheet, edit title/instructions/isOpen. **Board-scoped**, ruling 4. Earlier versions of this table showed `/api/host/events/[id]/slots/`, which did not match the established architecture |
+| `src/app/api/host/boards/[id]/signup-slots/route.ts` | **NEW** — create, edit, reorder slots. Board-scoped |
 | `src/app/signup/[token]/page.tsx` | **NEW** — supporter sheet |
 | `src/app/api/signup/[token]/claim/route.ts` | **NEW** — claim, cancel |
 | `src/app/board/[slug]/claim-sheet.tsx` | Help checkbox |
