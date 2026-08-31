@@ -44,6 +44,8 @@ import {
   validateSlotInput,
   slotFillState,
   capacityTooLowMessage,
+  slotTypeChangeRejected,
+  SLOT_TYPE_IMMUTABLE_MESSAGE,
   type SlotInput,
 } from "@/lib/signups";
 
@@ -52,6 +54,12 @@ interface Props {
 }
 
 type PatchBody = {
+  /**
+   * Accepted only so it can be REJECTED. A saved slot's type is immutable, and
+   * silently ignoring the field would return 200 with the old type in the body
+   * — the host sees "saved" and the wrong thing on screen.
+   */
+  slotType?: string;
   name?: string;
   capacity?: number;
   startsAt?: string | null;
@@ -82,6 +90,18 @@ export async function PATCH(request: Request, { params }: Props) {
     }
 
     const body = (await request.json()) as PatchBody;
+
+    // TYPE IS IMMUTABLE. The database cannot enforce this: the S1 CHECKs police
+    // internal consistency, so an ITEM keeping its times is rejected — but a
+    // flip that also clears the now-invalid fields produces a row Postgres
+    // accepts. A CHECK only sees the present row; immutability is about its
+    // history. Ruled 2026-08-31.
+    if (slotTypeChangeRejected(slot.slotType, body.slotType)) {
+      return NextResponse.json(
+        { error: SLOT_TYPE_IMMUTABLE_MESSAGE, field: "slotType" },
+        { status: 409 }
+      );
+    }
 
     // Validate the FULL resulting slot, not just the changed fields — a name
     // edit must not be able to leave an ITEM holding a start time that some

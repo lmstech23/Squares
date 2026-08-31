@@ -63,10 +63,18 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  // `composing` is the TYPE being written, not a boolean. Two entry points open
+  // two different forms; there is no toggle inside the form, so unsaved state
+  // cannot survive a change of mind about what is being created.
+  //
+  // The bug this replaces: one shared `slotType` state, flipped by a toggle
+  // that reset nothing. A host filled in a shift, clicked "Something to bring",
+  // and the name, capacity and times carried over. She renamed it and saved —
+  // and only the item existed. The shift she had typed was never created and
+  // was never anywhere. From her side her work vanished.
+  const [composing, setComposing] = useState<"SHIFT" | "ITEM" | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [slotType, setSlotType] = useState<"SHIFT" | "ITEM">("SHIFT");
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState("1");
   const [startsAt, setStartsAt] = useState("");
@@ -100,9 +108,20 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
     }
   }
 
+  /** Clear every field and close the form. */
   function resetForm() {
     setName(""); setCapacity("1"); setStartsAt(""); setEndsAt(""); setUnitLabel("");
-    setSlotType("SHIFT"); setAdding(false); setEditingId(null);
+    setComposing(null); setEditingId(null); setError(null);
+  }
+
+  /**
+   * Open a FRESH form for one type. Every field is cleared first — nothing
+   * carries across from a form the host abandoned, or from the other entry
+   * point.
+   */
+  function startCreating(type: "SHIFT" | "ITEM") {
+    setName(""); setCapacity("1"); setStartsAt(""); setEndsAt(""); setUnitLabel("");
+    setEditingId(null); setError(null); setComposing(type);
   }
 
   // --- no sheet -----------------------------------------------------------
@@ -127,24 +146,19 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
     );
   }
 
+  const slotType = composing ?? "SHIFT";
+
   const slotForm = (
     <div className="rounded-lg border border-gray-800 bg-gray-950 p-3 space-y-3 mt-3">
-      <div className="flex gap-2">
-        {(["SHIFT", "ITEM"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => { setSlotType(t); setStartsAt(""); setEndsAt(""); setUnitLabel(""); }}
-            className={`flex-1 rounded-lg border py-2 text-xs transition-colors ${
-              slotType === t
-                ? "border-green-500 bg-green-950/20 text-white"
-                : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
-            }`}
-          >
-            {t === "SHIFT" ? "A shift" : "Something to bring"}
-          </button>
-        ))}
-      </div>
+      {/* NO TYPE TOGGLE. On create, the entry point already chose. On edit, the
+          type is immutable — a shift cannot become an item, because that would
+          change what an existing commitment on it is allowed to be. The host
+          who wants the other kind wants a different slot. */}
+      <p className="text-xs font-medium text-gray-400">
+        {editingId
+          ? slotType === "SHIFT" ? "Editing a shift" : "Editing an item"
+          : slotType === "SHIFT" ? "New shift" : "New item to bring"}
+      </p>
 
       <div>
         <label className={label} htmlFor="slotName">Name</label>
@@ -188,8 +202,12 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
           type="button"
           disabled={busy !== null}
           onClick={async () => {
+            // slotType is sent only on CREATE. On edit the server rejects it
+            // with a 409, and sending it would turn a legitimate save into an
+            // error the host did nothing to cause.
             const payload = {
-              slotType, name, capacity: parseInt(capacity, 10),
+              ...(editingId ? {} : { slotType }),
+              name, capacity: parseInt(capacity, 10),
               startsAt: slotType === "SHIFT" ? startsAt || null : null,
               endsAt: slotType === "SHIFT" ? endsAt || null : null,
               unitLabel: slotType === "ITEM" ? unitLabel || null : null,
@@ -246,7 +264,7 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
         </p>
       )}
 
-      {slots.length === 0 && !adding && (
+      {slots.length === 0 && !composing && (
         <p className="text-xs text-gray-500 mt-3">Add your first volunteer need.</p>
       )}
 
@@ -279,7 +297,8 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
               </span>
               <button type="button" disabled={busy !== null} className={btn}
                 onClick={() => {
-                  setEditingId(s.id); setAdding(true); setSlotType(s.slotType);
+                  // Editing opens with THIS slot's type, which cannot change.
+                  setEditingId(s.id); setComposing(s.slotType); setError(null);
                   setName(s.name); setCapacity(String(s.capacity));
                   setUnitLabel(s.unitLabel ?? "");
                   setStartsAt(s.startsAt ? s.startsAt.slice(0, 16) : "");
@@ -292,13 +311,18 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
         </div>
       )}
 
-      {adding ? slotForm : (
-        <button type="button" onClick={() => setAdding(true)} className={`${btn} mt-3`}>
-          Add a volunteer need
-        </button>
+      {composing ? slotForm : (
+        <div className="flex gap-2 mt-3">
+          <button type="button" onClick={() => startCreating("SHIFT")} className={btn}>
+            Add a shift
+          </button>
+          <button type="button" onClick={() => startCreating("ITEM")} className={btn}>
+            Add something to bring
+          </button>
+        </div>
       )}
 
-      {error && !adding && <p className="text-xs text-red-400 mt-2">{error}</p>}
+      {error && !composing && <p className="text-xs text-red-400 mt-2">{error}</p>}
     </div>
   );
 }

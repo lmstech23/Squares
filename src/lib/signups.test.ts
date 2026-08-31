@@ -11,6 +11,7 @@ import {
   validateSlotInput, validateReorder, normalizeSortOrder,
   slotFillState, sheetSummary, capacityTooLowMessage,
   isValidPositionCount, maxPositionsPerCommitment,
+  slotTypeChangeRejected,
 } from "./signups.ts";
 
 const at = (h: number) => new Date(`2026-10-24T${String(h).padStart(2, "0")}:00:00Z`);
@@ -97,5 +98,31 @@ describe("the cross-table rule the database cannot hold", () => {
   test("ITEM is up to capacity", () => {
     assert.equal(isValidPositionCount("ITEM", 4, 6), true);
     assert.equal(isValidPositionCount("ITEM", 7, 6), false);
+  });
+});
+
+describe("a saved slot's type is immutable", () => {
+  // The database CANNOT enforce this. The S1 CHECKs police internal
+  // consistency: an ITEM keeping its times is rejected, a SHIFT keeping a
+  // unitLabel is rejected. But a flip that also clears the now-invalid fields
+  // produces a row Postgres accepts — and that is exactly what a well-formed
+  // client would send. A CHECK only sees the present row; immutability is a
+  // claim about its history.
+  test("a different type is rejected", () => {
+    assert.equal(slotTypeChangeRejected("SHIFT", "ITEM"), true);
+    assert.equal(slotTypeChangeRejected("ITEM", "SHIFT"), true);
+  });
+  test("the same type is not a change", () => {
+    assert.equal(slotTypeChangeRejected("SHIFT", "SHIFT"), false);
+    assert.equal(slotTypeChangeRejected("ITEM", "ITEM"), false);
+  });
+  test("omitting slotType is not a change — edits need not send it", () => {
+    assert.equal(slotTypeChangeRejected("SHIFT", undefined), false);
+    assert.equal(slotTypeChangeRejected("SHIFT", null), false);
+    assert.equal(slotTypeChangeRejected("SHIFT", ""), false);
+  });
+  test("a non-string is not treated as a change", () => {
+    assert.equal(slotTypeChangeRejected("SHIFT", 1), false);
+    assert.equal(slotTypeChangeRejected("SHIFT", {}), false);
   });
 });

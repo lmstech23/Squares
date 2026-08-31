@@ -289,3 +289,27 @@ export function normalizeSortOrder(orderedIds: string[]): { id: string; sortOrde
 export function capacityTooLowMessage(filled: number): string {
   return `${filled} ${filled === 1 ? "person has" : "people have"} already signed up for this. Set it to ${filled} or higher, or remove someone first.`;
 }
+
+/**
+ * A saved slot's type is immutable.
+ *
+ * NOT ENFORCEABLE IN THE DATABASE. The S1 CHECK constraints police internal
+ * consistency — an ITEM with times is rejected, a SHIFT with a unitLabel is
+ * rejected — but a CHECK only ever sees the row's present state. A clean flip
+ * that also clears the now-invalid fields produces a row Postgres accepts,
+ * and that is exactly what a well-formed client would send. Immutability is a
+ * claim about the row's history, so it has to live here.
+ *
+ * Why it matters beyond tidiness: slotType decides whether a commitment may
+ * hold more than one position (`isValidPositionCount`). Flipping a SHIFT with
+ * one signup into an ITEM silently changes what that existing commitment is
+ * allowed to be, and flipping an ITEM holding four positions into a SHIFT makes
+ * every one of them retroactively invalid. The host wanting the other kind
+ * wants a different slot, not the same slot renamed.
+ */
+export function slotTypeChangeRejected(current: string, requested: unknown): boolean {
+  return typeof requested === "string" && requested.length > 0 && requested !== current;
+}
+
+export const SLOT_TYPE_IMMUTABLE_MESSAGE =
+  "A shift can't become an item, or the other way around. Add a new one instead.";
