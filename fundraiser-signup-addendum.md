@@ -662,16 +662,117 @@ A non-contributing helper — the parent who always runs the grill — is outsid
 
 ## 8. Host panel
 
-Inside the existing event panel (`fundraiser-board-v2.md` §9), below the roster:
+Volunteer sign-up is **optional**. Having an `Event` does not mean the
+fundraiser uses it, and the host board must not imply otherwise. Sheet creation
+is an explicit host action — ruling 5, already the shipped behaviour.
+
+### The main board carries an entry point, not the panel
+
+The fundraiser host board shows a **compact entry point** in three states. Full
+slot management lives on a dedicated route.
+
+**No sheet**
 
 ```
-Sign-Up Sheet · open
-14 of 22 slots filled · 3 cancellations
-
-[ Edit slots ]   [ Roster ]   [ Close sign-ups ]
+Volunteer sign-up
+Ask supporters to bring something or work a shift.
+→ Set up volunteer sign-up
 ```
 
-Editing a slot's capacity **downward below its filled count is refused**, with the count shown. Removing a person is a deliberate `HOST_REMOVED` action, not a side effect of typing a smaller number.
+**Open**
+
+```
+Volunteer sign-up · Open
+4 of 8 filled                    [ Manage ]
+```
+
+**Closed**
+
+```
+Volunteer sign-up · Closed
+4 of 8 filled                    [ Manage ]
+```
+
+**Closed must remain enterable.** Closing stops supporter claiming and nothing
+else; it is precisely when the host wants the roster. A disabled control here
+would hide the data at the moment it matters most.
+
+Showing filled and capacity totals is intended to add **no** query work. As of
+2026-09-01 the host page already fetches every slot with `_count.positions`, so
+the entry point needs a strict subset of what is selected today — `capacity` and
+that count. **Re-verify this before building S3b**; if the host page's slot query
+has changed by then, choose the lighter entry point over adding an aggregate to
+every host page load.
+
+**Game Day is untouched.** The entry point renders only in the fundraiser
+branch, inside the existing `board.event` guard.
+
+### The dedicated surface — `/host/boards/[id]/volunteers`
+
+A route, not a modal or a drawer. The host uses this standing at a table on weak
+signal: it must survive a refresh, be bookmarkable, and own the full viewport on
+a phone. A modal satisfies none of those.
+
+It is also the smallest option. The panel receives server-fetched props with no
+loading state, deliberately (ruling 12). A modal or drawer would force either a
+client fetch-on-mount — reintroducing the loading flash S2 removed — or keeping
+data on the main board that the main board no longer shows.
+
+The surface owns:
+
+- creating the sheet
+- ITEM and SHIFT slots, capacities, editing, reordering
+- opening and closing sign-ups
+- **per-slot supporter visibility**
+
+### Per-slot supporter visibility
+
+The host can see `4/6` and not who holds the four. That is not roster polish —
+it is the basic question volunteer management exists to answer.
+
+**Visibility is PER SLOT. Never a flattened list of volunteers.** The host is
+answering *who is bringing this item* and *who is working this shift*; one
+merged list answers neither.
+
+```
+Case of Water — 4/6
+  Daaliyah — 4
+
+Checkin — 2/2
+  Marcus
+  Renee
+```
+
+- **ITEM** — supporter name and quantity.
+- **SHIFT** — supporter name only. Quantity is always 1; printing it is noise.
+- **Alphabetical by name** within a slot.
+- **Name only. No email, phone, or other contact details.** §7 permits the host
+  to see them; this screen is held up in public at an event, and the person-first
+  roster is where contact details belong.
+
+Collapsed presentation stays clean — supporter detail expands beneath its slot.
+
+Editing a slot's capacity **downward below its filled count is refused**, with
+the count shown. Removing a person is a deliberate `HOST_REMOVED` action, not a
+side effect of typing a smaller number.
+
+**This is already enforced and is not S3b work.** The slot `PATCH` route applies
+capacity in one conditional statement —
+`UPDATE signup_slots SET capacity = $2 WHERE id = $1 AND $2 >= (SELECT count(*)
+FROM helper_signup_positions WHERE slot_id = signup_slots.id)` — inside a
+transaction with the other field edits, and returns `409` with the filled count
+when it matches zero rows. S3b moves where that control is rendered and changes
+nothing about the rule, which is what keeps S3b presentation and navigation only.
+
+
+### The person-first roster is a sibling, not part of this
+
+`/host/boards/[id]/volunteers` is **slot-first**. The unified roster is
+**person-first** — one line per `EventSupporter` across contributions, passes,
+and sign-ups — and is event-wide rather than volunteer-scoped. It attaches at
+`/host/boards/[id]/roster`, scheduled S5. Building per-slot visibility now
+neither duplicates nor blocks it: both traverse `HelperSignup → EventSupporter`,
+grouped on opposite axes.
 
 ### S2 rulings — 2026-08-31
 
@@ -878,6 +979,7 @@ The data model forbids none of these.
 | S1 | Schema — `SignupSheet`, `SignupSlot`, `HelperSignup` + composite unique, `HelperSignupPosition` + composite FK, `SignupLog`, `NotificationDelivery` + lease and fencing fields, `AdmissionGrant.wantsToHelp`, rename `AttendanceAccessToken` — plus `src/lib/signups.ts` | **Three preconditions before the first `CREATE TABLE` — see "S1 preconditions" below.** |
 | S2 | Host slot builder — create, edit, reorder, close | Host-only. Nothing public yet |
 | S3 | Sign-Up Sheet screen — token auth, claim, cancel, concurrency | The retry path and the all-or-nothing multi-position path are what to test |
+| S3b | **Host volunteer surface** — compact entry point on the fundraiser board, dedicated `/host/boards/[id]/volunteers` route, per-slot supporter visibility | Presentation and navigation only. No schema change, no API change. After S3 because it displays commitments S3 creates; independent of S4 and S5 |
 | S4 | Confirmation emails carrying the link — card webhook and direct-payment confirm | §5b. The retry cron lands here |
 | S5 | Checkout checkbox, poll-driven redirect, fallbacks, unified roster | Last, because everything it points at now exists |
 
@@ -893,7 +995,10 @@ S2 alone is useful — a host can build the sheet before anyone can claim from i
 | `src/lib/signups.ts` | **NEW** — sole owner of claim, cancel, position allocation, and `getOrCreateSupporterAccessToken()` |
 | `src/lib/email.ts` | **NEW** — the sender. Built in S4, shared with the §12 confirmation email |
 | `src/lib/cron/retry-notifications.ts` | **NEW** — sweeps eligible `failed` rows and stale `pending` leases |
-| `src/app/host/boards/[id]/signup-panel.tsx` | **NEW** — slot builder and roster |
+| `src/app/host/boards/[id]/volunteers/page.tsx` | **NEW** — dedicated volunteer management (S3b). Server component: same host guard as the board page, the same two sign-up queries, renders the slot builder plus per-slot supporter lists |
+| `src/app/host/boards/[id]/signup-panel.tsx` | **NEW** — slot builder. **Moves off the main board to the `/volunteers` route (S3b), unchanged in behaviour.** Gains per-slot supporter lists. Earlier versions of this table said "slot builder and roster"; the roster was never built here and is now per-slot visibility on the dedicated surface |
+| `src/app/host/boards/[id]/page.tsx` | Compact volunteer entry point replaces the inline panel — fundraiser branch only, Game Day untouched. Slot query narrows to `capacity` + `_count.positions` (S3b) |
+| *`src/app/host/boards/[id]/roster/page.tsx`* | **Reserved, not built.** Person-first unified roster, S5 |
 | `src/app/api/host/boards/[id]/signup-sheet/route.ts` | **NEW** — create sheet, edit title/instructions/isOpen. **Board-scoped**, ruling 4. Earlier versions of this table showed `/api/host/events/[id]/slots/`, which did not match the established architecture |
 | `src/app/api/host/boards/[id]/signup-slots/route.ts` | **NEW** — create, edit, reorder slots. Board-scoped |
 | `src/app/signup/[token]/page.tsx` | **NEW** — supporter sheet |

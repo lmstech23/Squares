@@ -487,3 +487,60 @@ be described as one.
 Worth considering alongside: whether a cap should apply per `EventSupporter`
 (identity-keyed by email, so it survives separate checkouts) or per square
 claim. The supporter identity already exists and is the natural unit.
+
+## Host panel shows no public slug — the URL is a UUID nobody can verify
+
+**Added:** 2026-09-01
+**Scope:** display only. Host panel only. No routing, schema, or API change.
+**Do not implement during the S3 manual test session.**
+
+The host board page is addressed by board UUID:
+
+```
+/host/boards/[boardId]        page.tsx:37   where: { boardId: id }
+```
+
+Slugs appear only on public routes — `/board/[slug]`, `/api/board/[slug]/...`.
+So the host panel carries no human-verifiable identifier at all, and two boards
+with near-identical names are indistinguishable from the address bar.
+
+**This already cost us a session.** On 2026-08-31 the volunteer sign-up sheet
+and its slots were configured on `Fundraiser Test1` (`67ri0sk7`) while the S3
+token mint was targeting `Fundraiser Test` (`jtuyrtvu`). Both boards belong to
+the same host, so both panels opened normally and neither errored. The mismatch
+surfaced only when a precondition check read the database directly:
+
+```
+Fundraiser Test    jtuyrtvu   /host/boards/8aecc880-f8a8-4ea8-9498-c0b8ce04b446
+Fundraiser Test1   67ri0sk7   /host/boards/a9e46e05-d170-458c-b58b-c185f526e4fe
+```
+
+Verifying "by slug" is not possible on this screen, which is exactly the trap.
+
+### Change
+
+Render the board's public slug next to or directly beneath the board name in
+the host panel header:
+
+```
+Fundraiser Test
+jtuyrtvu
+```
+
+### Notes for whoever picks this up
+
+- **No new query is needed.** `page.tsx:36` uses `include:` with no top-level
+  `select`, so every scalar `Board` column — `slug` included — is already on the
+  loaded row. This is one JSX addition.
+- **There are two header sites, not one.** `board.gameName` renders in an `h1`
+  at both `page.tsx:332` and `page.tsx:486` (the fundraiser and Game Day
+  branches). Changing only one leaves the other trap open.
+- Consider making it a link to the public board page — the host's most common
+  reason to want the slug is to go look at what contributors see.
+
+### Why this is worth doing before Phase B
+
+Phase B testing will create more boards with deliberately similar names. The
+failure mode is silent: every write succeeds, authorization passes, and the data
+lands correctly on the wrong board. Nothing in the application can detect it,
+because from the server's view nothing went wrong.
