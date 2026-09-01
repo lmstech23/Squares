@@ -11,8 +11,8 @@ import {
   validateSlotInput, validateReorder, normalizeSortOrder,
   slotFillState, sheetSummary, capacityTooLowMessage,
   isValidPositionCount, maxPositionsPerCommitment,
-  slotTypeChangeRejected,
-} from "./signups.ts";
+  slotTypeChangeRejected, slotAvailability, tokenExpiryFor, TOKEN_GRACE_DAYS,
+} from "./signup-rules.ts";
 
 const at = (h: number) => new Date(`2026-10-24T${String(h).padStart(2, "0")}:00:00Z`);
 
@@ -124,5 +124,56 @@ describe("a saved slot's type is immutable", () => {
   test("a non-string is not treated as a change", () => {
     assert.equal(slotTypeChangeRejected("SHIFT", 1), false);
     assert.equal(slotTypeChangeRejected("SHIFT", {}), false);
+  });
+});
+
+describe("S3 — stepper ceiling is yourCurrent + available", () => {
+  test("her own positions are not an obstacle to her own target", () => {
+    // Holding 2 of 6 with 1 left, she may set 3 — not 1. Conflating `available`
+    // with the ceiling is the easy bug here.
+    const a = slotAvailability(6, 5, 2, "ITEM");
+    assert.equal(a.available, 1);
+    assert.equal(a.maxTarget, 3);
+  });
+  test("a full slot she holds none of has a ceiling of zero", () => {
+    assert.equal(slotAvailability(6, 6, 0, "ITEM").maxTarget, 0);
+  });
+  test("SHIFT caps at 1, and the cap is a MAXIMUM not a floor", () => {
+    // Regression: hardcoding the SHIFT ceiling to 1 let a second person target
+    // a shift someone else already held, and the allocator then created a
+    // commitment with zero positions.
+    assert.equal(slotAvailability(1, 0, 0, "SHIFT").maxTarget, 1, "free shift");
+    assert.equal(slotAvailability(1, 1, 0, "SHIFT").maxTarget, 0, "taken by someone else");
+    assert.equal(slotAvailability(1, 1, 1, "SHIFT").maxTarget, 1, "taken by her");
+  });
+  test("available never goes negative when capacity was lowered", () => {
+    assert.equal(slotAvailability(2, 5, 2, "ITEM").available, 0);
+  });
+});
+
+describe("S3 — token expiry, computed once at issuance", () => {
+  const now = new Date("2026-09-01T12:00:00Z");
+  const d = (s: string) => new Date(s);
+  const plus7 = (t: Date) => t.getTime() + TOKEN_GRACE_DAYS * 86400_000;
+
+  test("grace runs from endsAt when there is one", () => {
+    assert.equal(
+      tokenExpiryFor({ startsAt: d("2026-12-01T00:00:00Z"), endsAt: d("2026-12-03T00:00:00Z") }, now).getTime(),
+      plus7(d("2026-12-03T00:00:00Z")));
+  });
+  test("an open-ended event anchors to startsAt", () => {
+    assert.equal(
+      tokenExpiryFor({ startsAt: d("2026-12-01T00:00:00Z"), endsAt: null }, now).getTime(),
+      plus7(d("2026-12-01T00:00:00Z")));
+  });
+  test("the issuance floor wins when the event anchor is earlier", () => {
+    // The late contributor: someone giving the morning of the event would
+    // otherwise get a link with hours on it, or one born expired.
+    assert.equal(
+      tokenExpiryFor({ startsAt: d("2026-08-28T00:00:00Z"), endsAt: null }, now).getTime(),
+      plus7(now));
+  });
+  test("a token for a long-past event is never born expired", () => {
+    assert.ok(tokenExpiryFor({ startsAt: d("2026-01-01T00:00:00Z"), endsAt: null }, now) > now);
   });
 });

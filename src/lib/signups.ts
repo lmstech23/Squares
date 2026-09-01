@@ -1,315 +1,273 @@
-// Sign-up sheets — fundraiser-signup-addendum.md v1.6 §3, §6.
+// Sign-up sheets — the database side. fundraiser-signup-addendum.md §3, §5, §6.
 //
 // SOLE OWNER OF CLAIM, CANCEL, AND POSITION ALLOCATION (§14). Nothing else may
-// insert a `HelperSignup` or a `HelperSignupPosition`. That is not a style
-// preference: one rule in this feature cannot be expressed as a database
-// constraint, and this file is the only place it can live.
+// insert a `HelperSignup` or a `HelperSignupPosition`.
 //
-// S1 IS SCHEMA ONLY. The claim and cancel paths land in S3. What is here now is
-// the enforcement rule written down where it will be needed, and the shape of
-// the module the addendum specifies — not a working claim path.
-//
-// ---------------------------------------------------------------------------
-// The rule the database cannot hold
-// ---------------------------------------------------------------------------
-//
-// A `SHIFT` commitment is valid only with EXACTLY ONE position. An `ITEM`
-// commitment may hold up to `capacity`.
-//
-// This cannot be a CHECK constraint and cannot be a partial unique index: both
-// would have to read `slot_type`, which lives on `SignupSlot`, and a Postgres
-// CHECK or partial-index predicate may only reference columns on its own table.
-// An earlier draft of the addendum tried exactly that and would not have
-// migrated.
-//
-// Everything else IS in the database, deliberately:
-//
-//   capacity safety      unique (slotId, position) on HelperSignupPosition
-//   one per person/slot  unique (slotId, eventSupporterId) on HelperSignup
-//   position belongs to
-//   its commitment's slot (helperSignupId, slotId) -> HelperSignup (id, slotId)
-//
-// No mutable counter exists anywhere. Quantity is never stored — it is
-// count(positions) — so there is nothing to drift out of step with reality.
-//
-// ---------------------------------------------------------------------------
-// What this file will own, in S3
-// ---------------------------------------------------------------------------
-//
-//   claimSlot()        allocate N positions, all-or-nothing, retry on the
-//                      unique violation that means someone else took the seat
-//   cancelSignup()     delete the commitment; positions cascade; write a log
-//   cancelPositions()  partial cancel on an ITEM — 4 cases down to 2 — leaves
-//                      the commitment standing
-//   getOrCreateSupporterAccessToken()
-//
-// Position numbers are FREED FOR REUSE on cancellation. This is where sign-ups
-// deliberately diverge from admission passes: `AdmissionPass.sequenceNumber` is
-// monotonic and never reused because a pass is an entitlement and reuse would
-// be a security question. A slot position is a seat, not a credential.
-//
-// ---------------------------------------------------------------------------
-// Eligibility
-// ---------------------------------------------------------------------------
-//
-// Derived, never stored (§1). Only a supporter with `status = "active"` may
-// claim — invariant 35. A `pending` or `reserved_cash` contribution grants no
-// sign-up access (invariant 37), and the help checkbox records intent only,
-// never a hold (invariant 36).
-//
-// A helper signup grants no square, no drawing entry, no admission pass, and no
-// check-in authority (invariant 34). Check-in authority originates only from a
-// host-issued `CheckinStaffAccess` link (invariant 41). These two things sit
-// next to each other in the host panel and must never be wired together.
+// Pure policy lives in signup-rules.ts and is re-exported here, so callers keep
+// importing one module. Only the four functions below touch Postgres.
 
 import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import {
+  mayClaim,
+  isValidPositionCount,
+  slotAvailability,
+  hashSupporterToken,
+  newSupporterToken,
+  tokenExpiryFor,
+} from "@/lib/signup-rules";
 
-/**
- * How many positions a commitment on this slot type may hold.
- *
- * The single expression of the rule the database cannot enforce. Every claim
- * path must consult it; nothing may insert positions without doing so.
- */
-export function maxPositionsPerCommitment(slotType: "SHIFT" | "ITEM", capacity: number): number {
-  return slotType === "SHIFT" ? 1 : capacity;
-}
+export * from "@/lib/signup-rules";
 
-/**
- * Is this a legal number of positions for a commitment on this slot type?
- *
- * `SHIFT` is exactly one — not "at most one". A commitment with zero positions
- * is not a commitment; cancelling the last position drops the commitment
- * itself (§6).
- */
-export function isValidPositionCount(
-  slotType: "SHIFT" | "ITEM",
-  count: number,
-  capacity: number
-): boolean {
-  if (count < 1) return false;
-  if (slotType === "SHIFT") return count === 1;
-  return count <= capacity;
-}
-
-/**
- * Only an `active` supporter may claim. Invariants 35 and 37.
- *
- * Derived from status at the moment of the claim, never read from a stored
- * eligibility column — there is no such column and there must not be one.
- */
-export function mayClaim(supporterStatus: string): boolean {
-  return supporterStatus === "active";
-}
-
-/**
- * Interest is a one-way OR across grants, never a revoke (§4).
- *
- * A supporter who checks the help box on her first purchase and leaves it
- * unchecked on the second is still interested. This mirrors the supporter
- * status latch. Read as EXISTS, never stored on the supporter.
- */
-export function wantsToHelp(grants: { wantsToHelp: boolean }[]): boolean {
-  return grants.some((g) => g.wantsToHelp);
-}
-
-/** The dedupe keys from §5b. The key names the thing being communicated. */
-export const dedupeKeys = {
-  /** One per supporter, ever — the token is supporter-scoped and reusable. */
-  signupLink: (eventSupporterId: string) => `supporter:${eventSupporterId}`,
-  /**
-   * One per contribution. NOT supporter-scoped: a parent who buys in September
-   * and again in October deserves two receipts, and a supporter key would
-   * silently suppress the second.
-   */
-  contributionConfirmed: (admissionGrantId: string) => `grant:${admissionGrantId}`,
-} as const;
-
-/**
- * Claim, cancel and token issuance land in S3 and S4.
- *
- * Left unimplemented rather than stubbed: a function that silently does nothing
- * is worse than one that does not exist, because a caller can be written
- * against it.
- */
+/** Claim, cancel and token issuance are the only database-touching parts. */
 export type SignupsTransaction = Prisma.TransactionClient;
 
-// ---------------------------------------------------------------------------
-// S2 — host slot builder. Derivation and validation only; no writes live here.
-// ---------------------------------------------------------------------------
-
-export interface SlotFill {
-  capacity: number;
-  filled: number;
-  open: number;
-  isFull: boolean;
-}
-
-/**
- * Fill state for one slot, from a live count of its position rows.
- *
- * `filled` is ALWAYS a count of HelperSignupPosition and never a stored column.
- * There is no `filledCount` to drift, which is the same decision that keeps
- * quantity off HelperSignup.
- *
- * `open` clamps at zero: capacity can legitimately sit below the filled count
- * for a slot whose capacity was reduced before anyone claimed, and a negative
- * "open" is not something to render.
- */
-export function slotFillState(capacity: number, positionCount: number): SlotFill {
-  const open = Math.max(0, capacity - positionCount);
-  return { capacity, filled: positionCount, open, isFull: open === 0 };
-}
-
-export interface SheetSummary {
-  slotCount: number;
-  totalCapacity: number;
-  totalFilled: number;
-  totalOpen: number;
-}
-
-/**
- * The one line at the top of the host panel.
- *
- * CURRENT OPERATIONAL STATE ONLY. No cancellation count: SignupLog is
- * append-only, so a raw CANCELLED tally counts cancel-and-reclaim cycles by the
- * same person and answers a question nobody asked. What a host needs standing in
- * a parking lot is how many openings are left.
- */
-export function sheetSummary(slots: { capacity: number; filled: number }[]): SheetSummary {
-  return slots.reduce<SheetSummary>(
-    (acc, s) => ({
-      slotCount: acc.slotCount + 1,
-      totalCapacity: acc.totalCapacity + s.capacity,
-      totalFilled: acc.totalFilled + s.filled,
-      totalOpen: acc.totalOpen + Math.max(0, s.capacity - s.filled),
-    }),
-    { slotCount: 0, totalCapacity: 0, totalFilled: 0, totalOpen: 0 }
-  );
-}
-
-export const MAX_SLOT_NAME = 80;
-export const MAX_SLOT_NOTES = 200;
-export const MAX_UNIT_LABEL = 40;
-export const MAX_SHEET_TITLE = 80;
-/** "Two lines at most" is UX guidance, applied here rather than in the schema. */
-export const MAX_SHEET_INSTRUCTIONS = 280;
-export const DEFAULT_SHEET_TITLE = "Volunteer Sign-Up";
-
-export interface SlotInput {
-  slotType: "SHIFT" | "ITEM";
+export interface SupporterSession {
+  supporterId: string;
+  eventId: string;
+  /** Live status. RENDERING DOES NOT DEPEND ON IT — see below. */
+  status: string;
   name: string;
-  capacity: number;
-  startsAt?: Date | null;
-  endsAt?: Date | null;
-  unitLabel?: string | null;
-  notes?: string | null;
 }
 
-export type ValidationResult = { ok: true } | { ok: false; field: string; message: string };
+export async function resolveSupporterSession(
+  token: string | undefined | null,
+  now: Date = new Date()
+): Promise<SupporterSession | null> {
+  if (!token || token.length < 16 || token.length > 128) return null;
 
-/**
- * Application-level slot validation.
- *
- * MIRRORS THE S1 CHECK CONSTRAINTS DELIBERATELY. The database is the backstop,
- * not the only guard: a constraint violation surfacing to a host as a 500 with
- * a Postgres constraint name in it is a failure of this function, not of the
- * constraint.
- *
- * NOT validated: whether shift times fall inside the event window. Setup starts
- * before the event and cleanup runs after it, so that check would reject the two
- * most common shifts a host creates.
- */
-export function validateSlotInput(input: SlotInput): ValidationResult {
-  const name = input.name?.trim() ?? "";
-  if (name.length === 0) return { ok: false, field: "name", message: "Give this a name." };
-  if (name.length > MAX_SLOT_NAME)
-    return { ok: false, field: "name", message: `Keep the name under ${MAX_SLOT_NAME} characters.` };
+  const row = await prisma.supporterAccessToken.findFirst({
+    where: { tokenHash: hashSupporterToken(token), revokedAt: null, expiresAt: { gt: now } },
+    select: {
+      supporter: { select: { id: true, eventId: true, status: true, name: true } },
+    },
+  });
+  if (!row) return null;
 
-  if (!Number.isInteger(input.capacity) || input.capacity < 1)
-    return { ok: false, field: "capacity", message: "Capacity must be at least 1." };
+  return {
+    supporterId: row.supporter.id,
+    eventId: row.supporter.eventId,
+    status: row.supporter.status,
+    name: row.supporter.name,
+  };
+}
 
-  if ((input.notes?.length ?? 0) > MAX_SLOT_NOTES)
-    return { ok: false, field: "notes", message: `Keep notes under ${MAX_SLOT_NOTES} characters.` };
+export type TokenFailure = "unknown" | "expired" | "revoked";
 
-  if (input.slotType === "SHIFT") {
-    if (!input.startsAt)
-      return { ok: false, field: "startsAt", message: "A shift needs a start time." };
-    if (input.endsAt && input.endsAt <= input.startsAt)
-      return { ok: false, field: "endsAt", message: "The end time must be after the start." };
-    if (input.unitLabel)
-      return { ok: false, field: "unitLabel", message: "Only items have a unit label." };
-  } else {
-    if (input.startsAt || input.endsAt)
-      return { ok: false, field: "startsAt", message: "Items don't have times." };
-    if ((input.unitLabel?.length ?? 0) > MAX_UNIT_LABEL)
-      return { ok: false, field: "unitLabel", message: `Keep the unit label under ${MAX_UNIT_LABEL} characters.` };
+export async function classifyTokenFailure(
+  token: string | undefined | null,
+  now: Date = new Date()
+): Promise<TokenFailure> {
+  if (!token || token.length < 16 || token.length > 128) return "unknown";
+  const row = await prisma.supporterAccessToken.findFirst({
+    where: { tokenHash: hashSupporterToken(token) },
+    select: { revokedAt: true, expiresAt: true },
+  });
+  if (!row) return "unknown";
+  if (row.revokedAt) return "revoked";
+  if (row.expiresAt <= now) return "expired";
+  return "unknown";
+}
+
+export async function getOrCreateSupporterAccessToken(
+  supporterId: string,
+  now: Date = new Date()
+): Promise<{ id: string; token: string | null; expiresAt: Date }> {
+  const live = await prisma.supporterAccessToken.findFirst({
+    where: { eventSupporterId: supporterId, revokedAt: null, expiresAt: { gt: now } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, expiresAt: true },
+  });
+  if (live) return { id: live.id, token: null, expiresAt: live.expiresAt };
+
+  const supporter = await prisma.eventSupporter.findUniqueOrThrow({
+    where: { id: supporterId },
+    select: { event: { select: { startsAt: true, endsAt: true } } },
+  });
+
+  const raw = newSupporterToken();
+  const created = await prisma.supporterAccessToken.create({
+    data: {
+      eventSupporterId: supporterId,
+      tokenHash: hashSupporterToken(raw),
+      expiresAt: tokenExpiryFor(supporter.event, now),
+    },
+    select: { id: true, expiresAt: true },
+  });
+  return { id: created.id, token: raw, expiresAt: created.expiresAt };
+}
+
+export type TargetOutcome =
+  | { ok: true; changed: false; quantity: number }
+  | { ok: true; changed: true; quantity: number; action: "CLAIMED" | "CANCELLED" }
+  | { ok: false; reason: "closed"; }
+  | { ok: false; reason: "not_active" }
+  | { ok: false; reason: "invalid_target"; message: string }
+  | { ok: false; reason: "capacity"; available: number; yourCurrent: number; maxTarget: number };
+
+export async function setTargetQuantity(args: {
+  slotId: string;
+  supporterId: string;
+  target: number;
+  actorType: "SUPPORTER" | "HOST";
+  now?: Date;
+}): Promise<TargetOutcome> {
+  const { slotId, supporterId, target, actorType } = args;
+
+  if (!Number.isInteger(target) || target < 0) {
+    return { ok: false, reason: "invalid_target", message: "Choose a whole number." };
   }
-  return { ok: true };
+
+  return prisma.$transaction(async (tx) => {
+    // 1. LOCK THE SLOT. Everything below reads state that this lock freezes.
+    const locked = await tx.$queryRawUnsafe<
+      { id: string; capacity: number; slot_type: string; is_open: boolean }[]
+    >(
+      `SELECT s.id, s.capacity, s.slot_type::text AS slot_type, sh.is_open
+         FROM signup_slots s
+         JOIN signup_sheets sh ON sh.id = s.sheet_id
+        WHERE s.id = $1::uuid
+          FOR UPDATE OF s`,
+      slotId
+    );
+    if (locked.length === 0) {
+      return { ok: false as const, reason: "invalid_target" as const, message: "Slot not found." };
+    }
+    const slot = locked[0];
+    const slotType = slot.slot_type as "SHIFT" | "ITEM";
+
+    // 2. Eligibility. Claiming is gated on ACTIVE status; rendering is not.
+    const supporter = await tx.eventSupporter.findUnique({
+      where: { id: supporterId },
+      select: { status: true },
+    });
+    if (!supporter) {
+      return { ok: false as const, reason: "not_active" as const };
+    }
+
+    // 3. Current holdings, under the lock.
+    const commitment = await tx.helperSignup.findUnique({
+      where: { slotId_eventSupporterId: { slotId, eventSupporterId: supporterId } },
+      select: { id: true, positions: { select: { position: true }, orderBy: { position: "asc" } } },
+    });
+    const mine = commitment?.positions.map((p) => p.position) ?? [];
+    const yourCurrent = mine.length;
+
+    // A zero delta changes nothing and writes NO LOG ROW. The log records
+    // committed state changes, not HTTP requests; a replayed request must not
+    // leave a second entry describing one decision.
+    if (target === yourCurrent) {
+      return { ok: true as const, changed: false as const, quantity: yourCurrent };
+    }
+
+    const increasing = target > yourCurrent;
+
+    // 4. A closed sheet blocks INCREASES only. Reductions and cancellation
+    //    continue — S2 ruling 1, and the host copy already promises it.
+    if (!slot.is_open && increasing) {
+      return { ok: false as const, reason: "closed" as const };
+    }
+
+    // Only an active supporter may increase. She may always reduce: a helper
+    // who knows she cannot attend must be able to free the slot whatever her
+    // contribution's status.
+    if (increasing && !mayClaim(supporter.status)) {
+      return { ok: false as const, reason: "not_active" as const };
+    }
+
+    if (!isValidPositionCount(slotType, target, slot.capacity) && target !== 0) {
+      return {
+        ok: false as const,
+        reason: "invalid_target" as const,
+        message:
+          slotType === "SHIFT"
+            ? "A shift is one person."
+            : `You can take at most ${slot.capacity}.`,
+      };
+    }
+
+    const taken = await tx.helperSignupPosition.findMany({
+      where: { slotId },
+      select: { position: true },
+    });
+    const filled = taken.length;
+
+    if (increasing) {
+      const avail = slotAvailability(slot.capacity, filled, yourCurrent, slotType);
+      if (target > avail.maxTarget) {
+        return {
+          ok: false as const,
+          reason: "capacity" as const,
+          available: avail.available,
+          yourCurrent,
+          maxTarget: avail.maxTarget,
+        };
+      }
+      // Lowest free numbers, excluding everything already taken.
+      const used = new Set(taken.map((t) => t.position));
+      const need = target - yourCurrent;
+      const toAdd: number[] = [];
+      for (let n = 1; toAdd.length < need && n <= slot.capacity; n++) {
+        if (!used.has(n)) toAdd.push(n);
+      }
+      // Belt and braces. The ceiling check above should already have caught
+      // this, and it did not once: a SHIFT whose ceiling was hardcoded to 1
+      // passed the check, found no free number, and created a HelperSignup
+      // holding ZERO positions. A commitment with no positions is not a
+      // commitment, so refuse rather than write one.
+      if (toAdd.length < need) {
+        return {
+          ok: false as const,
+          reason: "capacity" as const,
+          available: Math.max(0, slot.capacity - filled),
+          yourCurrent,
+          maxTarget: Math.min(yourCurrent + Math.max(0, slot.capacity - filled), slotType === "SHIFT" ? 1 : slot.capacity),
+        };
+      }
+      const signupId =
+        commitment?.id ??
+        (
+          await tx.helperSignup.create({
+            data: { slotId, eventSupporterId: supporterId },
+            select: { id: true },
+          })
+        ).id;
+      await tx.helperSignupPosition.createMany({
+        data: toAdd.map((position) => ({ helperSignupId: signupId, slotId, position })),
+      });
+    } else {
+      // HIGHEST-NUMBERED FIRST. Positions are fungible reusable capacity, so
+      // which rows go is a free choice — and taking from the top keeps the
+      // occupied range dense at 1..n, which pairs with allocating the lowest
+      // free numbers above.
+      const drop = mine.slice(-(yourCurrent - target));
+      await tx.helperSignupPosition.deleteMany({
+        where: { slotId, position: { in: drop } },
+      });
+      if (target === 0 && commitment) {
+        // A commitment with no positions is not a commitment.
+        await tx.helperSignup.delete({ where: { id: commitment.id } });
+      }
+    }
+
+    // 5. The audit row, IN THIS TRANSACTION. Action is the DIRECTION of the
+    //    change, not the row lifecycle: 2 -> 4 is CLAIMED though the commitment
+    //    already existed, 4 -> 2 is CANCELLED though it survives.
+    await tx.signupLog.create({
+      data: {
+        slotId,
+        eventSupporterId: supporterId,
+        action: increasing ? "CLAIMED" : actorType === "HOST" ? "HOST_REMOVED" : "CANCELLED",
+        actorType,
+        quantityAfter: target,
+      },
+    });
+
+    return {
+      ok: true as const,
+      changed: true as const,
+      quantity: target,
+      action: (increasing ? "CLAIMED" : "CANCELLED") as "CLAIMED" | "CANCELLED",
+    };
+  });
 }
-
-export type ReorderResult = { ok: true } | { ok: false; reason: string };
-
-/**
- * A reorder must name exactly the slots this sheet has — no more, no fewer, no
- * duplicates, nothing from another sheet.
- *
- * Compared as SETS rather than by length. A submission that swaps one id for a
- * foreign one has the right length and would pass a count check while silently
- * dropping a slot from the order and touching a slot the host does not own.
- *
- * A slot added or removed between page load and submit fails here, and the host
- * is told to refresh. That is correct: applying a stale order would drop the new
- * slot to an arbitrary position.
- */
-export function validateReorder(submitted: string[], actual: string[]): ReorderResult {
-  if (new Set(submitted).size !== submitted.length)
-    return { ok: false, reason: "The same slot appears twice in that order." };
-  const a = new Set(actual);
-  const b = new Set(submitted);
-  if (a.size !== b.size || [...a].some((id) => !b.has(id)))
-    return { ok: false, reason: "This sheet changed while you were reordering. Refresh and try again." };
-  return { ok: true };
-}
-
-/**
- * Rewrite sortOrder as 0..n-1 from the submitted order.
- *
- * Normalizing after every reorder means gaps and duplicates cannot accumulate,
- * so no (sheetId, sortOrder) uniqueness constraint is needed. Ordering only ever
- * needs relative comparison; the absolute values are disposable.
- */
-export function normalizeSortOrder(orderedIds: string[]): { id: string; sortOrder: number }[] {
-  return orderedIds.map((id, i) => ({ id, sortOrder: i }));
-}
-
-/**
- * The message shown when a host tries to set capacity below what is already
- * claimed. Lives here so the API and any future UI cannot word it differently.
- */
-export function capacityTooLowMessage(filled: number): string {
-  return `${filled} ${filled === 1 ? "person has" : "people have"} already signed up for this. Set it to ${filled} or higher, or remove someone first.`;
-}
-
-/**
- * A saved slot's type is immutable.
- *
- * NOT ENFORCEABLE IN THE DATABASE. The S1 CHECK constraints police internal
- * consistency — an ITEM with times is rejected, a SHIFT with a unitLabel is
- * rejected — but a CHECK only ever sees the row's present state. A clean flip
- * that also clears the now-invalid fields produces a row Postgres accepts,
- * and that is exactly what a well-formed client would send. Immutability is a
- * claim about the row's history, so it has to live here.
- *
- * Why it matters beyond tidiness: slotType decides whether a commitment may
- * hold more than one position (`isValidPositionCount`). Flipping a SHIFT with
- * one signup into an ITEM silently changes what that existing commitment is
- * allowed to be, and flipping an ITEM holding four positions into a SHIFT makes
- * every one of them retroactively invalid. The host wanting the other kind
- * wants a different slot, not the same slot renamed.
- */
-export function slotTypeChangeRejected(current: string, requested: unknown): boolean {
-  return typeof requested === "string" && requested.length > 0 && requested !== current;
-}
-
-export const SLOT_TYPE_IMMUTABLE_MESSAGE =
-  "A shift can't become an item, or the other way around. Add a new one instead.";
