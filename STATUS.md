@@ -87,6 +87,83 @@ The 6/6 `Case of Water` commitment is **the only real sign-up fixture in the
 database**, and it is exactly what S3b needs for per-slot supporter visibility.
 **Build S3b against the current state first.**
 
+### S3b acceptance — phase one, NO TOKEN
+
+Runs against the preserved fixture before any new token exists.
+
+**On `Fundraiser Test` / `jtuyrtvu`:**
+
+1. Load `/host/boards/[id]/volunteers` **cold, from the URL** — not by navigating
+   through the board page. Verify the route loading state appears.
+2. Verify `Case of Water — 6/6` with `Daaliyah — 6`, and `Checkin — 0/2`
+   (empty SHIFT presentation).
+3. Verify the main board reads `Volunteer sign-up · Open`, `6 of 8 filled`, and
+   that **Manage** works.
+4. Close sign-ups.
+5. Verify the main board reads **Closed** with `6 of 8` intact.
+6. Verify **Manage is still enterable while closed**.
+7. Verify host slot editing still works while closed.
+8. **Capacity-downward refusal on the full ITEM slot.** Attempt `Case of Water`
+   `6 → 5`. Expect: refused; the filled count shown in the copy; capacity stays
+   6; `Daaliyah — 6` unchanged; positions still 1–6. **Deliberately
+   non-destructive** — it manually exercises the already-shipped atomic guard
+   without consuming the fixture.
+9. Reopen.
+10. **Self-gating.** Verify `/host/boards/[id]/volunteers` refuses a Game Day
+    board and a board with no `Event`.
+
+**Revalidation — run the same probe twice, once per return path.** Change the
+empty `Checkin` SHIFT capacity `2 → 3`, verify `6 of 9` on the main board,
+restore `3 → 2`, verify `6 of 8`:
+
+- **A — in-app return**, via the intended navigation link
+- **B — browser Back button**
+
+Both must show current server truth. If one is stale, record **which**, apply the
+smallest correction, and re-run that exact path. **Add no speculative cache fix
+before this runtime test.**
+
+**Do not create a throwaway slot to test revalidation.** The empty SHIFT slot
+exists and does the job without touching a real commitment.
+
+**On the no-sheet fixture — `Demo` / `jv9rwyn`:**
+
+11. Cold-load `/host/boards/[id]/volunteers` and verify it renders correctly with
+    `sheet === null`.
+12. Verify the main board shows the no-sheet compact entry point,
+    `Set up volunteer sign-up`.
+13. Follow it, and **create the sheet from the dedicated `/volunteers` surface**.
+14. Verify the main board subsequently reflects the new sheet state.
+
+Note the display order is `sortOrder`, so the surface lists **Checkin first, then
+Case of Water** — verified against the live data 2026-09-01.
+
+### Fixture registry — do not re-run the hunt
+
+Verified 2026-09-01. Seven fundraiser boards exist; five had an `Event` and no
+`SignupSheet`.
+
+| Board | Slug | Role |
+|---|---|---|
+| `Fundraiser Test` | `jtuyrtvu` | **The populated fixture.** Sheet, 6/6 ITEM, empty SHIFT. Do not consume |
+| `Demo` | `jv9rwyn` | **The no-sheet fixture for S3b Phase One.** 0 supporters, 0 paid squares |
+| `Homecoming` | `ah80sph` | Spare no-sheet fixture. 0 supporters, 0 paid squares |
+| `Homecoming` | `5mbxrpbp` | No-sheet, but carries 1 supporter / 2 paid squares |
+| `test` | `umt9dpqq` | No-sheet — **EXCLUDED from throwaway use.** Carries real supporter and paid-square data |
+| `Homecoming Fundraising` | `rpffdlbf` | No-sheet — **EXCLUDED.** Board is `closed` |
+| `Fundraiser Test1` | `67ri0sk7` | Has a sheet. Created on the wrong board during the S3 session |
+
+**Creating a sheet is one-way.** There is no delete-sheet path anywhere in the
+codebase — S2 ruling 2 is no-delete, and `SignupSheet` has no removal route. A
+board spent as a no-sheet fixture cannot be restored to that state.
+
+**When Phase One creates the sheet on `Demo` / `jv9rwyn`, mark it CONSUMED here**
+and update the remaining list. The next clean spare is `Homecoming` / `ah80sph`.
+After that, no untouched no-sheet fundraiser fixture remains, and creating one
+needs approval.
+
+### S3b acceptance — phase two, FRESH TOKEN REQUIRED
+
 **A fresh approved production mint is required first.** The hand-minted token
 was deleted at the end of this session, and Daaliyah currently holds **no live
 supporter token** — so the planned pass cannot begin until one is issued. That
@@ -111,6 +188,22 @@ performed while watching **both** surfaces at once:
 
 - the supporter sign-up page, `/signup/[token]`
 - the host surface, `/host/boards/[id]/volunteers`
+
+Expected `SignupLog` rows **appended to the existing three**, for six total:
+
+```
+CANCELLED / 4 / SUPPORTER
+CANCELLED / 0 / SUPPORTER
+CLAIMED   / 1 / SUPPORTER
+```
+
+Host-surface expectations at each step:
+
+- at **4** — `Case of Water 4/6`, `Daaliyah — 4`
+- at **0** — the supporter entry disappears cleanly; slot shows `0/6`
+- at **1** — `Daaliyah — 1` returns
+
+Delete the fresh hand-minted token afterwards, and nothing else.
 
 The point is to see the host-side slot count and supporter quantity move in real
 time while exercising:
@@ -143,5 +236,20 @@ It **cannot** manually verify, and these remain gaps after S3b ships:
 of all per-slot visibility rules.** It verifies the ITEM single-supporter case
 and nothing more.
 
-Closing these gaps needs a second `active` supporter, which requires a real
-confirmed contribution under a different email. Deferred by standing ruling.
+**These three gaps stay open even after the phase-two decrease pass**, and must
+not be marked closed here without a second `active` supporter:
+
+- SHIFT supporter-name rendering
+- alphabetical ordering within a slot
+- multiple supporters sharing an ITEM slot
+- **the zero-position invariant-39 warning path**
+
+The first three need a second `active` supporter, which requires a real confirmed
+contribution under a different email. Deferred by standing ruling.
+
+The fourth cannot be exercised at all right now: **no zero-position
+`HelperSignup` exists**, so the defensive `volunteers:` `console.warn` has no
+input. **A clean `/volunteers` render is not evidence that the warning works** —
+it is evidence that the corrupt state it guards against is absent. The path stays
+unverified until either such a row appears in production or it is exercised
+against a disposable database.

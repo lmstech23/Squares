@@ -697,6 +697,14 @@ Volunteer sign-up · Closed
 else; it is precisely when the host wants the roster. A disabled control here
 would hide the data at the moment it matters most.
 
+**A closed sheet stays FULLY manageable by the host.** With `isOpen = false` she
+may still enter `/volunteers`, view commitments and supporters, add slots, edit
+names and capacities, reorder, and reopen sign-ups. Closing is a gate on
+**supporter positive claims** — nothing more. It has never disabled host
+administration and must not be "fixed" into doing so. Stated explicitly because
+a management page that greys itself out when closed looks like a bug being
+corrected rather than a rule being broken.
+
 Showing filled and capacity totals is intended to add **no** query work. As of
 2026-09-01 the host page already fetches every slot with `_count.positions`, so
 the entry point needs a strict subset of what is selected today — `capacity` and
@@ -708,6 +716,19 @@ every host page load.
 branch, inside the existing `board.event` guard.
 
 ### The dedicated surface — `/host/boards/[id]/volunteers`
+
+**The route gates itself. The link's absence is not access control.** A host can
+type or bookmark the URL, so `/volunteers` must independently refuse:
+
+- **non-fundraiser boards** — Game Day has no volunteer sign-up
+- **boards with no `Event`** — a sheet keys to `eventId`; without one there is
+  nothing to manage
+
+Use the **same product predicate the fundraiser branch already uses**,
+`board.boardType === "fundraiser"` — the identical comparison, not a new
+board-type concept and not a parallel helper. Host authorization is unchanged:
+the existing board-scoped guard, `getHost()` then `board.hostId !== host.id`
+→ `notFound()`, exactly as the board page does it.
 
 A route, not a modal or a drawer. The host uses this standing at a table on weak
 signal: it must survive a refresh, be bookmarkable, and own the full viewport on
@@ -750,7 +771,12 @@ Checkin — 2/2
   to see them; this screen is held up in public at an event, and the person-first
   roster is where contact details belong.
 
-Collapsed presentation stays clean — supporter detail expands beneath its slot.
+**Supporter detail is visible by default on `/volunteers`. No collapse, no
+expand/collapse state in S3b.** The route exists so the host can answer *who is
+bringing this, who is working that* at a glance; making her tap each slot to find
+out defeats the reason it is a separate page. The **main board** stays compact —
+that is where brevity belongs. Ruled 2026-09-01; an earlier draft of this section
+said detail "expands beneath its slot", which contradicted the route's purpose.
 
 Editing a slot's capacity **downward below its filled count is refused**, with
 the count shown. Removing a person is a deliberate `HOST_REMOVED` action, not a
@@ -765,6 +791,66 @@ when it matches zero rows. S3b moves where that control is rendered and changes
 nothing about the rule, which is what keeps S3b presentation and navigation only.
 
 
+### S3b scope — what it is, and what it is NOT
+
+S3b is **read, presentation, and navigation**. No schema change, no new API
+behaviour, no new server-side rule.
+
+**Explicitly out of S3b**, despite becoming obvious the moment names appear on
+screen:
+
+- a **Remove helper** control
+- a `HOST_REMOVED` endpoint — the enum value exists in the model; the action does
+  not, and building it is separate future work
+- **contact-helper** actions of any kind
+- **export** or print actions
+
+Seeing who signed up creates the appetite for acting on it. That appetite is not
+a ruling. Host removal gets its own scope, its own copy, and its own log
+semantics.
+
+**Sorting is application code, not SQL.** Order supporters within a slot in the
+component, on the already-selected data. Prisma cannot order a nested relation by
+a field on a relation of that relation, and reaching for raw SQL to do it would
+add a query path S3b has no business adding. Sort by display name, then break
+ties on `supporter.id` — a stable identifier already present in the selection —
+so two helpers with the same name never reorder between renders.
+
+**Component shape: reuse, do not rewrite.** `signup-panel.tsx` moves to the new
+route with its form logic untouched. Per-slot supporter lists render as
+**sibling server-rendered output**, not read-only data threaded through client
+form state — the lists do not change as the host types in a form, and coupling
+them to that state would make every keystroke a reason to re-render a roster.
+
+**A zero-position `HelperSignup` is excluded from the list and logged.** A
+commitment holding no positions violates **invariant 39** — quantity *is*
+`count(HelperSignupPosition)` — and is the same class of corruption the S3
+SHIFT-ceiling bug produced before it was fixed. On `/volunteers`, filter it out
+of the visible supporter list, and emit a server-side `console.warn` carrying
+board id, event id, slot id, `HelperSignup` id and supporter id — identifiers
+only, no names or emails. Never surface it to contributors, and do not clutter
+the host UI with it in S3b.
+
+This is **defensive observability, not schema or API behaviour**. Rendering
+around the row silently would hide exactly the evidence needed to investigate;
+rendering the row would show a helper holding nothing.
+
+**Revalidation: the main board must not go stale, on BOTH return paths.** After a
+host action on `/volunteers`, returning to `/host/boards/[id]` must show the new
+truth for sheet creation, close, reopen, and any capacity change affecting the
+compact totals — whether the host returns by the **in-app link** or by the
+**browser Back button**. A host who saves, presses Back, and sees "Set up
+volunteer sign-up" has been told her work vanished.
+
+This is an acceptance requirement, not an implementation detail. **Add no
+speculative cache fix before the runtime test.** If a path is stale, correct that
+path with the smallest change and re-run it.
+
+**A route-level `loading.tsx`.** The route must give immediate feedback on a
+phone on weak signal, and must work cold from a bookmark without being reached
+through the board page first. The page identifies its board clearly, because a
+bookmarked URL carries a UUID and nothing else.
+
 ### The person-first roster is a sibling, not part of this
 
 `/host/boards/[id]/volunteers` is **slot-first**. The unified roster is
@@ -773,6 +859,10 @@ and sign-ups — and is event-wide rather than volunteer-scoped. It attaches at
 `/host/boards/[id]/roster`, scheduled S5. Building per-slot visibility now
 neither duplicates nor blocks it: both traverse `HelperSignup → EventSupporter`,
 grouped on opposite axes.
+
+**The person-first roster does not move into `/volunteers`.** A volunteer-specific
+**printable slot sheet** may later launch from `/volunteers` — that is its natural
+home — but it is **not S3b work and is not assigned**.
 
 ### S2 rulings — 2026-08-31
 
@@ -979,7 +1069,7 @@ The data model forbids none of these.
 | S1 | Schema — `SignupSheet`, `SignupSlot`, `HelperSignup` + composite unique, `HelperSignupPosition` + composite FK, `SignupLog`, `NotificationDelivery` + lease and fencing fields, `AdmissionGrant.wantsToHelp`, rename `AttendanceAccessToken` — plus `src/lib/signups.ts` | **Three preconditions before the first `CREATE TABLE` — see "S1 preconditions" below.** |
 | S2 | Host slot builder — create, edit, reorder, close | Host-only. Nothing public yet |
 | S3 | Sign-Up Sheet screen — token auth, claim, cancel, concurrency | The retry path and the all-or-nothing multi-position path are what to test |
-| S3b | **Host volunteer surface** — compact entry point on the fundraiser board, dedicated `/host/boards/[id]/volunteers` route, per-slot supporter visibility | Presentation and navigation only. No schema change, no API change. After S3 because it displays commitments S3 creates; independent of S4 and S5 |
+| S3b | **Host volunteer surface** — compact entry point on the fundraiser board, dedicated `/host/boards/[id]/volunteers` route (fundraiser-only, self-gating), per-slot supporter visibility, route-level `loading.tsx` | Presentation and navigation only. No schema change, no API change, **no host-removal action**. After S3 because it displays commitments S3 creates; independent of S4 and S5 |
 | S4 | Confirmation emails carrying the link — card webhook and direct-payment confirm | §5b. The retry cron lands here |
 | S5 | Checkout checkbox, poll-driven redirect, fallbacks, unified roster | Last, because everything it points at now exists |
 
@@ -998,6 +1088,7 @@ S2 alone is useful — a host can build the sheet before anyone can claim from i
 | `src/app/host/boards/[id]/volunteers/page.tsx` | **NEW** — dedicated volunteer management (S3b). Server component: same host guard as the board page, the same two sign-up queries, renders the slot builder plus per-slot supporter lists |
 | `src/app/host/boards/[id]/signup-panel.tsx` | **NEW** — slot builder. **Moves off the main board to the `/volunteers` route (S3b), unchanged in behaviour.** Gains per-slot supporter lists. Earlier versions of this table said "slot builder and roster"; the roster was never built here and is now per-slot visibility on the dedicated surface |
 | `src/app/host/boards/[id]/page.tsx` | Compact volunteer entry point replaces the inline panel — fundraiser branch only, Game Day untouched. Slot query narrows to `capacity` + `_count.positions` (S3b) |
+| `src/app/host/boards/[id]/volunteers/loading.tsx` | **NEW** — route-level loading state (S3b). Immediate feedback on mobile and weak signal |
 | *`src/app/host/boards/[id]/roster/page.tsx`* | **Reserved, not built.** Person-first unified roster, S5 |
 | `src/app/api/host/boards/[id]/signup-sheet/route.ts` | **NEW** — create sheet, edit title/instructions/isOpen. **Board-scoped**, ruling 4. Earlier versions of this table showed `/api/host/events/[id]/slots/`, which did not match the established architecture |
 | `src/app/api/host/boards/[id]/signup-slots/route.ts` | **NEW** — create, edit, reorder slots. Board-scoped |
