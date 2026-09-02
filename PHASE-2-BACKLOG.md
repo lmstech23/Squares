@@ -544,3 +544,107 @@ Phase B testing will create more boards with deliberately similar names. The
 failure mode is silent: every write succeeds, authorization passes, and the data
 lands correctly on the wrong board. Nothing in the application can detect it,
 because from the server's view nothing went wrong.
+
+## Capacity cannot be lowered below occupancy — because host removal does not exist
+
+**Added:** 2026-09-02
+**Status:** intentional for S3b. **Not a defect in the capacity guard.**
+
+A host cannot reduce a slot's capacity below its filled count. The guard is one
+conditional statement in the slot `PATCH` route and refuses with `409`:
+
+```sql
+UPDATE signup_slots SET capacity = $2
+ WHERE id = $1::uuid
+   AND $2 >= (SELECT count(*) FROM helper_signup_positions
+               WHERE slot_id = signup_slots.id)
+```
+
+That is correct and deliberate — capacity must never silently orphan a
+commitment someone is relying on. **The gap is that there is no other way out.**
+`HOST_REMOVED` exists as a `SignupAction` enum value with **no endpoint behind
+it**, so a host holding a full slot she needs to shrink has no path at all.
+
+Found during S3b Phase One, 2026-09-02: `Case of Water` at 6/6, `6 → 5` refused
+correctly. The refusal copy said *"or remove someone first"*, pointing at a
+control that does not exist. That copy was corrected the same day to
+`"6 spots are already filled. Set it to 6 or higher."` — the wording no longer
+promises the missing action, but the missing action is still missing.
+
+### What future work has to decide first
+
+- **What removal means to the supporter.** Her commitment disappears from a
+  sheet she was emailed a link to. Silently, or with a notification?
+- **The log semantics.** `HOST_REMOVED` is already the third `SignupAction`
+  direction alongside `CLAIMED` and `CANCELLED`, and `quantityAfter` applies —
+  a host removing 2 of 6 writes `HOST_REMOVED / 4`.
+- **Whether removal is per-position or per-commitment.** Highest-first release
+  already exists in `setTargetQuantity`; a host path should reuse it rather than
+  grow a second allocator. §14 of the sign-up addendum makes `signups.ts` the
+  sole owner of position allocation.
+- **Whether lowering capacity should offer removal inline**, or stay a hard
+  refusal that sends the host to a separate control. The refusal is the safer
+  default and should not be relaxed casually.
+
+Only once that is defined can capacity be reduced below current occupancy. Until
+then the refusal is the correct behaviour, not a bug to route around.
+
+## Re-run S3b revalidation against beta after deploy
+
+**Added:** 2026-09-02
+**Status:** open. Blocked until S3b is deployed.
+
+S3b Phase One verified main-board freshness after a host action on `/volunteers`
+on **both** return paths — the in-app link and the browser Back button. `Checkin`
+capacity `2 → 3` rendered `6 of 9`, `3 → 2` rendered `6 of 8`, on both arms.
+
+**That was the local dev server.** `npm run dev` and a production build cache
+differently: dev re-renders aggressively, and the Router Cache behaviour that
+would produce a stale board page is exactly what dev is least likely to
+reproduce. The result rules nothing out for beta.
+
+No cache or revalidation correction was added, and none is justified on this
+evidence. **Re-run both arms against `beta.daali.app` once S3b deploys.** If a
+path is stale there, correct that path with the smallest change — `prefetch={false}`
+on the back link first, then `router.refresh()` before navigating — and re-run
+that exact arm.
+
+The failure this guards against: a host saves on `/volunteers`, presses Back, and
+sees "Set up volunteer sign-up". She has been told her work vanished.
+
+## `SignupSlot` has no `updatedAt` — reorder writes leave no row-level trace
+
+**Added:** 2026-09-02
+**Status:** acceptable now. Revisit if concurrent editing becomes a concern.
+
+`SignupSlot` carries `createdAt` and no `updatedAt`. The reorder handler writes
+unconditionally — `normalizeSortOrder` maps every submitted id to its array index
+and each row is `UPDATE`d with no diffing:
+
+```ts
+for (const { id: slotId, sortOrder } of normalizeSortOrder(submitted)) {
+  await tx.signupSlot.update({ where: { id: slotId }, data: { sortOrder } });
+}
+```
+
+So a reorder and a reorder-then-undo are **indistinguishable in the data**. During
+S3b Phase One the slots were moved and restored; the final `sortOrder` values
+matched baseline exactly, but whether the rows had been rewritten could only be
+established **from the handler's code, not from the rows**. There is no
+`updatedAt` to consult and no log — `SignupLog` records supporter quantity
+changes, not host slot administration.
+
+**This is fine today.** One host administers one sheet, reorder is idempotent in
+effect, and the unconditional write is simpler than diffing.
+
+**Revisit if any of these become true:**
+
+- two people can administer the same board, and a "who moved this?" question
+  arises
+- slot administration needs an audit trail the way claims already have one
+- a lost-update between concurrent reorders becomes plausible — today the last
+  writer simply wins, silently
+
+Adding `updatedAt` is a schema change and out of S3b scope. Note that host slot
+administration has **no audit trail at all**, which is the larger of the two gaps
+and the one worth ruling on first.

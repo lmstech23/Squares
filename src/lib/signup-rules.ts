@@ -279,9 +279,19 @@ export function normalizeSortOrder(orderedIds: string[]): { id: string; sortOrde
 /**
  * The message shown when a host tries to set capacity below what is already
  * claimed. Lives here so the API and any future UI cannot word it differently.
+ *
+ * COUNTS SPOTS, NOT PEOPLE. The guard counts `HelperSignupPosition` rows, and
+ * on an ITEM one person can hold many: the earlier wording told a host with one
+ * supporter holding six cases of water that "6 people have already signed up",
+ * which is a false statement about her own event. The two only coincide on a
+ * SHIFT, where a person holds exactly one position.
+ *
+ * It also no longer says "or remove someone first". Host removal does not exist
+ * — HOST_REMOVED is an enum value with no endpoint behind it — and copy must not
+ * point a host at a control she cannot find. See PHASE-2-BACKLOG.md.
  */
 export function capacityTooLowMessage(filled: number): string {
-  return `${filled} ${filled === 1 ? "person has" : "people have"} already signed up for this. Set it to ${filled} or higher, or remove someone first.`;
+  return `${filled} ${filled === 1 ? "spot is" : "spots are"} already filled. Set it to ${filled} or higher.`;
 }
 
 /**

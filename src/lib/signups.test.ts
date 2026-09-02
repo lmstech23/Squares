@@ -79,12 +79,19 @@ describe("fill state is derived, never stored", () => {
 });
 
 describe("capacity refusal copy", () => {
+  // SPOTS, NOT PEOPLE. The guard counts positions, and one person can hold many
+  // on an ITEM slot — the fixture that caught this had one supporter holding six.
   test("plural", () => {
     assert.equal(capacityTooLowMessage(3),
-      "3 people have already signed up for this. Set it to 3 or higher, or remove someone first.");
+      "3 spots are already filled. Set it to 3 or higher.");
   });
   test("singular", () => {
-    assert.ok(capacityTooLowMessage(1).startsWith("1 person has already signed up"));
+    assert.equal(capacityTooLowMessage(1),
+      "1 spot is already filled. Set it to 1 or higher.");
+  });
+  // Host removal has no endpoint. Copy must not promise it.
+  test("promises no action that does not exist", () => {
+    assert.ok(!capacityTooLowMessage(6).includes("remove"));
   });
 });
 

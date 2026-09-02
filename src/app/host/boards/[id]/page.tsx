@@ -19,7 +19,6 @@ import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
 import ContributorList, { type ContributorRow } from "./contributor-list";
 import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
-import SignupPanel from "./signup-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
 
@@ -104,29 +103,29 @@ export default async function HostBoardPage({ params }: Props) {
       _sum: { pricePaidCents: true },
     });
 
-    // Sign-up sheet and slots, fetched HERE rather than in the panel. The rest
-    // of this page fetches server-side and passes down; a client fetch-on-mount
-    // would add a loading flash and a one-off loading state for no benefit.
+    // Sign-up sheet state for the COMPACT ENTRY POINT ONLY. Management lives on
+    // /host/boards/[id]/volunteers (§8, S3b); this page needs open/closed and
+    // two totals, nothing else. The select is deliberately narrow — a board page
+    // that loads every slot's name, times and notes to render "6 of 8 filled" is
+    // paying for a panel it no longer shows.
     // `filled` is a live count of position rows — there is no filledCount
     // column to drift.
     const signupSheet = board.event
       ? await prisma.signupSheet.findUnique({
           where: { eventId: board.event.id },
-          select: { id: true, title: true, instructions: true, isOpen: true },
+          select: { id: true, isOpen: true },
         })
       : null;
 
     const signupSlots = signupSheet
       ? await prisma.signupSlot.findMany({
           where: { sheetId: signupSheet.id },
-          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-          select: {
-            id: true, slotType: true, name: true, startsAt: true, endsAt: true,
-            capacity: true, unitLabel: true, notes: true, sortOrder: true,
-            _count: { select: { positions: true } },
-          },
+          select: { capacity: true, _count: { select: { positions: true } } },
         })
       : [];
+
+    const signupCapacity = signupSlots.reduce((n, s) => n + s.capacity, 0);
+    const signupFilled = signupSlots.reduce((n, s) => n + s._count.positions, 0);
 
     // Invariant 16. Shared predicate — lib/board-lock.ts — so contribution
     // price, early-bird and prize terms call the same one when they get edit
@@ -412,24 +411,57 @@ export default async function HostBoardPage({ params }: Props) {
               links={checkinStaffLinks}
             />
 
-            <div className="mt-4">
-              <SignupPanel
-                boardId={board.boardId}
-                eventTimezone={eventDetail?.timezone ?? "America/New_York"}
-                sheet={signupSheet}
-                slots={signupSlots.map((sl) => ({
-                  id: sl.id,
-                  slotType: sl.slotType as "SHIFT" | "ITEM",
-                  name: sl.name,
-                  startsAt: sl.startsAt ? sl.startsAt.toISOString() : null,
-                  endsAt: sl.endsAt ? sl.endsAt.toISOString() : null,
-                  capacity: sl.capacity,
-                  unitLabel: sl.unitLabel,
-                  notes: sl.notes,
-                  sortOrder: sl.sortOrder,
-                  filled: sl._count.positions,
-                }))}
-              />
+            {/* COMPACT ENTRY POINT — §8, S3b. Three states: no sheet, open,
+                closed. Full management lives on /volunteers, so this board page
+                stays readable next to passes, check-in staff and fundraiser
+                controls. Not every fundraiser with an event runs volunteers.
+
+                CLOSED STAYS ENTERABLE. Closing gates supporter claiming and
+                nothing else; it is exactly when the host wants the roster, so
+                Manage is a link in both states and never a disabled control. */}
+            <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
+              {!signupSheet ? (
+                <>
+                  <p className="text-sm font-medium text-white">Volunteer sign-up</p>
+                  <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                    Ask the people already supporting this campaign to bring
+                    something or work a shift. Only confirmed supporters can
+                    sign up.
+                  </p>
+                  <Link
+                    href={`/host/boards/${board.boardId}/volunteers`}
+                    className="inline-block rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 mt-3 transition-colors"
+                  >
+                    Set up volunteer sign-up
+                  </Link>
+                </>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white">
+                      Volunteer sign-up{" "}
+                      <span
+                        className={
+                          signupSheet.isOpen ? "text-green-400" : "text-gray-500"
+                        }
+                      >
+                        · {signupSheet.isOpen ? "Open" : "Closed"}
+                      </span>
+                    </p>
+                    {signupSlots.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
+                        {signupFilled} of {signupCapacity} filled
+                      </p>
+                    )}
+                  </div>
+                  <Link
+                    href={`/host/boards/${board.boardId}/volunteers`}
+                    className="flex-shrink-0 rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
+                  >
+                    Manage
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         )}

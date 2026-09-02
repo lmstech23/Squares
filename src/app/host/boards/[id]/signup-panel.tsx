@@ -21,6 +21,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+/**
+ * One person's holding on one slot, as rendered. Read-only: the server has
+ * already filtered zero-position commitments and sorted this array, so nothing
+ * here re-derives it. Carrying it ON the slot rather than in a parallel map is
+ * what stops a helper list drifting away from the row it belongs to.
+ */
+export interface SlotHelper {
+  supporterId: string;
+  name: string;
+  quantity: number;
+}
+
 export interface PanelSlot {
   id: string;
   slotType: "SHIFT" | "ITEM";
@@ -32,6 +44,7 @@ export interface PanelSlot {
   notes: string | null;
   sortOrder: number;
   filled: number;
+  helpers: SlotHelper[];
 }
 
 interface Props {
@@ -271,7 +284,11 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
       {slots.length > 0 && (
         <div className="mt-3 space-y-1.5">
           {slots.map((s, i) => (
-            <div key={s.id} className="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950 px-3 py-2">
+            // The wrapper is the slot. Reorder moves this element, and the
+            // helper list is inside it, so a slot and the people filling it can
+            // never separate.
+            <div key={s.id} className="rounded-lg border border-gray-800 bg-gray-950 px-3 py-2">
+             <div className="flex items-center gap-2">
               <div className="flex flex-col gap-0.5">
                 <button type="button" aria-label="Move up" disabled={i === 0 || busy !== null}
                   onClick={() => {
@@ -306,6 +323,27 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
                 }}>
                 Edit
               </button>
+             </div>
+
+              {/* WHO IS SIGNED UP, beneath the slot it fills. Visible by
+                  default — no collapse, no expand state. Two parallel lists
+                  would make the host cross-reference by slot name to answer
+                  "who is bringing this?", which is the one question this
+                  surface exists for. */}
+              {s.helpers.length > 0 && (
+                <ul className="mt-2 ml-6 space-y-0.5 border-l border-gray-800 pl-3">
+                  {s.helpers.map((h) => (
+                    <li key={h.supporterId} className="text-xs text-gray-300">
+                      {h.name}
+                      {/* An ITEM carries a quantity. A SHIFT is always one
+                          position, so "— 1" would be noise. */}
+                      {s.slotType === "ITEM" && (
+                        <span className="text-gray-500 tabular-nums"> — {h.quantity}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           ))}
         </div>

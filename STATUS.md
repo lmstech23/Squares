@@ -145,9 +145,9 @@ Verified 2026-09-01. Seven fundraiser boards exist; five had an `Event` and no
 
 | Board | Slug | Role |
 |---|---|---|
-| `Fundraiser Test` | `jtuyrtvu` | **The populated fixture.** Sheet, 6/6 ITEM, empty SHIFT. Do not consume |
-| `Demo` | `jv9rwyn` | **The no-sheet fixture for S3b Phase One.** 0 supporters, 0 paid squares |
-| `Homecoming` | `ah80sph` | Spare no-sheet fixture. 0 supporters, 0 paid squares |
+| `Fundraiser Test` | `jtuyrtvu` | **The populated fixture.** Sheet, 6/6 ITEM, empty SHIFT. **Restored to baseline after Phase One — DO NOT CONSUME** |
+| `Demo` | `jv9rwyn` | **CONSUMED 2026-09-01** — sheet `18f993c2-…` created, but against the pre-S3b build. **Produced no S3b manual coverage.** See below |
+| `Homecoming` | `ah80sph` | **The remaining clean no-sheet fixture** — now the one the real S3b no-sheet test must use. 0 supporters, 0 paid squares. Do not spend it |
 | `Homecoming` | `5mbxrpbp` | No-sheet, but carries 1 supporter / 2 paid squares |
 | `test` | `umt9dpqq` | No-sheet — **EXCLUDED from throwaway use.** Carries real supporter and paid-square data |
 | `Homecoming Fundraising` | `rpffdlbf` | No-sheet — **EXCLUDED.** Board is `closed` |
@@ -157,10 +157,108 @@ Verified 2026-09-01. Seven fundraiser boards exist; five had an `Event` and no
 codebase — S2 ruling 2 is no-delete, and `SignupSheet` has no removal route. A
 board spent as a no-sheet fixture cannot be restored to that state.
 
-**When Phase One creates the sheet on `Demo` / `jv9rwyn`, mark it CONSUMED here**
-and update the remaining list. The next clean spare is `Homecoming` / `ah80sph`.
-After that, no untouched no-sheet fundraiser fixture remains, and creating one
-needs approval.
+`Demo` was spent on 2026-09-01. **`Homecoming` / `ah80sph` is now the only clean
+no-sheet fixture left.** After it, none remains and creating one needs approval.
+
+### Demo was consumed without producing S3b coverage
+
+**2026-09-01.** The sheet was created on `Demo` through the browser at
+`beta.daali.app`, which was still serving the **pre-S3b build**. What rendered was
+the old S2 inline panel on the main host board — `Volunteer Sign-Up · open`,
+`Add your first volunteer need`, `Add a shift`, `Add something to bring`.
+
+**Verified in the database:**
+
+- Demo has exactly one `SignupSheet`, id `18f993c2-4ffb-490a-8cc7-1c61845032d1`
+- title `Volunteer Sign-Up` — exactly `DEFAULT_SHEET_TITLE`, which `POST`
+  hardcodes and cannot be set at creation
+- `isOpen = true`, slots `0`
+- no supporter, contribution or payment change on that board
+
+**NOT observed, and therefore NOT covered:**
+
+- the no-sheet compact entry point
+- `/volunteers` rendering with `sheet === null`
+- the S3b create-sheet flow from the dedicated route
+- the post-create compact main-board state
+
+**The fixture is spent; the coverage was not obtained.** These four remain open
+and must be run against `Homecoming` / `ah80sph` on a build that actually
+contains S3b. Group B onward must not be run against `beta.daali.app` until S3b
+is deployed there — doing so would exercise pre-S3b UI and prove nothing.
+
+### S3b Phase One — RESULT, 2026-09-02
+
+**Environment — read this before trusting any line below.**
+
+- S3b is **implemented but UNCOMMITTED** in the working tree.
+- Browser acceptance ran against the **LOCAL DEV SERVER**, `npm run dev`, using
+  the **shared production database**. Every write below is a real production row.
+- **`beta.daali.app` still serves `1cff66c` and does not contain S3b.** Nothing
+  here was observed on the deployed build.
+
+Work was split: the browser observations are the host's, the database
+verification is Claude's. Neither is reported as the other.
+
+#### PASS
+
+- the dedicated `/volunteers` surface renders
+- per-slot helper visibility renders **inside the matching slot row**
+- `Checkin` first, `Case of Water` second
+- `Daaliyah — 6` stays attached to `Case of Water`
+- compact main-board **Open** state
+- compact main-board **Closed** state
+- **Manage** available in both states
+- a closed sheet remains **fully host-manageable** — add, edit, reorder, reopen
+  all stay enabled, and supporter detail stays visible
+- reopen works
+- capacity refusal `6 → 5` works, with the corrected neutral copy
+- reorder works and restores to **baseline values and order**, not merely
+  equivalent ordering — `Checkin = 0`, `Case of Water = 1`
+- **Revalidation A, in-app link:** `2 → 3` rendered `6 of 9`; `3 → 2` rendered
+  `6 of 8`
+- **Revalidation B, browser Back:** `2 → 3` rendered `6 of 9`; `3 → 2` rendered
+  `6 of 8`
+
+#### Revalidation conclusion
+
+**No stale render was observed on either navigation path under LOCAL DEV. No
+cache or revalidation correction is justified on this evidence, and none was
+added. Dev-server caching differs from a production build, so this result does
+not establish beta behavior. Re-run both arms against beta after S3b deploys.**
+
+#### Final state — verified read-only against the pre-flight baseline
+
+All 24 checks PASS. The fixture is **restored to baseline**:
+
+```
+Checkin        SHIFT  capacity 2  sortOrder 0  0 positions
+Case of Water  ITEM   capacity 6  sortOrder 1  6 positions
+Daaliyah       one HelperSignup, quantity 6, positions 1-6, no gaps
+               all six on the same HelperSignup and the same slotId
+SignupSheet.isOpen = true
+SignupLog      exactly 3 rows, same ids as baseline
+globals        all ten unchanged
+Homecoming / ah80sph still has NO SignupSheet
+```
+
+Phase One wrote only what it was meant to: one sheet on `Demo`, and a
+`Checkin` capacity round trip that ended where it started. No signup, position,
+log, supporter, square or grant row changed.
+
+#### NOT manually verified — these stay open
+
+| Gap | Why it could not be closed |
+|---|---|
+| loading skeleton | `loading.tsx` **is implemented** — the skeleton was not manually observed rendering during browser acceptance |
+| true S3b no-sheet flow | needs `Homecoming` / `ah80sph`, deliberately untouched |
+| SHIFT supporter-name rendering with a real signup | needs a second active supporter |
+| alphabetical ordering with 2+ supporters | needs a second active supporter |
+| multi-supporter ITEM rendering | needs a second active supporter |
+| zero-position invariant-39 warning path | needs an actual violating row or a disposable-database exercise. **A clean render does not verify it** |
+
+A second `active` supporter requires a real confirmed contribution under a
+different email. Deferred by standing ruling.
 
 ### S3b acceptance — phase two, FRESH TOKEN REQUIRED
 
