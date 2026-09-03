@@ -145,9 +145,9 @@ Verified 2026-09-01. Seven fundraiser boards exist; five had an `Event` and no
 
 | Board | Slug | Role |
 |---|---|---|
-| `Fundraiser Test` | `jtuyrtvu` | **The populated fixture.** Sheet, 6/6 ITEM, empty SHIFT. **Restored to baseline after Phase One — DO NOT CONSUME** |
+| `Fundraiser Test` | `jtuyrtvu` | **The populated fixture.** Sheet, 6/6 ITEM, empty SHIFT. **Restored to baseline with zero drift** after acceptance — `Checkin` capacity was deliberately changed and restored, so not untouched. **DO NOT CONSUME** |
 | `Demo` | `jv9rwyn` | **CONSUMED 2026-09-01** — sheet `18f993c2-…` created, but against the pre-S3b build. **Produced no S3b manual coverage.** See below |
-| `Homecoming` | `ah80sph` | **The remaining clean no-sheet fixture** — now the one the real S3b no-sheet test must use. 0 supporters, 0 paid squares. Do not spend it |
+| `Homecoming` | `ah80sph` | **UNTOUCHED** — never opened, no sheet, no writes of any kind. The remaining clean no-sheet fixture, and the one the real S3b no-sheet test must use. Do not spend it |
 | `Homecoming` | `5mbxrpbp` | No-sheet, but carries 1 supporter / 2 paid squares |
 | `test` | `umt9dpqq` | No-sheet — **EXCLUDED from throwaway use.** Carries real supporter and paid-square data |
 | `Homecoming Fundraising` | `rpffdlbf` | No-sheet — **EXCLUDED.** Board is `closed` |
@@ -194,8 +194,14 @@ is deployed there — doing so would exercise pre-S3b UI and prove nothing.
 - S3b is **implemented but UNCOMMITTED** in the working tree.
 - Browser acceptance ran against the **LOCAL DEV SERVER**, `npm run dev`, using
   the **shared production database**. Every write below is a real production row.
-- **`beta.daali.app` still serves `1cff66c` and does not contain S3b.** Nothing
-  here was observed on the deployed build.
+- **`beta.daali.app` served `359f6f7` at the time and did not contain S3b.**
+  Nothing in this section was observed on the deployed build.
+
+> **Correction, 2026-09-02.** This line originally said beta served `1cff66c`.
+> That was never true — `1cff66c` was a docs-only commit that had not reached
+> `origin/main`, and beta was serving `359f6f7`, confirmed from the Vercel
+> dashboard. The claim was repeated from the framing of a request without being
+> checked, and reached this file that way.
 
 Work was split: the browser observations are the host's, the database
 verification is Claude's. Neither is reported as the other.
@@ -215,17 +221,20 @@ verification is Claude's. Neither is reported as the other.
 - capacity refusal `6 → 5` works, with the corrected neutral copy
 - reorder works and restores to **baseline values and order**, not merely
   equivalent ordering — `Checkin = 0`, `Case of Water = 1`
-- **Revalidation A, in-app link:** `2 → 3` rendered `6 of 9`; `3 → 2` rendered
-  `6 of 8`
-- **Revalidation B, browser Back:** `2 → 3` rendered `6 of 9`; `3 → 2` rendered
-  `6 of 8`
+- *(revalidation arms — see below; these are **not** a PASS)*
 
-#### Revalidation conclusion
+#### Revalidation under local dev — **UNMEASURED, not passed**
 
-**No stale render was observed on either navigation path under LOCAL DEV. No
-cache or revalidation correction is justified on this evidence, and none was
-added. Dev-server caching differs from a production build, so this result does
-not establish beta behavior. Re-run both arms against beta after S3b deploys.**
+Compact-card strings were reported — `6 of 9` after `2 → 3`, `6 of 8` after
+`3 → 2`, on both the in-app and browser-Back arms. **But no before-refresh /
+after-refresh moment was recorded for any of them.**
+
+That moment is the whole measurement. Staleness lives in the client cache, and
+a value observed after a refresh cannot exhibit it. Without knowing which side
+of a refresh each reading came from, the arms establish nothing either way —
+they are **unmeasured**, not a weaker pass.
+
+Superseded by the production run below, which recorded all four moments.
 
 #### Final state — verified read-only against the pre-flight baseline
 
@@ -255,10 +264,74 @@ log, supporter, square or grant row changed.
 | SHIFT supporter-name rendering with a real signup | needs a second active supporter |
 | alphabetical ordering with 2+ supporters | needs a second active supporter |
 | multi-supporter ITEM rendering | needs a second active supporter |
-| zero-position invariant-39 warning path | needs an actual violating row or a disposable-database exercise. **A clean render does not verify it** |
+| zero-position invariant-39 warning path | **needs a unit test against the display filter** — not a second supporter, not a production row. The filter is pure: given a slot whose signups include one holding zero positions, assert it is excluded. A clean render does not verify it |
 
 A second `active` supporter requires a real confirmed contribution under a
 different email. Deferred by standing ruling.
+
+### S3b PRODUCTION acceptance — PASSED, 2026-09-02
+
+**Deployed.** `origin/main` is `a9dac3d`; `beta.daali.app` aliases
+`dpl_83Jzm7aM3ptUtCRqvQvVRYCknry6` (`squares-prtxg9hzi`), built 2026-09-02
+14:54:51 -0400.
+
+**Rollback target:** `dpl_9g9x3fh2aWUvHhbEBrMQdPeN1GCE` (`squares-5cvlbkcuo`),
+built from `359f6f7`, dashboard-confirmed.
+
+**"Deploy to beta" has always meant deploy to production.** This project has no
+preview environment — every deployment is production, and `beta.daali.app` plus
+three `vercel.app` hostnames alias the same target. The name implied a staging
+tier that does not exist. Every run described as "against beta", here and in
+earlier sections, was against production on the production database.
+
+#### PASS
+
+- smoke gate on the correct board — `Fundraiser Test` / `jtuyrtvu`, board id
+  ending `c0b8ce04b446`
+- `Checkin` renders first, `Case of Water` second
+- `Case of Water` 6/6, `Daaliyah - 6` rendering without tapping
+- the per-slot correction shipped as intended on a real production build
+
+#### Revalidation — both arms, all four moments recorded
+
+Compact card on `/host/boards/[id]`, read on return:
+
+| | Arm A — in-app link | Arm B — browser Back |
+|---|---|---|
+| **before refresh** | `6 of 9 filled` | `6 of 8 filled` |
+| **after refresh**  | `6 of 9 filled` | `6 of 8 filled` |
+
+Arm A changed `Checkin` `2 -> 3`; Arm B restored `3 -> 2`.
+
+**The before-refresh reading is the measurement** — the card was already correct
+on return, so there was no client or router cache staleness on either path. The
+after-refresh reading is the **control**: identical values rule out an upstream
+stale response masking a client-side one. Had before been right and after wrong,
+that would have pointed upstream instead.
+
+Database corroborates independently: `Checkin` 0/2, `Case of Water` 6/6, so the
+card should read `6 of 8 filled` — which it does.
+
+**No cache or revalidation correction is justified, and none was added.** This
+conclusion rests on a measurement that could have failed.
+
+#### Final state — verified read-only against the pre-flight baseline
+
+```
+Checkin        SHIFT  capacity 2  sortOrder 0  0 positions
+Case of Water  ITEM   capacity 6  sortOrder 1  6 positions
+Daaliyah       one HelperSignup, quantity 6, positions 1-6, no gaps
+SignupSheet.isOpen = true
+SignupLog      exactly 3 rows, same ids as baseline
+globals        all ten unchanged, zero drift
+```
+
+`Fundraiser Test` / `jtuyrtvu` is **restored to baseline with zero drift**.
+`Checkin` capacity was deliberately changed and restored during acceptance, so
+it was not untouched — it ended where it started.
+
+`Homecoming` / `ah80sph` is **untouched**: never opened, no sheet, no writes of
+any kind.
 
 ### S3b acceptance — phase two, FRESH TOKEN REQUIRED
 
@@ -345,9 +418,11 @@ not be marked closed here without a second `active` supporter:
 The first three need a second `active` supporter, which requires a real confirmed
 contribution under a different email. Deferred by standing ruling.
 
-The fourth cannot be exercised at all right now: **no zero-position
-`HelperSignup` exists**, so the defensive `volunteers:` `console.warn` has no
-input. **A clean `/volunteers` render is not evidence that the warning works** —
-it is evidence that the corrupt state it guards against is absent. The path stays
-unverified until either such a row appears in production or it is exercised
-against a disposable database.
+The fourth is different, and **needs neither a supporter nor a production row**.
+No zero-position `HelperSignup` exists, so a clean `/volunteers` render is
+evidence that the corrupt state is absent — not that the filter works.
+
+**It needs a unit test against the display filter.** The filter is pure:
+construct a slot whose signups include one holding zero positions, and assert it
+is excluded from the rendered list. That is the cheapest of the six gaps and the
+only one not blocked on a fixture. Reclassified 2026-09-03.

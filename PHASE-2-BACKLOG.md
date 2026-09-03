@@ -648,3 +648,112 @@ effect, and the unconditional write is simpler than diffing.
 Adding `updatedAt` is a schema change and out of S3b scope. Note that host slot
 administration has **no audit trail at all**, which is the larger of the two gaps
 and the one worth ruling on first.
+
+## No preview environment — every deployment is production
+
+**Added:** 2026-09-03
+**Status:** open. Recorded during S3b deploy.
+
+`vercel ls squares` returns every deployment as `Environment: Production`. **Zero
+previews exist.** Four hostnames alias the same production deployment:
+
+```
+beta.daali.app
+squares-sigma.vercel.app
+squares-daaliyah-tates-projects.vercel.app
+squares-git-main-daaliyah-tates-projects.vercel.app
+```
+
+A push to `main` moves all four together. None is separately pinned, so **there
+is no rollback-by-alias net** — recovering means promoting a previous deployment,
+not repointing one hostname.
+
+**"Deploy to beta" has meant "deploy to production" for the life of this
+project.** The name implied a staging tier that does not exist. Every acceptance
+run described as "against beta" ran against production, on the production
+database, against real contributor rows.
+
+S3b was presentation-only, which is the only reason this is a note rather than a
+blocker. **Stand up a real preview environment before anything with a schema or
+API component ships.** At minimum a preview deployment on a non-production branch
+with its own database.
+
+## Expose the deployed commit through a build-info surface
+
+**Added:** 2026-09-03
+**Status:** open.
+
+`vercel inspect --json` returns `aliases, builds, contextName, createdAt, id,
+name, readyState, target, url` and nothing else. **No `meta`, no `gitSource`, no
+commit-shaped key anywhere in 134 KB of payload.** The CLI cannot answer "what
+commit is deployed".
+
+During the S3b deploy this could only be resolved from the Vercel dashboard by
+hand. Timestamp correlation was available — the build started six seconds after
+the commit — but correlation is not verification, and a deploy should not depend
+on someone reading a web page.
+
+Expose `process.env.VERCEL_GIT_COMMIT_SHA` through a small build-info surface so
+the deployed commit is checkable from the command line. Keep it internal or
+authenticated: it is not secret, but it is not for contributors either.
+
+## Unit test for the zero-position display filter
+
+**Added:** 2026-09-03
+**Status:** open. Reclassified from a manual gap.
+
+`/volunteers` filters out any `HelperSignup` holding zero positions — an
+invariant-39 violation — and logs it with `console.warn` under a `volunteers:`
+prefix. That path has never been exercised.
+
+It was previously recorded as needing a violating row in production or a
+disposable-database run. **That was the wrong classification.** The filter is
+pure: it takes the selected slot data and returns the helpers to render. Testing
+it needs neither a database nor a second supporter.
+
+Construct a slot whose `signups` include one with `_count.positions === 0`, and
+assert it is excluded from the rendered list. **The cheapest of the six open S3b
+gaps, and the only one not blocked on a fixture.**
+
+**The work is a small extraction plus a unit test, not a test alone.** The filter
+currently lives inline in `volunteers/page.tsx` as `helpersFor`, a closure over
+`board` and `event` for the warning's identifiers. Nothing can import it, so
+nothing can test it.
+
+Lift the pure part — take slot signups, drop zero-position entries, sort by name
+with the supporter-id tiebreak, return the render list — into a module the test
+runner can load, leaving the `console.warn` call site to supply identifiers.
+
+**`signup-rules.ts` is the precedent, and it exists for exactly this reason.**
+Pure sign-up policy was split out of `signups.ts` after that module gained
+`import { prisma } from "@/lib/prisma"` and became unimportable from a test:
+`node --experimental-strip-types` does not resolve tsconfig path aliases, and 30
+assertions silently stopped running behind a load error. Display and filter logic
+belongs on the same side of that line.
+
+## Verification steps must state the screen and the moment of observation
+
+**Added:** 2026-09-03
+**Status:** convention, not a task. Apply when writing acceptance steps.
+
+The first production revalidation attempt produced four numbers that measured
+nothing, because the protocol said what value to record but not **where** or
+**when** to read it.
+
+Both were missing:
+
+- **the screen** — the values came from `/volunteers`, the page that performed
+  the write, when the thing under test was the compact card on
+  `/host/boards/[id]`, the page being returned to
+- **the moment** — the values were read after a hard refresh, and a refresh
+  discards the client cache that staleness lives in, so the reading could not
+  have failed
+
+Either omission alone invalidates the result. The corrected protocol named the
+screen, the navigation path, and both moments — before refresh as the
+measurement, after refresh as the control — and only then could the arms pass or
+fail on their merits.
+
+**When specifying a verification step, state the screen and the moment of
+observation, not just the value to record.** A step that cannot fail is not a
+test.
