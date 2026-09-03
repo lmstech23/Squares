@@ -81,8 +81,13 @@ export default function ClaimSheet({
   const reclaiming = (initialPicked?.length ?? 0) > 0;
   // No MAX_PER_CLAIM clamp: a reclaim restores exactly what was held, and
   // inventory is the only fundraiser ceiling.
-  const [quantity, setQuantity] = useState(
-    reclaiming ? initialPicked!.length : 1
+  //
+  // HELD AS A STRING, NOT A NUMBER. The donor must be able to clear the field
+  // and type their own figure, and "" is not representable in a number state.
+  // The previous version coerced on every keystroke with `NaN ? 1`, so deleting
+  // the digit wrote 1 straight back and the box could never be emptied.
+  const [quantityText, setQuantityText] = useState(
+    reclaiming ? String(initialPicked!.length) : "1"
   );
   const [useReclaim, setUseReclaim] = useState(reclaiming);
 
@@ -107,6 +112,15 @@ export default function ClaimSheet({
   // concepts are untouched. This is copy only.
   // One shared resolver — src/lib/board-vocabulary.ts. Never branched locally.
   const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
+
+  // The donor's intent, as a number. Empty or unparsable reads as 0, which
+  // flows through to `count === 0` and the existing "choose at least one"
+  // guard — no second validation path. Capped for DISPLAY only, so the summary
+  // and total never promise more than exists while she is still typing.
+  const parsedQuantity = parseInt(quantityText, 10);
+  const quantity = Number.isNaN(parsedQuantity)
+    ? 0
+    : Math.min(parsedQuantity, openSquares.length);
 
   // The next open squares in board-position order. `openSquares` arrives sorted
   // by position, so slicing takes the lowest-numbered available.
@@ -232,48 +246,40 @@ export default function ClaimSheet({
         {/* How many — free entry, bounded only by what is open.
             MAX_PER_CLAIM is a GAME DAY concept: 10 of 100 makes sense for a
             game with a prize pool, and is backwards for a fundraiser, where a
-            contributor who wants 20 is the best thing that can happen. The
-            quick buttons are shortcuts, not limits. */}
+            contributor who wants 20 is the best thing that can happen.
+
+            NO PRESET BUTTONS. 1 / 2 / 5 / 10 anchored the donor to a number the
+            app chose, and the four that fit a phone row are not the four any
+            given campaign needs. The field is the control. */}
         <div className="mb-4">
           <label htmlFor="quantity" className={labelClass}>
             How many {u.many}?
           </label>
-          <div className="flex gap-2 mb-2">
-            {[1, 2, 5, 10]
-              .filter((n) => n <= maxQuantity)
-              .map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => {
-                    setQuantity(n);
-                    setUseReclaim(false);
-                  }}
-                  className={`flex-1 rounded-lg border py-2 text-sm font-medium transition-colors ${
-                    count === n
-                      ? "border-green-500 bg-green-950/20 text-white"
-                      : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-          </div>
           <input
             id="quantity"
             type="number"
             inputMode="numeric"
             min={1}
             max={maxQuantity}
-            value={quantity}
+            value={quantityText}
             onChange={(e) => {
-              const raw = parseInt(e.target.value, 10);
-              // Clamp on the way in. Minimum 1, maximum whatever is actually
-              // open — inventory is the only ceiling.
-              setQuantity(
-                Number.isNaN(raw) ? 1 : Math.max(1, Math.min(raw, maxQuantity))
-              );
+              // STORES, NEVER COERCES. No clamping on the way in: clamping per
+              // keystroke is what stopped the field being clearable, and it also
+              // rewrites a number mid-entry — typing toward 150 became 100 the
+              // moment the third digit landed. Digits only, so type="number"
+              // cannot smuggle in "e" or a minus sign.
+              setQuantityText(e.target.value.replace(/[^0-9]/g, ""));
               setUseReclaim(false);
+            }}
+            onBlur={() => {
+              // Clamp DOWN only. An entry above what is left is impossible and
+              // gets corrected; an empty field is a donor mid-decision and is
+              // left alone. Restoring 1 would be the app choosing a quantity on
+              // her behalf, which is the behaviour being removed.
+              const n = parseInt(quantityText, 10);
+              if (!Number.isNaN(n) && n > maxQuantity) {
+                setQuantityText(String(maxQuantity));
+              }
             }}
             className={inputClass}
           />

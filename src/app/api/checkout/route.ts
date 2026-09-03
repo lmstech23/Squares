@@ -4,6 +4,7 @@ import { stripe } from "@/lib/stripe";
 import { randomUUID } from "crypto";
 import { releaseAdmissionForBatch } from "@/lib/admission";
 import { currentPriceCents } from "@/lib/claim-price";
+import { MAX_PER_CLAIM } from "@/lib/claim-limits";
 import { prepareAdmission } from "@/lib/admission";
 import { baseUrlFromRequest } from "@/lib/base-url";
 
@@ -42,13 +43,6 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json(
         { error: "Square IDs, name, and email are required." },
-        { status: 400 }
-      );
-    }
-
-    if (squareIds.length > 10) {
-      return NextResponse.json(
-        { error: "You can purchase up to 10 squares at a time." },
         { status: 400 }
       );
     }
@@ -105,6 +99,26 @@ export async function POST(request: Request) {
     const board = squares[0].board;
     const isFundraiser = board.boardType === "fundraiser";
     const donateAdmissions = body.donateAdmissions ?? false;
+
+    // PER TRANSACTION, GAME DAY ONLY — src/lib/claim-limits.ts.
+    //
+    // A FUNDRAISER'S ONLY CEILING IS INVENTORY. This guard was previously a
+    // hardcoded `squareIds.length > 10` ABOVE the line that computes
+    // `isFundraiser`, so it could not be scoped even in principle and refused
+    // fundraiser checkouts of 11 or more. Nobody hit it because the claim
+    // sheet's preset buttons stopped at 10; removing those presets uncapped
+    // the path into it.
+    //
+    // It necessarily moves BELOW the board lookup, so a Game Day request for
+    // more than the limit against a missing board now reports the missing
+    // board first. Accepted deliberately: the limit is a property of the
+    // board's type, and it cannot be applied before the type is known.
+    if (!isFundraiser && squareIds.length > MAX_PER_CLAIM) {
+      return NextResponse.json(
+        { error: `You can purchase up to ${MAX_PER_CLAIM} squares at a time.` },
+        { status: 400 }
+      );
+    }
 
     // 3. Board must be open
     if (board.status !== "open") {
