@@ -868,9 +868,12 @@ It is the destructive one. Before A1 expands the state it can encounter:
   the money record. After A1 the money lives in `Contribution`, and deleting a
   board that still has contribution rows would orphan or destroy the ledger
   those rows constitute.
-- **Interaction with invariant 4 (CONFIRMED is terminal) and 13 (final amounts
-  immutable).** A cron that deletes a finalized board is deleting numbers those
-  invariants say never change.
+- **Interaction with invariant 4 (CONFIRMED is terminal) and invariant 68 (the
+  three final amounts are written together and are immutable).** A cron that
+  deletes a finalized board is deleting numbers those invariants say never
+  change. *Citation corrected 2026-09-04: this previously said "13 (final
+  amounts immutable)". Invariant 13 governs `finalPrizePoolCents` alone;
+  invariant 68 is the carrier for all three fields.*
 - **`releaseAdmissionForBatch` already carries an invariant-42 cleanup guard**
   refusing to delete a supporter holding any `HelperSignup`. Whether
   `delete-expired` honours the equivalent for contributions is unverified.
@@ -879,6 +882,51 @@ It is the destructive one. Before A1 expands the state it can encounter:
   been read.
 
 Review before A1 lands, not after.
+
+## RETRACTED — "Invariant 13 is cited for three fields but written for one"
+
+**Retracted 2026-09-04**, the day after it was written. **The finding below was
+wrong.** It is kept rather than deleted so the error and its cause stay legible.
+
+**What was claimed, and why it was false:**
+
+| Claim | Reality |
+|---|---|
+| *"`finalPrizeBasisCents` does not exist in the money doc at all"* | **False.** It appears at `fundraiser-money-state-machine.md:367`, inside invariant 21's amended blockquote |
+| *"the immutability of `finalRaisedCents` and `finalPrizeBasisCents` is asserted in prose but not carried by any numbered invariant"* | **False.** Donations invariant **68** carries exactly that, and registry row 68 records it |
+| *"two plausible resolutions exist and choosing between them is a ruling"* | **False.** The package had already chosen — the second option was the one implemented |
+
+**The evidence that settles it:**
+
+```
+fundraiser-donations-addendum.md:207
+68. `finalRaisedCents`, `finalPrizeBasisCents`, and `finalPrizePoolCents` are
+    written in one transaction and are immutable.
+    `finalPrizePoolCents = round(prizePoolPercent × finalPrizeBasisCents / 100)`.
+
+fundraiser-donations-addendum.md:181
+54. A confirmed contribution's amounts never change. Square economics remain
+    immutable exactly as money doc invariants 4 and 13 require.
+```
+
+**Invariant 13 is intentionally one-field and unchanged.** The money doc's
+`### Amendments in force` block lists it among *"Invariants 1, 4, 5, 13, 15, 17
+are **unchanged**"*, and donations §3 classifies it the same way. Invariant 68
+carries the three final amounts; invariant 54 is the cross-reference tying
+square economics back to 4 and 13. Nothing is missing.
+
+**How the error happened, because the method is the lesson.** The original
+search was `grep -E "^13\. "` against the money doc plus one registry row. From
+a scoped search I asserted a universal negative — *"does not exist at all"* — and
+never looked outside invariants 1–50, which is precisely where invariant 68
+lives. A single unanchored `grep finalPrizeBasisCents` would have refuted it in
+one command.
+
+The entry was committed in `290c331` and pushed before the error was found.
+
+---
+
+### Original entry, retained as written and now known to be wrong
 
 ## Invariant 13 is cited for three fields but written for one
 
@@ -944,3 +992,102 @@ carried by any numbered invariant.
 addendum's clarified scope rather than the registry's text. It is left as-is:
 the plural is the reading §8 depends on, and narrowing it would hide this gap
 rather than record it.
+
+## Numeric cross-reference defects in the frozen spec package
+
+**Added:** 2026-09-04
+**Status:** open. **Reported, not fixed** — the package is frozen and
+`invariant-registry.md` is the numbering authority. Correcting these is a ruling.
+
+Found by auditing every qualified invariant citation across all three addenda.
+**Every `<document> invariant N` citation resolves to the correct owning block** —
+the audit found zero mismatches there. The defects are all in `§N` pointers and
+one unqualified citation.
+
+### 1. Registry row 16 points at the wrong invariant
+
+```
+invariant-registry.md
+| 16 | **Amended (§72).** Terms lock after the first confirmed square contribution |
+```
+
+`§72` is *"Effective price reads early bird or regular; no third source"* —
+unrelated to locking. **The lock rule is invariant 76:**
+
+```
+fundraiser-launch-readiness-addendum.md:528
+76. Early bird fields lock at the first confirmed square with
+    `priceSource = early_bird`. The regular price locks at the first confirmed
+    square with `priceSource = regular`.
+```
+
+Proposed: `§72` → `§76`.
+
+### 2. Registry row 21 points at the wrong invariant
+
+```
+invariant-registry.md
+| 21 | **Amended (§64).** Finalization cannot occur while any square or contribution is unresolved |
+```
+
+`§64` is *"A donation-only contribution has no hold, no `holdExpiresAt`, and no
+countdown"* — unrelated to finalization. **The amending invariant is 67:**
+
+```
+fundraiser-donations-addendum.md:206
+67. `CLOSING` resolves every pending contribution against Stripe ... `CLOSING`
+    does not advance while any contribution is `pending`.
+```
+
+Proposed: `§64` → `§67`.
+
+Both are near-misses — 72 for 76, 64 for 67 — consistent with transcription
+slips rather than a misunderstanding. Rows 2 and 49 use `§51 block`, a range
+pointer, and are correct.
+
+### 3. Donations §8 cites invariant 13 for a field 13 does not govern
+
+```
+fundraiser-donations-addendum.md, §8
+"But invariant 13 makes `finalRaisedCents` immutable at finalization."
+```
+
+Invariant 13 governs `finalPrizePoolCents` alone. The carrier for
+`finalRaisedCents` is **invariant 68, defined in the same document**. The
+argument §8 makes is sound; only the citation is wrong.
+
+Proposed: cite 68.
+
+### 4. The money doc's amendment block is INCOMPLETE for invariant 16
+
+**This is the finding with the most consequence, and it is mine.**
+
+`fundraiser-money-state-machine.md` `### Amendments in force` records:
+
+```
+**Invariant 16 — amended by `fundraiser-donations-addendum.md` §3.**
+```
+
+**But invariant 16 is amended twice.** Launch readiness §1.4 amends it as well:
+
+```
+fundraiser-launch-readiness-addendum.md:130
+> **Amendment.** The early bird fields lock at the first confirmed square whose
+> `priceSource = early_bird`. The regular price locks at the first confirmed
+> square whose `priceSource = regular`. Neither lock affects the other.
+```
+
+carried as invariant 76.
+
+**Neither source records both halves.** The money doc names only the donations
+amendment; registry row 16 points only at the launch-readiness one (via the
+wrong number). A reader consulting either alone gets half the rule.
+
+**Cause.** I wrote that block during the reconciliation commit `91c9a98`, working
+from an instruction scoped to *"Sources: donations §3."* I transcribed faithfully
+and never asked whether another addendum also amended those invariants. The
+instruction was narrow; the block it produced reads as complete.
+
+Proposed: add the launch-readiness amendment to `### Amendments in force`, and
+correct registry row 16 to cite both. **Requires a ruling — the money doc is
+frozen and this is not a typo but a missing rule.**
