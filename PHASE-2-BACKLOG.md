@@ -1173,10 +1173,12 @@ change.
 
 ---
 
-## A1 production apply — runbook, rollback, and the PITR blocker
+## A1 production apply — runbook, rollback, and the no-PITR ruling
 
 **Added:** 2026-09-04
 **Status:** open. **A1 is committed and pushed but NOT applied to production.**
+**PITR:** declined on cost, 2026-09-04. A1 approved to proceed without it —
+scoped ruling, not precedent. See below.
 **Migration:** `prisma/migrations/20260904140000_a1_contribution_ledger`
 **Rollback artifact:** `migrations/a1_rollback.sql.pending`
 **Rehearsed on:** daali-dev (`iujjlgfrwavfhqatpqdy`) — replayed from zero, seeded
@@ -1190,31 +1192,119 @@ in the deployed application reads `contributions` yet, which is exactly why the
 schema change could ship ahead of the feature work — and exactly why there is no
 urgency to apply it.
 
-### PITR BLOCKER — do not apply A1 until this is closed
+### PITR — DECLINED, and A1 approved to proceed without it
+
+**Ruled 2026-09-04. This closes the blocker that stood here.** It is a scoped
+ruling, not a general one — read the last paragraph before citing it.
 
 ```
 +---------------------------------------------------------------+
 |                                                               |
-|   POINT-IN-TIME RECOVERY ON THE PRODUCTION SUPABASE PROJECT   |
-|   HAS NOT BEEN CONFIRMED.                                     |
+|   POINT-IN-TIME RECOVERY IS NOT ENABLED, AND WILL NOT BE      |
+|   PURCHASED FOR THIS APPLY. DECLINED ON COST.                 |
 |                                                               |
-|   Until someone has LOOKED at the project's backup settings   |
-|   and written down what they saw, the last line of defence    |
-|   for A1 is a hand-written rollback script.                   |
+|   A1 IS APPROVED TO PROCEED WITHOUT IT.                       |
 |                                                               |
-|   That is not sufficient for a migration that backfills a     |
-|   ledger across the production contributor rows.              |
+|   The recovery floor is therefore the latest SCHEDULED        |
+|   BACKUP -- not a point in time of your choosing.             |
 |                                                               |
 +---------------------------------------------------------------+
 ```
 
-**Close it by recording, in this section:** whether PITR is enabled on
-`xfmonzvdlxbeskugrjmk`, the retention window, and the granularity. If PITR is
-not available on the current plan, that is a product decision to escalate — not
-a reason to proceed on the strength of the rollback file.
-`a1_rollback.sql.pending` is a *mechanical* reversal of an *additive* migration;
-it is not a restore, and it deliberately refuses to run in the cases where a
-restore is what you actually need.
+**Why A1 specifically is approved without PITR.** Four things, and all four have
+to hold:
+
+1. **A1 is additive.** It creates `contributions`, two nullable link columns and
+   one nullable Board column. It writes nothing else.
+2. **It is reconstruction-complete.** Every row it backfills is derivable from
+   `squares` and `admission_grants`, which it does not mutate — `batch_id`,
+   `square_batch_id`, `price_paid_cents`, `final_raised_cents` and
+   `final_prize_pool_cents` all come out the far side untouched.
+3. **It does not destroy or mutate its own reconstruction sources.** Re-running
+   it reproduces the same ledger from the same inputs.
+4. **The rollback was proven in both directions on daali-dev** — reversal and
+   forward re-apply, 2026-09-04, recorded below under "Rollback rehearsal".
+
+**THIS IS NOT PRECEDENT.** It does not carry to a migration that mutates or
+drops existing data, or that writes state which cannot be recomputed from
+surviving rows. For those, the absence of PITR is a blocker again, and this
+section is not the answer to it.
+
+#### The backup this decision rests on
+
+**Latest completed scheduled backup: `2026-09-04 09:54:45 UTC`.**
+
+A read-only production review on 2026-09-04 (see "Backup gap review" below)
+found **no detectable writes after that backup**. The latest detectable write
+was `2026-09-03 22:30:53 UTC` — roughly **11h24m *before*** it. So the backup
+currently predates every detectable production write, and the gap it would fail
+to cover is, as measured, empty.
+
+#### Backup gap review — 2026-09-04, read-only
+
+Timestamp fields were derived from `information_schema`, not assumed. Every
+write-recording column across all 22 public base tables returned **zero rows**
+after the cutoff:
+
+```
+admission_grants.created_at        newest 2026-09-03 22:30:53Z   after cutoff: 0
+event_supporters.created_at        newest 2026-09-03 22:30:53Z   after cutoff: 0
+squares.claimed_at                 newest 2026-09-03 22:30:53Z   after cutoff: 0
+signup_sheets.created_at           newest 2026-09-01 15:50:02Z   after cutoff: 0
+squares.confirmation_emailed_at    newest 2026-09-01 13:35:27Z   after cutoff: 0
+payment_references.timestamp       newest 2026-09-01 13:31:01Z   after cutoff: 0
+admission_passes.created_at        newest 2026-09-01 13:31:01Z   after cutoff: 0
+boards.created_at / activated_at   newest 2026-08-31 22:41:38Z   after cutoff: 0
+check_in_logs.at                   newest 2026-08-31 17:04:05Z   after cutoff: 0
+...and every remaining table, all 0
+```
+
+The only columns holding values after the cutoff were **future-dated scheduling
+fields** — `boards.campaign_ends_at` / `early_bird_ends_at`, `events.starts_at`,
+`signup_slots.starts_at` / `ends_at`. Deadlines and event dates in the future
+are what they should be; none of those rows was *written* in the gap. Their
+`created_at` values are all Aug 28 – Sep 1.
+
+#### ⚠ LIMITATION — this is a limitation, not a blocker
+
+**There is no `updated_at` anywhere in `public`.** Queried explicitly; zero
+columns matching `updated|modified|changed` across every table. So a bare
+in-place `UPDATE` that touches no other timestamp **cannot be ruled out** by any
+time-based check, including the one above.
+
+What narrows it in practice, and what does not:
+
+- Most state changes do write *a* timestamp — `claimed_at`, `activated_at`,
+  `checked_in_at`, `revoked_at`, `confirmation_emailed_at`, `sent_at` — and all
+  of those are clean.
+- A payment status change would normally also write a `PaymentReference`, and
+  the newest of those is 2026-09-01, three days before the cutoff.
+- The four production crons run on schedule and can `UPDATE` without a
+  timestamp, but `squares.hold_expires_at` maxes at 2026-08-28, so
+  `release-expired` has had nothing to act on.
+- `helper_signup_positions` has **no timestamp column at all** (6 rows). Its
+  parent `helper_signups` was last written 2026-09-01 02:38:39Z, so the rows are
+  near-certainly from then — inference, not measurement.
+
+This is recorded so the ruling is made with the gap in evidence visible, not so
+the apply waits on it. The general fix is a separate backlog item: the schema
+has no way to answer "what changed and when."
+
+#### What "restore" costs now
+
+Everywhere this runbook or `a1_rollback.sql.pending` says *restore*, read it as:
+
+> **return the database to the latest completed scheduled backup.**
+
+Without PITR there is no restoring to a moment of your choosing. **Every write
+between the backup timestamp and the moment of restore is lost.** Today that
+window is measurably empty, which is the whole basis of this ruling — but it
+grows with every hour production is in use, and it is not visible from inside a
+`RAISE` message that says "or restore the database."
+
+So: **restore is a last resort with a measurable data-loss cost, not a free
+undo.** Before invoking it, measure the current gap the same way the review
+above did, and know what you are giving up.
 
 ### Environment gates — switching to production, and switching back
 
@@ -1244,32 +1334,109 @@ An `.env` left pointing at production is the state in which the *next*,
 unrelated command does the damage. Note that `.env.bak` / `.env.local.bak` sit
 outside the guard's reach entirely — separate open item in this file.
 
-### Apply sequence
+### Apply sequence — eight steps, and **the session is not complete until step 8 passes**
+
+Step 8 is not cleanup. An `.env` left pointing at production is the state in
+which the *next*, unrelated command does the damage, so the migration session
+stays open until the environment is back on daali-dev and the guard says so.
 
 ```
-1. Close the PITR blocker above. Record the answer here.
+1. ATOMIC ENVIRONMENT SWITCH to production.
+   All five surfaces together, never partially: DATABASE_URL, DIRECT_URL,
+   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+   SUPABASE_SERVICE_ROLE_KEY. A live Stripe key comes with them (E2).
+   A half-switched environment is the failure that showed up on 2026-09-04:
+   auth on production, database on dev.
 
-2. Capture the pre-apply baseline over DIRECT_URL, read-only:
-     counts of squares by payment_status, with sum(price_paid_cents)
-     count of admission_grants
-     boards with final_prize_pool_cents IS NOT NULL, with their values
-   These are the numbers gates 1 and 7 assert against, and the numbers the
-   post-rollback verification compares to. Save them outside the database.
+2. IMMEDIATELY run:
+     npm run guard:env
+   Require it to name PRODUCTION on all five surfaces with a LIVE Stripe key.
+   If it reports a split, STOP and fix the switch before anything else.
 
-3. Repoint .env to production (all five variables). Confirm with:
-     ALLOW_PROD_DB=i-understand npm run guard:migrate     # expect PASS
+3. RECONSTRUCTION-SOURCE CAPTURE -- mandatory, read-only, before preflight.
+   See "Reconstruction-source capture" below. Save to a local, NON-REPO file.
+   Never commit it.
 
-4. Apply:
+4. FRESH PRODUCTION PREFLIGHT -- recompute, do not reuse the numbers below.
+   See "Fresh preflight consistency" below. If it does not reconcile, STOP.
+   DO NOT APPLY.
+
+5. GUARDED A1 APPLY:
      ALLOW_PROD_DB=i-understand npm run db:deploy
+   Never a bare `npx prisma migrate deploy`. The override lifts E3 only.
 
-5. Verify containment. A1 creates a table in `public`, so this is mandatory,
-   not optional:
+6. POST-APPLY VERIFICATION -- the recreated ledger against the capture from
+   step 3: contribution count, square links, grant relink, confirmedAt
+   derivation, finalized money unchanged, Game Day untouched.
+
+7. CONTAINMENT. A1 creates a table in `public`, so this is mandatory:
      VERIFY_SITE_URL=https://beta.daali.app \
        node --experimental-strip-types scripts/verify-containment.mts
    Expect exit 0, and one relation more than the last recorded run.
 
-6. Restore .env to daali-dev and re-run `npm run guard:migrate` (expect PASS).
+8. RESTORE THE ENVIRONMENT to daali-dev -- all five surfaces, atomically --
+   and run:
+     npm run guard:env
+   REQUIRE it to report the dev project ref AND a TEST Stripe key.
+   The migration session is NOT COMPLETE until this passes.
 ```
+
+### Reconstruction-source capture — step 3, mandatory
+
+**Purpose is forensic.** It lets the backfill result be recomputed from the
+exact inputs that existed immediately before A1 ran. Without it, a
+post-apply discrepancy cannot be attributed: you cannot tell a backfill bug from
+an input you never recorded. It is also what makes the "reconstruction-complete"
+half of the PITR ruling checkable rather than asserted.
+
+Read-only `SELECT`s over `DIRECT_URL`, written to a **local file outside this
+repository**. Cover, at minimum:
+
+- **Fundraiser squares carrying `batch_id`** — `board_id`, `batch_id`,
+  `position`, `payment_status`, `price_paid_cents`, `claimed_at`.
+- **Admission grants carrying `square_batch_id`** — `id`, `event_id`,
+  `event_supporter_id`, `square_batch_id`, `source`, `declared_at_purchase`.
+- **PaymentReferences used for `confirmedAt`** — per batch, the full set plus
+  `MIN(timestamp)`, since that MIN is exactly what the backfill writes.
+- **Finalized-board money fields** — `final_raised_cents`,
+  `final_prize_pool_cents`, `prize_pool_percent`, and
+  `final_prize_basis_cents` (expected NULL everywhere pre-A1).
+
+**No secrets in the capture** — no keys, tokens, connection strings.
+**Do not commit it.** It holds production contributor data; `.gitignore` already
+ignores `*.sql` at repo root, but the file belongs outside the repo entirely.
+
+### Fresh preflight consistency — step 4, recompute every number
+
+**Recompute at apply time. Do not reuse the numbers below.** They are a snapshot
+taken 2026-09-04 for reconciliation, not inputs to trust.
+
+Expected snapshot as of **2026-09-04**:
+
+```
+expected_attached       = 38
+expected_contributions  = 12
+expected_grants         = 13
+```
+
+Two independent views must agree, and both must resolve to the same 12 batches:
+
+```
+status split :  18 paid  +  20 reserved_cash  =  38
+method split :  33 cash  +   5 stripe         =  38
+                                   both -> 12 eligible batches
+```
+
+The status split was confirmed by the read-only production review on
+2026-09-04. The two splits cut the same 38 squares along different axes, which
+is the point: a backfill that satisfies one but not the other has miscounted
+something, and the disagreement surfaces it before any DDL runs.
+
+**If the fresh preflight does not reconcile — the totals disagree, either split
+fails to resolve to 12 batches, or a number moved without a known cause — STOP.
+DO NOT APPLY.** A moved number means production changed since this was written,
+and the correct response is to understand the change, not to update the
+constant.
 
 ### Prisma bookkeeping — two cases, TWO DIFFERENT PROCEDURES
 
@@ -1359,6 +1526,12 @@ boards.final_prize_basis_cents IS NOT NULL    A1 always leaves this NULL
 **Past that line the answer is reconciliation or a restore.** Do not edit the
 preflight to make it pass. If a refusal is wrong, the reasoning above is what
 has to change first, in writing.
+
+And weigh the two honestly: with PITR declined, **restore means going back to
+the latest completed scheduled backup, losing every write since it** — see
+"What 'restore' costs now" above. Reconciliation by hand is usually the cheaper
+of the two, and the refusal messages saying "or restore the database" do not
+convey that price.
 
 ### `delete-expired` — corrected wording
 
@@ -1469,8 +1642,64 @@ edit to unexecuted SQL looks obviously safe.
 
 ### Removal condition
 
-Delete this section once: PITR is recorded, A1 is applied to production, the
+Delete this section once: A1 is applied to production, the
 containment run after it exited 0, and the first release that actually reads
 `contributions` has been in production long enough that reverting the schema is
 no longer a live option. At that point move `a1_rollback.sql.pending` out or
 mark it spent — a rollback script that can no longer legally run is a trap.
+
+---
+
+## The schema cannot answer "what changed, and when"
+
+**Added:** 2026-09-04
+**Status:** open. **Surfaced by the A1 no-PITR ruling, not by a bug.**
+**Trigger to fix:** before the first migration that mutates or drops existing
+production data — or sooner, if PITR stays declined.
+
+**There is no `updated_at` anywhere in `public`.** Queried directly against
+production on 2026-09-04: zero columns across all 22 base tables match
+`updated|modified|changed`. There is also no audit table, no trigger-written
+history, and no logical-decoding consumer.
+
+The consequence is narrow but sharp: **a bare in-place `UPDATE` that touches no
+other timestamp leaves no trace at all.** Row creation is well covered —
+`created_at`, `claimed_at`, `activated_at`, `checked_in_at`, `revoked_at`,
+`confirmation_emailed_at`, `sent_at` — but those record *events*, and only the
+events someone thought to timestamp. Nothing records "this row was modified."
+
+Two places where that already bites:
+
+- **`squares` has no creation timestamp at all** — squares are bulk-created with
+  their board. Its only write markers are `claimed_at` and
+  `confirmation_emailed_at`, so a `payment_status` change is invisible unless it
+  also wrote a `PaymentReference`.
+- **`helper_signup_positions` has no timestamp column whatsoever** (6 rows in
+  production). It cannot be time-filtered by any means. `SignupSlot` having no
+  `updatedAt` is a related, already-open item in this file.
+
+**Why it matters now.** With PITR declined, the recovery floor is the latest
+scheduled backup, and deciding whether a restore is safe means answering "what
+changed since then." On 2026-09-04 that question was answerable *only* because
+production had been idle for eleven hours — the check found zero rows after the
+cutoff on every write-recording column, so the uncovered gap was empty by
+observation. **That was luck of timing, not a property of the schema.** On a
+busy day the same check would return "nothing detectable," which is a much
+weaker statement than "nothing changed," and the difference is exactly the
+uncertainty a restore decision cannot absorb.
+
+**Options, cheapest first — this is a ticket, not a decision:**
+
+1. `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` plus a `BEFORE UPDATE`
+   trigger on the tables holding contributor/payment/grant state. Prisma's
+   `@updatedAt` covers only writes that go through Prisma, so the trigger is the
+   part that actually holds.
+2. An append-only audit table for the money-bearing tables, which answers *what*
+   changed rather than only *when*.
+3. Buy PITR and make the question moot for recovery purposes — though it still
+   would not answer "what changed" for anything but a restore.
+
+Not urgent while A1 is the migration in flight: A1 is additive and
+reconstruction-complete, which is the whole basis of the ruling that let it
+proceed. It stops being deferrable the moment a migration mutates or drops
+something.

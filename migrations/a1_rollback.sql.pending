@@ -15,7 +15,43 @@
 -- DO NOT RUN IT once the point-of-no-return conditions below are met. The
 -- preflight refuses in that case, and the refusal is the correct answer: past
 -- that line the right move is human reconciliation or a database restore, not
--- a DROP.
+-- a DROP. Read the next block before choosing "restore" -- it is not free.
+--
+-- ===========================================================================
+-- WHAT "RESTORE" MEANS HERE -- POINT-IN-TIME RECOVERY IS DECLINED.
+-- ===========================================================================
+--
+-- PITR is NOT enabled on the production project and will not be purchased for
+-- this apply. Declined on cost, 2026-09-04. So wherever this file says
+-- "restore" -- including inside the two RAISE messages below, which say
+-- "restore the database" and "reconcile by hand or restore" -- it means
+-- exactly one thing:
+--
+--     RETURN THE DATABASE TO THE LATEST COMPLETED SCHEDULED BACKUP.
+--
+-- There is no restoring to a moment of your choosing. EVERY WRITE BETWEEN THE
+-- BACKUP TIMESTAMP AND THE MOMENT OF RESTORE IS LOST. Restore is a LAST RESORT
+-- WITH A MEASURABLE DATA-LOSS COST, not a free undo, and the RAISE messages
+-- are too short to say so.
+--
+-- Before choosing it, MEASURE the current gap: for every write-recording
+-- timestamp in `public`, count rows newer than the backup. A read-only review
+-- on 2026-09-04 found that gap empty -- latest backup 2026-09-04 09:54:45 UTC,
+-- latest detectable write 2026-09-03 22:30:53 UTC, about 11h24m EARLIER. That
+-- was true on that day. It grows with every hour production is in use, and it
+-- is not a property you can assume.
+--
+-- LIMITATION, recorded so the choice is made with open eyes: there is no
+-- `updated_at` anywhere in `public`, so a bare in-place UPDATE that touches no
+-- other timestamp CANNOT be ruled out by that measurement. It is a limitation
+-- on the evidence, not a blocker. PHASE-2-BACKLOG.md carries both the full
+-- ruling and a separate item for the missing audit trail.
+--
+-- A1 was approved to proceed WITHOUT PITR because A1 specifically is additive
+-- and reconstruction-complete, does not mutate or destroy its own
+-- reconstruction sources, and was proven both directions on daali-dev. THAT
+-- RULING IS NOT PRECEDENT for a migration that mutates or drops existing data.
+-- ===========================================================================
 --
 -- THIS FILE IS `.sql.pending` DELIBERATELY. It must NEVER be moved into
 -- `prisma/migrations/`. Prisma reads only that directory, so this file's
