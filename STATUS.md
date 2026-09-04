@@ -15,6 +15,124 @@ governing document for the area — for sign-up sheets that is
 
 ---
 
+## Development environment — daali-dev, replayed and verified 2026-09-04
+
+**This section is the current truth. Everything dated 2026-09-03 below it
+describes the state before the environment split.**
+
+| | |
+|---|---|
+| daali-dev ref | `iujjlgfrwavfhqatpqdy` |
+| production ref | `xfmonzvdlxbeskugrjmk` — untouched throughout |
+| production PostgreSQL | **17.6.1.166** |
+| daali-dev PostgreSQL | **17.6** |
+| local target | daali-dev, all five Supabase surfaces |
+| local Stripe | `sk_test_` — agrees with a non-production database |
+| seed | **NOT RUN** |
+
+**The version blocker was resolved BEFORE the replay.** Same major and minor,
+17.6 both sides. An earlier report of mine claimed the replay went ahead while
+that question was still open; that was wrong, and it was never written to a file.
+
+### Replay
+
+Applied with `prisma migrate deploy` through the guarded `db:deploy` script. All
+four migrations applied cleanly, none rolled back:
+
+```
+0_init                                       steps=1  rb=false
+20260831141612_enable_rls_prisma_migrations  steps=1  rb=false
+20260831150000_s1_signup_sheets              steps=1  rb=false
+20260831170000_signup_log_quantity_after     steps=1  rb=false
+```
+
+**Object count reconciles exactly.** 15 tables from `0_init` + 6 from
+`20260831150000` + `_prisma_migrations` = **22**. `20260831170000` adds a column
+and no table. `attendance_access_tokens` appears in `0_init` but not in the live
+list because migration 2 **renames** it to `supporter_access_tokens` — a real
+`ALTER TABLE ... RENAME`, not a drop-and-create, so the count is unaffected.
+
+**`_prisma_migrations` is inside the 22 and carries RLS**, which is the entire
+purpose of `20260831141612`. Its header claimed Prisma creates that table before
+applying any migration file; the replay confirms it.
+
+### Post-replay containment gate — PASS
+
+Run with `--catalog-only`, deliberately: the default mode probes the deployed
+site and a live PostgREST endpoint, which would be production contact.
+
+```
+DATABASE CONTAINMENT: PASS
+    22 relation(s) checked, 0 failure(s), 0 inconclusive
+    95 [ ok ], 0 [FAIL], 0 [INCONCLUSIVE]
+```
+
+**The evidence worth preserving — `0_init` §2 prevents what it claims:**
+
+- daali-dev **began with the inherited Supabase `pg_default_acl` defect** — the
+  same condition as the 2026-08-30 production incident, present on a fresh
+  project straight from the Supabase template
+- `0_init` lines 59–73 revoke those defaults **before the first `CREATE TABLE`**,
+  inside the migration transaction
+- **22 relations were then created**
+- **not one inherited an `anon` or `authenticated` grant.** Section 2 reports all
+  22 `clean` in `relacl`; section 3 checks all seven privileges for both roles on
+  every relation and returns `anon -------  authenticated -------` throughout
+- **RLS enabled on all 22**
+- **Prisma reads passed** across six models plus a relational read
+- **`service_role` access to `hbcu_orgs` catalog-verified** — `YYYYYYY`. The HTTP
+  form was skipped because it would have probed production
+- post-remediation defaults confirmed intact:
+  `postgres public table  postgres=arwdDxtm/postgres | service_role=arwdDxtm/postgres`
+
+That is the first demonstration of the **prevention** path on a database that
+started with the defect. Production's fix was **remediation** after the fact.
+
+### Live schema drift — EMPTY
+
+```
+prisma migrate diff --from-schema-datasource --to-schema-datamodel --script
+-- This is an empty migration.
+```
+
+The live daali-dev schema matches `prisma/schema.prisma` exactly. This replaces
+the pre-replay shadow-database drift check, which **cannot run on this chain** —
+see the migration workflow below.
+
+### Migration authoring workflow — `prisma migrate dev` is UNUSABLE here
+
+`migrate dev` provisions a shadow database, and in a shadow database Prisma does
+not create `_prisma_migrations`. Migration `20260831141612` runs
+`ALTER TABLE public._prisma_migrations ENABLE ROW LEVEL SECURITY`, finds nothing,
+and the command fails with `P3006` / `P1014`. Any tool that uses a shadow
+database hits this, which is why the pre-replay drift check was abandoned.
+
+**Use this instead:**
+
+1. Apply the existing chain with the guarded `npm run db:deploy`
+   (`prisma migrate deploy` — no shadow database).
+2. Edit `prisma/schema.prisma`.
+3. Generate the SQL:
+   `prisma migrate diff --from-schema-datasource --to-schema-datamodel --script`
+4. **Review it**, then save it into a properly named migration directory —
+   `prisma/migrations/<timestamp>_<name>/migration.sql`.
+5. Apply with the guarded `npm run db:deploy`.
+
+**Never edit an already-applied migration**, comments included. Prisma records a
+checksum per migration; `migrate status` and `migrate deploy` do **not** verify
+it, but `migrate dev` does and its remedy is a database reset. An edit is
+therefore silent until something proposes to drop the database. Verified
+empirically 2026-09-04: checksums are recorded over raw bytes, but verification
+normalises line endings, so CRLF alone is inert while a single added comment is
+not.
+
+### Repository state at this checkpoint
+
+`origin/main` remains **`06ebe46`** until a push. The local branch is ahead; the
+exact count is recorded in the commit that accompanies this section.
+
+---
+
 ## Environment findings — 2026-09-03
 
 Established by read-only inspection during the spec-freeze preflight. Cross-
@@ -45,15 +163,24 @@ Preview and Production, added 192 days ago.** The missing webhook *destination*
 was the real defect; the secret was never the problem. That note is wrong and
 should be read as superseded by this line.
 
-### Database
+### Database — RESOLVED 2026-09-04
 
-**Local `DATABASE_URL` currently points at production.** `.env` and `.env.local`
-hold byte-identical values, both resolving to the production Supabase pooler.
+**Local now points at `daali-dev` (`iujjlgfrwavfhqatpqdy`), not production.** All
+five surfaces in both `.env` and `.env.local` — `DATABASE_URL`, `DIRECT_URL`,
+`NEXT_PUBLIC_SUPABASE_URL`, and both JWTs, the latter verified by decoded `ref`
+claim rather than substring — resolve to the dev project. The production ref
+appears in neither file.
 
-**This is PROHIBITED for migration development and for payment testing.** It
-violates **E1** (local development never points at the production database) and
-**E2** (Stripe mode and database must agree — today local pairs `sk_test_` with
-the *live* database, so a test-mode payment would write production rows).
+**The E1/E2 violation below is HISTORY, kept for the record.** It described the
+state before the environment split and is no longer current:
+
+> ~~Local `DATABASE_URL` currently points at production. `.env` and `.env.local`
+> hold byte-identical values, both resolving to the production Supabase pooler.
+> This is PROHIBITED for migration development and for payment testing. It
+> violates E1 and E2.~~
+
+Local Stripe remains `sk_test_`, which now **agrees** with a non-production
+database, satisfying E2 rather than violating it.
 
 ### Card acceptance tests — REQUIRED, ENVIRONMENT BLOCKED, NOT EXECUTED
 

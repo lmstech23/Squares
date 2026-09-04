@@ -879,3 +879,68 @@ It is the destructive one. Before A1 expands the state it can encounter:
   been read.
 
 Review before A1 lands, not after.
+
+## Invariant 13 is cited for three fields but written for one
+
+**Added:** 2026-09-04
+**Status:** open. **Reported, not resolved** — the spec package is frozen.
+
+**The money doc, §9, invariant 13:**
+
+> Once `finalPrizePoolCents` is written, it never changes — including for later
+> disputes.
+
+**`invariant-registry.md` row 13** records that faithfully — one field:
+
+> `finalPrizePoolCents` never changes once written, including for disputes
+
+**`fundraiser-donations-addendum.md` §3** lists 13 under *"Invariants 4, 5, 13,
+15, 17, 24, 31 — unchanged, scope clarified"*, with the clarification:
+
+> 13 — final amounts immutable | Now three fields, written together. See §8
+
+**§8 then relies on that broader reading**, twice. Its closing sequence writes
+three immutable fields:
+
+```
+7. Write finalPrizeBasisCents — new field, immutable
+8. Write finalRaisedCents     — immutable
+9. Write finalPrizePoolCents  — immutable
+```
+
+and its argument against post-close donations rests on it directly:
+
+> invariant 13 makes `finalRaisedCents` immutable at finalization
+
+### The gap
+
+**Invariant 13, as written, names only `finalPrizePoolCents`.** Read the money
+doc and the registry alone and `finalRaisedCents` is not covered by 13 —
+invariant 21 governs *when* it is written, not that it may never change
+afterwards. `finalPrizeBasisCents` does not exist in the money doc at all.
+
+So §8 leans on 13 for two fields 13 does not name. Nothing contradicts anything;
+the addendum classifies 13 as *unchanged*, so the registry is right to quote the
+original text. But "unchanged, scope clarified" is doing load-bearing work: the
+scope is silently three times what the sentence says.
+
+### Why this is not being fixed here
+
+The package is frozen and §3 explicitly places 13 in the *unchanged* group. Two
+plausible resolutions exist and choosing between them is a ruling, not an edit:
+
+- **amend invariant 13** to name all three fields, moving it out of the
+  *unchanged* group and into §3's amended list; or
+- **leave 13 alone** and let the two new fields' immutability rest on a new
+  invariant in the donations block (51–70), where `finalPrizeBasisCents` is
+  already introduced.
+
+Until then, anyone implementing §8 should know the immutability of
+`finalRaisedCents` and `finalPrizeBasisCents` is asserted in prose but not
+carried by any numbered invariant.
+
+**Note on a related citation.** `PHASE-2-BACKLOG.md`'s cron entry cites
+"invariant 13 (final amounts immutable)" in the plural. That matches the
+addendum's clarified scope rather than the registry's text. It is left as-is:
+the plural is the reading §8 depends on, and narrowing it would hide this gap
+rather than record it.
