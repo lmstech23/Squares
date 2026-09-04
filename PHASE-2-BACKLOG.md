@@ -1138,3 +1138,35 @@ Options, none chosen:
 The third is the only one that closes the class rather than the instance. It also
 makes the guard fail on the current working tree until the backups are dealt
 with, which is either the point or an obstacle depending on the ruling.
+
+## Donations §5 says `card | cash`; the physical enum is `stripe | cash`
+
+**Added:** 2026-09-04
+**Status:** open, cosmetic. **Spec follow-up, not an implementation defect.**
+
+Donations §5 defines `Contribution.paymentMethod` as `card · cash`. The physical
+`PaymentMethod` enum has been `stripe | cash` since `0_init`, and `Square` has
+used it throughout.
+
+**A1 reuses the existing enum. No second enum was introduced.** A `card` enum
+alongside a `stripe` enum, both meaning the same thing, would be worse than the
+wording gap: every read would need to know which table used which, and the two
+would drift the first time one gained a value.
+
+The schema records the decision at the field:
+
+```prisma
+/// Reuses the existing `PaymentMethod` enum (`stripe` | `cash`). Donations §5
+/// writes "card"; the physical enum has said `stripe` since 0_init, and a
+/// second enum meaning the same thing is worse than the wording gap.
+paymentMethod       PaymentMethod      @map("payment_method")
+```
+
+**Correct donations §5 to say `stripe | cash` in the next spec revision**, so the
+document matches what the database has always held. Nothing in the frozen spec
+was modified for this — recorded here per the versioning process.
+
+Worth noting the direction of the error: the spec is describing a *nicer* word
+than the schema uses. If anyone later decides `card` is the better name, that is
+a rename migration touching `squares.payment_method` too, not a Contribution-only
+change.
