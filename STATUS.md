@@ -333,6 +333,39 @@ it was not untouched — it ended where it started.
 `Homecoming` / `ah80sph` is **untouched**: never opened, no sheet, no writes of
 any kind.
 
+### Quantity fix — deployed, UI smoke NOT performed
+
+**2026-09-03.** Separate from S3b; recorded here because it is deployed and
+unverified.
+
+`06ebe46` — *fix(fundraiser): donor-entered quantity, and unscope the Game Day
+cap*. Deployed to `dpl_HwKrgDa95kpzHKBGNvkrovTccDZG`
+(`squares-ddpqxdacp`), production, Ready, 2026-09-03 17:55:05 -0400.
+
+Last deployment before it: `dpl_4r6mGQjV2AQQpk6mnqijSKAuPzdj` — the rollback
+target if the modal misbehaves.
+
+**No UI smoke has been performed on this deployment.** Six checks are
+outstanding, all read-only:
+
+1. presets absent
+2. the quantity field can be fully cleared and stays empty
+3. the summary reads `0 tickets — $0` at empty
+4. Continue is disabled at zero
+5. a normal donor-entered quantity works
+6. an above-inventory entry caps the summary while editing and clamps to the
+   ceiling on blur
+
+**The 11+ card path is blocked and was not tested.** The changed guard in
+`checkout/route.ts` is card-path only, and Stripe mode on this deployment is
+unverified — if the keys are live, an 11-ticket checkout is a real charge and
+real `paid` squares. `cash-reserve` never had the limit, so it cannot exercise
+the changed line. See `PHASE-2-BACKLOG.md`, "Stripe test mode is unverified".
+
+So the single line that most needed production verification is the one that
+could not be verified. The change is deployed on the strength of tsc, lint, the
+test suite, a clean build, and code reading — not on a production observation.
+
 ### S3b acceptance — phase two, FRESH TOKEN REQUIRED
 
 **A fresh approved production mint is required first.** The hand-minted token

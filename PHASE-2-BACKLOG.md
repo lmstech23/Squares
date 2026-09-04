@@ -757,3 +757,78 @@ fail on their merits.
 **When specifying a verification step, state the screen and the moment of
 observation, not just the value to record.** A step that cannot fail is not a
 test.
+
+## Stripe test mode is unverified, and there is nowhere to put test keys
+
+**Added:** 2026-09-03
+**Status:** open. **Blocks any card-path acceptance test.**
+
+`STRIPE_SECRET_KEY` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` are single values in
+the environment. There is no test/live switch in the code, no test variant among
+the environment variable names, and — because every deployment is production —
+nowhere to hold test keys even if there were.
+
+**Nobody has confirmed whether the deployed keys are test or live.** If they are
+live, a card checkout on `beta.daali.app` is a real charge against the host's
+connected account and creates real `paid` squares plus a real `EventSupporter`.
+
+This blocked the 11+ card acceptance test for the quantity fix: the changed
+guard in `checkout/route.ts` is card-path only, and `cash-reserve` cannot
+exercise it. So the one line that most needed production verification is the one
+that could not be verified.
+
+Needed, in order:
+
+1. Confirm the mode — publishable key prefix, `pk_test_` or `pk_live_`.
+2. If live, decide whether card acceptance testing happens at all before a
+   preview environment exists, or whether it waits for one.
+3. If a preview environment lands, give it test keys and a separate database.
+
+Related: the no-preview-environment item above. These two are the same problem
+seen from two directions.
+
+## SQUARE_TAKEN copy is Game Day language on a fundraiser board
+
+**Added:** 2026-09-03
+**Status:** open, small.
+
+When another donor takes a square between page load and submit, the atomic
+`updateMany` in `checkout/route.ts` matches fewer rows than requested and throws
+`SQUARE_TAKEN`, surfacing as:
+
+> One or more selected squares were just taken. Please pick again.
+
+**There is nothing to pick again on a quantity-first fundraiser.** The donor
+chose a number; she never selected squares. The copy describes a Game Day grid
+that this screen does not have.
+
+Something closer to: *"Some tickets were just taken. Only N are left now."*
+
+Two things it needs beyond the string:
+
+- the **unit** from `purchaseUnit()` — ticket, entry, or contribution — never a
+  hardcoded noun
+- a **refresh path**. `openSquares` is a prop fixed at render, so the modal
+  cannot compute N after a failure without re-fetching. The current message
+  avoids this by naming no number.
+
+The rejection itself is correct and the transaction rolls back cleanly. This is
+copy plus a refresh, not a correctness fix.
+
+## `maxQuantity` in the claim sheet is stale by construction
+
+**Added:** 2026-09-03
+**Status:** noted, not a defect. Do not "fix" by tightening the client.
+
+`maxQuantity = openSquares.length` is computed from props at render, so the
+"97 tickets are left" line and the blur clamp both reflect inventory **as of page
+load**. On a busy board they drift.
+
+**This is fine, and the client is not the defence.** The real ceiling is the
+atomic conditional `updateMany` in `checkout/route.ts`, which matches only rows
+still `open` and throws `SQUARE_TAKEN` if fewer match than requested. That guard
+holds under concurrency; the displayed number is a courtesy.
+
+Recorded so nobody mistakes the displayed ceiling for authoritative, and so
+nobody adds polling or a live inventory subscription to "fix" a number that was
+never load-bearing.
