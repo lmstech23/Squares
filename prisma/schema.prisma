@@ -93,6 +93,13 @@ model Board {
   cashHoldDays              Int          @default(7) @map("cash_hold_days")
   finalRaisedCents          Int?         @map("final_raised_cents")
   finalPrizePoolCents       Int?         @map("final_prize_pool_cents")
+  /// The prize basis at finalization — confirmed SQUARE money only, donations
+  /// excluded. Money doc invariant 2 as amended; donations invariant 68.
+  ///
+  /// NULL ON BOARDS FINALIZED BEFORE A1. Their basis cannot be reconstructed:
+  /// the split between square and donation money was never recorded because
+  /// donations did not exist. A1 does not backfill it — donations §13.3.
+  finalPrizeBasisCents      Int?         @map("final_prize_basis_cents")
   drawnAt                   DateTime?    @map("drawn_at") @db.Timestamptz(6)
   drawResults               Json?        @map("draw_results")
   titleHistory              Json?        @map("title_history")
@@ -111,6 +118,7 @@ model Board {
   freeEntries               FreeEntry[]
   event                     Event?
   creditTransactions        CreditTransaction[]
+  contributions             Contribution[]
 
   /// Two PARTIAL indexes exist on this table and are deliberately NOT
   /// declared here: idx_boards_pending_expiry (WHERE status = pending_payment)
@@ -162,7 +170,12 @@ model Square {
   /// and never recomputed. `raised` sums this, never count × price. Inv. 42–44.
   /// Nullable because an `open` square has no price yet.
   pricePaidCents    Int?              @map("price_paid_cents")
+  /// The owning contribution. Nullable while `open` — an open square belongs to
+  /// nobody, including one that still carries a stale `batchId` from a released
+  /// hold. Donations §13.1.
+  contributionId    String?           @map("contribution_id") @db.Uuid
 
+  contribution      Contribution?     @relation(fields: [contributionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   payment           PaymentReference?
   board             Board             @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
   /// Back-relation only. The foreign key lives on admission_passes; the
@@ -172,6 +185,7 @@ model Square {
   @@unique([boardId, position])
   @@index([boardId, playerEmail], map: "idx_squares_board_email")
   @@index([batchId], map: "idx_squares_batch")
+  @@index([contributionId], map: "idx_squares_contribution")
   @@index([boardId, claimedAt], map: "idx_squares_claimed_at")
   @@map("squares")
 }
@@ -269,6 +283,10 @@ model AdmissionGrant {
   /// Links to Square.batchId. Unique where not null — this is what makes the
   /// claim-time preparation step idempotent under retry.
   squareBatchId      String?              @map("square_batch_id")
+  /// Supersedes `squareBatchId`. Retained-and-deprecated: A1 is additive and
+  /// drops nothing, so both exist until a later migration removes the legacy
+  /// column. Donations §13.
+  contributionId     String?              @map("contribution_id") @db.Uuid
   /// Only FUNDRAISER is populated now. The rest exist so adding them later is
   /// a code path, not a migration.
   source             AdmissionGrantSource @default(FUNDRAISER)
@@ -286,8 +304,10 @@ model AdmissionGrant {
 
   event     Event          @relation(fields: [eventId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   supporter EventSupporter @relation(fields: [eventSupporterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  contribution Contribution? @relation(fields: [contributionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@unique([squareBatchId], map: "admission_grants_square_batch_key")
+  @@unique([contributionId], map: "admission_grants_contribution_key")
   @@index([eventSupporterId], map: "idx_admission_grants_supporter")
   @@map("admission_grants")
 }
@@ -474,6 +494,78 @@ enum ReleaseReason {
   expired
   failed
   manual
+}
+
+/// The money primitive. Donations addendum §5.
+///
+/// EVERY COUNTED DOLLAR BELONGS TO EXACTLY ONE ROW — invariant 51. `raisedCents`
+/// is computed from contributions, never from squares. `Contribution.id` IS the
+/// batch identity and replaces `Square.batchId`, retained-and-deprecated until a
+/// later migration drops it.
+///
+/// STATUS IS THE PAYMENT LIFECYCLE ONLY. There is no `voided` status: a void sets
+/// `voidedAt` and leaves `status` alone, so a voided contribution stays visible as
+/// what it was. Anything computing money must test BOTH `status = 'confirmed'`
+/// AND `voidedAt IS NULL` — forgetting the second silently resurrects voided
+/// money into totals.
+model Contribution {
+  id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  boardId             String             @map("board_id") @db.Uuid
+  status              ContributionStatus @default(pending)
+  /// Reuses the existing `PaymentMethod` enum (`stripe` | `cash`). Donations §5
+  /// writes "card"; the physical enum has said `stripe` since 0_init, and a
+  /// second enum meaning the same thing is worse than the wording gap.
+  paymentMethod       PaymentMethod      @map("payment_method")
+
+  squareAmountCents   Int                @default(0) @map("square_amount_cents")
+  donationAmountCents Int                @default(0) @map("donation_amount_cents")
+  totalPaidCents      Int                @map("total_paid_cents")
+
+  checkoutSessionId   String?            @map("checkout_session_id")
+  holdExpiresAt       DateTime?          @map("hold_expires_at") @db.Timestamptz(6)
+
+  contributorName     String             @map("contributor_name")
+  contributorEmail    String?            @map("contributor_email")
+  contributorPhone    String?            @map("contributor_phone")
+
+  /// Money doc invariant 15 — counts toward raised, never drawing-eligible.
+  /// DISTINCT FROM `recordedByHostId`: that is who ENTERED the row, this is
+  /// whose MONEY it is. Conflating them disqualifies every walk-up contributor
+  /// a host keys in. Collaborators §6.3.
+  isHostEntry         Boolean            @default(false) @map("is_host_entry")
+  /// Reserved, unread in this phase. Donations §10.
+  displayAnonymous    Boolean            @default(false) @map("display_anonymous")
+
+  confirmedAt         DateTime?          @map("confirmed_at") @db.Timestamptz(6)
+  releasedAt          DateTime?          @map("released_at") @db.Timestamptz(6)
+
+  /// Cash only. Who entered the record — split from who confirmed receipt.
+  recordedByHostId    String?            @map("recorded_by_host_id") @db.Uuid
+  confirmedByHostId   String?            @map("confirmed_by_host_id") @db.Uuid
+
+  /// Cash-donation void, donations §7. `voidedAt` is write-once and never
+  /// changes `status`.
+  voidedAt            DateTime?          @map("voided_at") @db.Timestamptz(6)
+  voidedByHostId      String?            @map("voided_by_host_id") @db.Uuid
+  voidReason          String?            @map("void_reason")
+
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  board          Board           @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
+  squares        Square[]
+  admissionGrant AdmissionGrant?
+
+  @@unique([checkoutSessionId], map: "contributions_checkout_session_key")
+  @@index([boardId, status], map: "idx_contributions_board_status")
+  @@map("contributions")
+}
+
+enum ContributionStatus {
+  pending
+  confirmed
+  released
+
+  @@map("contribution_status")
 }
 
 enum PaymentMethod {
