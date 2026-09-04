@@ -1,0 +1,223 @@
+-- ===========================================================================
+-- A1 EMERGENCY ROLLBACK -- reverses 20260904140000_a1_contribution_ledger.
+--
+--   *** EMERGENCY ONLY. READ THE WHOLE HEADER BEFORE RUNNING. ***
+--
+-- DESTRUCTIVE. This drops every row in `contributions` and severs every link
+-- to one. There is no undo inside this script.
+--
+-- A DEPLOYMENT ROLLBACK IS NOT A DATABASE ROLLBACK. Reverting Vercel to an
+-- earlier deployment restores application code and leaves the schema exactly
+-- where it was. That is harmless while nothing reads `contributions` -- which
+-- is precisely why A1 could ship ahead of the feature work -- but it is not
+-- this. If you need the schema reversed, you need this file.
+--
+-- DO NOT RUN IT once the point-of-no-return conditions below are met. The
+-- preflight refuses in that case, and the refusal is the correct answer: past
+-- that line the right move is human reconciliation or a database restore, not
+-- a DROP.
+--
+-- THIS FILE IS `.sql.pending` DELIBERATELY. It must NEVER be moved into
+-- `prisma/migrations/`. Prisma reads only that directory, so this file's
+-- LOCATION is what keeps it out of the replay chain -- a header comment would
+-- not. `migrations/` holds hand-applied SQL and is excluded from Prisma's view
+-- entirely; the same reasoning that keeps the eleven provenance files there.
+--
+-- WHY MECHANICAL ROLLBACK CAN BE SAFE AT ALL. A1 is additive. It writes
+-- `contributions` and two nullable foreign keys and touches nothing else --
+-- `batch_id`, `square_batch_id`, `price_paid_cents`, `final_raised_cents` and
+-- `final_prize_pool_cents` are all left exactly as they were. So while
+-- `contributions` holds nothing but A1's own backfill, every row in it is
+-- reconstructable from `squares` and `admission_grants`, and re-running A1
+-- reproduces it. That property is what the preflight checks, and it is the
+-- only thing that makes this file safe.
+-- ===========================================================================
+
+BEGIN;
+
+-- ---------------------------------------------------------------------------
+-- PREFLIGHT -- runs BEFORE anything destructive. Aborts the whole transaction
+-- on any evidence that post-A1 behaviour wrote state legacy rows cannot
+-- reproduce.
+-- ---------------------------------------------------------------------------
+DO $preflight$
+DECLARE
+  n_donation   INTEGER;
+  n_session    INTEGER;
+  n_recorded   INTEGER;
+  n_confirmed  INTEGER;
+  n_voided     INTEGER;
+  n_released   INTEGER;
+  n_no_squares INTEGER;
+  n_basis      INTEGER;
+  total        INTEGER;
+BEGIN
+  IF to_regclass('public.contributions') IS NULL THEN
+    RAISE EXCEPTION 'A1 rollback: `contributions` does not exist. A1 is not applied here -- nothing to roll back.';
+  END IF;
+
+  -- Each of these is state with NO source outside `contributions`.
+  SELECT count(*) INTO n_donation  FROM contributions WHERE donation_amount_cents > 0;
+  SELECT count(*) INTO n_session   FROM contributions WHERE checkout_session_id IS NOT NULL;
+  SELECT count(*) INTO n_recorded  FROM contributions WHERE recorded_by_host_id IS NOT NULL;
+  SELECT count(*) INTO n_confirmed FROM contributions WHERE confirmed_by_host_id IS NOT NULL;
+  SELECT count(*) INTO n_voided    FROM contributions WHERE voided_at IS NOT NULL;
+
+  -- A1 creates only `confirmed` and `pending`. A `released` row was written by
+  -- the resolution path, i.e. by application code, not by the backfill.
+  SELECT count(*) INTO n_released  FROM contributions WHERE status = 'released';
+
+  -- A1 creates a contribution only for a batch with at least one non-open
+  -- square, so every backfilled row owns squares. A row owning none is a
+  -- donation-only contribution -- the feature, not the backfill.
+  SELECT count(*) INTO n_no_squares FROM contributions c
+   WHERE NOT EXISTS (SELECT 1 FROM squares s WHERE s.contribution_id = c.id);
+
+  total := n_donation + n_session + n_recorded + n_confirmed + n_voided
+         + n_released + n_no_squares;
+
+  IF total > 0 THEN
+    RAISE EXCEPTION E'A1 rollback REFUSED -- POINT OF NO RETURN PASSED.\n'
+      E'  donation_amount_cents > 0 : %\n'
+      E'  checkout_session_id set   : %\n'
+      E'  recorded_by_host_id set   : %\n'
+      E'  confirmed_by_host_id set  : %\n'
+      E'  voided_at set             : %\n'
+      E'  status = released         : %\n'
+      E'  contributions owning no squares : %\n'
+      E'\n'
+      E'These rows hold state that CANNOT be reconstructed from squares or\n'
+      E'admission_grants. Dropping the table destroys it permanently.\n'
+      E'Do not force this. Reconcile by hand, or restore the database.',
+      n_donation, n_session, n_recorded, n_confirmed, n_voided,
+      n_released, n_no_squares;
+  END IF;
+
+  -- `boards.final_prize_basis_cents` gets its own guard. A1 adds the column and
+  -- DELIBERATELY leaves it NULL on every board -- donations section 13.3, because
+  -- a board finalized before A1 has no reconstructable basis. Any value in it was
+  -- therefore written by later code, and is real post-A1 money state.
+  SELECT count(*) INTO n_basis FROM boards WHERE final_prize_basis_cents IS NOT NULL;
+  IF n_basis > 0 THEN
+    RAISE EXCEPTION E'A1 rollback REFUSED -- % board(s) carry final_prize_basis_cents.\n'
+      E'A1 never writes this column, so later code did. It is finalized money\n'
+      E'state under invariants 13 and 68 and cannot be recomputed. The column\n'
+      E'is NOT dropped. Reconcile by hand or restore.', n_basis;
+  END IF;
+
+  RAISE NOTICE 'A1 rollback preflight passed: % contribution(s), all reconstructable backfill',
+    (SELECT count(*) FROM contributions);
+END
+$preflight$;
+
+-- ---------------------------------------------------------------------------
+-- 1. SEVER THE LINKS FIRST.
+--
+--    Lossless. Both columns are nullable and A1 RETAINED the legacy ownership
+--    columns, so `squares.batch_id` and `admission_grants.square_batch_id`
+--    still carry the original relationships. Nothing is orphaned by this.
+-- ---------------------------------------------------------------------------
+UPDATE admission_grants SET contribution_id = NULL WHERE contribution_id IS NOT NULL;
+UPDATE squares          SET contribution_id = NULL WHERE contribution_id IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- 2. Foreign keys and the indexes on the referencing side.
+-- ---------------------------------------------------------------------------
+ALTER TABLE admission_grants DROP CONSTRAINT IF EXISTS admission_grants_contribution_id_fkey;
+ALTER TABLE squares          DROP CONSTRAINT IF EXISTS squares_contribution_id_fkey;
+
+DROP INDEX IF EXISTS admission_grants_contribution_key;
+DROP INDEX IF EXISTS idx_squares_contribution;
+
+-- ---------------------------------------------------------------------------
+-- 3. The referencing columns.
+-- ---------------------------------------------------------------------------
+ALTER TABLE admission_grants DROP COLUMN IF EXISTS contribution_id;
+ALTER TABLE squares          DROP COLUMN IF EXISTS contribution_id;
+
+-- ---------------------------------------------------------------------------
+-- 4. The ledger. Its FK to `boards`, its five CHECK constraints and its own
+--    indexes go with the table.
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS contributions;
+
+-- ---------------------------------------------------------------------------
+-- 5. The enum, now unreferenced. RESTRICT rather than CASCADE: if anything
+--    still depends on it, that is a fact worth learning loudly.
+-- ---------------------------------------------------------------------------
+DROP TYPE IF EXISTS contribution_status RESTRICT;
+
+-- ---------------------------------------------------------------------------
+-- 6. The added Board column, only now that the preflight has proved every row
+--    is NULL.
+-- ---------------------------------------------------------------------------
+ALTER TABLE boards DROP COLUMN IF EXISTS final_prize_basis_cents;
+
+COMMIT;
+
+-- ===========================================================================
+-- POST-ROLLBACK VERIFICATION -- run these after COMMIT.
+-- ===========================================================================
+--
+-- Everything A1 added is gone:
+--
+--   SELECT to_regclass('public.contributions');                        -- NULL
+--   SELECT count(*) FROM information_schema.columns
+--    WHERE table_name = 'squares' AND column_name = 'contribution_id';  -- 0
+--   SELECT count(*) FROM information_schema.columns
+--    WHERE table_name = 'admission_grants' AND column_name = 'contribution_id'; -- 0
+--   SELECT count(*) FROM information_schema.columns
+--    WHERE table_name = 'boards' AND column_name = 'final_prize_basis_cents';   -- 0
+--   SELECT count(*) FROM pg_type WHERE typname = 'contribution_status';         -- 0
+--
+-- The legacy reconstruction sources SURVIVED -- compare against the numbers
+-- captured before the rollback, which should be unchanged:
+--
+--   SELECT count(*) FROM squares s JOIN boards b ON b.board_id = s.board_id
+--    WHERE b.board_type = 'fundraiser' AND s.batch_id IS NOT NULL
+--      AND s.payment_status <> 'open';                       -- unchanged
+--   SELECT count(*) FROM admission_grants WHERE square_batch_id IS NOT NULL; -- unchanged
+--   SELECT count(*) FROM squares;                                            -- unchanged
+--   SELECT count(*) FROM admission_grants;                                   -- unchanged
+--
+-- Money is untouched -- A1 never wrote any of it, and neither does this:
+--
+--   SELECT board_id, slug, final_raised_cents, final_prize_pool_cents
+--     FROM boards WHERE final_prize_pool_cents IS NOT NULL;   -- unchanged
+--   SELECT payment_status, count(*), sum(price_paid_cents)
+--     FROM squares GROUP BY 1;                                -- unchanged
+--
+-- Containment still holds, one relation fewer:
+--
+--   VERIFY_SITE_URL=https://beta.daali.app \
+--     node --experimental-strip-types scripts/verify-containment.mts
+--
+-- ===========================================================================
+-- PRISMA BOOKKEEPING -- REQUIRED, and NOT executed by this file.
+-- ===========================================================================
+--
+--   npx prisma migrate resolve --rolled-back 20260904140000_a1_contribution_ledger
+--
+-- WHICH CASE ARE YOU IN? The same command serves two different situations and
+-- confusing them wastes time during an incident.
+--
+--   CASE A -- A1 COMMITTED SUCCESSFULLY, then you ran THIS file to undo it.
+--     `_prisma_migrations` holds a row with `finished_at` set. Prisma believes
+--     A1 is applied, but the objects are gone. Run the resolve so Prisma stops
+--     believing it; the next `migrate deploy` will then re-apply A1 cleanly.
+--     THIS IS THE CASE THIS FILE IS FOR.
+--
+--   CASE B -- A1 FAILED DURING APPLY and this file was never needed.
+--     A gate assertion raised, and the whole migration -- DDL, backfill and
+--     gate -- rolled back inside its own transaction. Verified empirically on
+--     2026-09-04: no table, no columns, nothing. But `_prisma_migrations` still
+--     holds a row with `finished_at = NULL`, `rolled_back_at = NULL` and a
+--     `logs` value, and every later `migrate deploy` REFUSES with P3009.
+--     Run the same resolve to clear the block, fix whatever the gate caught,
+--     then retry through the guarded path.
+--     DO NOT RUN THIS FILE IN CASE B -- there is nothing to roll back, and its
+--     preflight will tell you so by raising on the missing table.
+--
+-- In both cases `_prisma_migrations` ends up with a `rolled_back` row and, on
+-- a later successful apply, a second `finished` row for the same migration.
+-- That history is correct. Leave it alone.

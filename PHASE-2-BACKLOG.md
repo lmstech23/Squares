@@ -1170,3 +1170,188 @@ Worth noting the direction of the error: the spec is describing a *nicer* word
 than the schema uses. If anyone later decides `card` is the better name, that is
 a rename migration touching `squares.payment_method` too, not a Contribution-only
 change.
+
+---
+
+## A1 production apply — runbook, rollback, and the PITR blocker
+
+**Added:** 2026-09-04
+**Status:** open. **A1 is committed and pushed but NOT applied to production.**
+**Migration:** `prisma/migrations/20260904140000_a1_contribution_ledger`
+**Rollback artifact:** `migrations/a1_rollback.sql.pending`
+**Rehearsed on:** daali-dev (`iujjlgfrwavfhqatpqdy`) — replayed from zero, seeded
+with synthetic fixtures, A1 applied, all seven gates passed, containment
+re-verified.
+
+Production currently holds **four** migrations. A1 would be the fifth. Nothing
+in the deployed application reads `contributions` yet, which is exactly why the
+schema change could ship ahead of the feature work — and exactly why there is no
+urgency to apply it.
+
+### PITR BLOCKER — do not apply A1 until this is closed
+
+```
++---------------------------------------------------------------+
+|                                                               |
+|   POINT-IN-TIME RECOVERY ON THE PRODUCTION SUPABASE PROJECT   |
+|   HAS NOT BEEN CONFIRMED.                                     |
+|                                                               |
+|   Until someone has LOOKED at the project's backup settings   |
+|   and written down what they saw, the last line of defence    |
+|   for A1 is a hand-written rollback script.                   |
+|                                                               |
+|   That is not sufficient for a migration that backfills a     |
+|   ledger across the production contributor rows.              |
+|                                                               |
++---------------------------------------------------------------+
+```
+
+**Close it by recording, in this section:** whether PITR is enabled on
+`xfmonzvdlxbeskugrjmk`, the retention window, and the granularity. If PITR is
+not available on the current plan, that is a product decision to escalate — not
+a reason to proceed on the strength of the rollback file.
+`a1_rollback.sql.pending` is a *mechanical* reversal of an *additive* migration;
+it is not a restore, and it deliberately refuses to run in the cases where a
+restore is what you actually need.
+
+### Environment gates — switching to production, and switching back
+
+The guard (`scripts/guard-env.mjs`, wired through `predb:deploy`) **refuses**
+`npm run db:deploy` against production. That refusal is the E3 invariant, and it
+is the reason a production apply cannot happen as a side effect of a local
+command. Getting past it deliberately requires **both**:
+
+1. `.env` fully repointed to production — `DATABASE_URL`, `DIRECT_URL`, **and
+   all three Supabase API variables**. The guard cross-checks the API refs
+   against the database ref and refuses a split, which is the failure that
+   showed up on 2026-09-04 (auth on production, database on dev).
+2. `ALLOW_PROD_DB=i-understand` in the environment for that one command.
+
+**The override lifts E3 only.** E2 still applies: a production database paired
+with an `sk_test_` key still refuses, and so does a non-production database
+paired with a live key. Do not weaken either check to get a command to run.
+
+**Switch-back is part of the procedure, not cleanup.** The apply window ends
+when `.env` is back on daali-dev with all five variables consistent, verified by:
+
+```
+npm run guard:migrate        # must PASS, naming iujjlgfrwavfhqatpqdy
+```
+
+An `.env` left pointing at production is the state in which the *next*,
+unrelated command does the damage. Note that `.env.bak` / `.env.local.bak` sit
+outside the guard's reach entirely — separate open item in this file.
+
+### Apply sequence
+
+```
+1. Close the PITR blocker above. Record the answer here.
+
+2. Capture the pre-apply baseline over DIRECT_URL, read-only:
+     counts of squares by payment_status, with sum(price_paid_cents)
+     count of admission_grants
+     boards with final_prize_pool_cents IS NOT NULL, with their values
+   These are the numbers gates 1 and 7 assert against, and the numbers the
+   post-rollback verification compares to. Save them outside the database.
+
+3. Repoint .env to production (all five variables). Confirm with:
+     ALLOW_PROD_DB=i-understand npm run guard:migrate     # expect PASS
+
+4. Apply:
+     ALLOW_PROD_DB=i-understand npm run db:deploy
+
+5. Verify containment. A1 creates a table in `public`, so this is mandatory,
+   not optional:
+     VERIFY_SITE_URL=https://beta.daali.app \
+       node --experimental-strip-types scripts/verify-containment.mts
+   Expect exit 0, and one relation more than the last recorded run.
+
+6. Restore .env to daali-dev and re-run `npm run guard:migrate` (expect PASS).
+```
+
+### What happens when it fails mid-apply
+
+**Proven empirically on 2026-09-04**, on a throwaway Docker Postgres database
+built for the purpose and since dropped. Measured behaviour, not an inference
+from documentation:
+
+- A1's DDL, its backfill and its seven gate assertions are **one transaction**.
+  When a gate raises, *everything* rolls back — the table, both columns, the
+  enum, the Board column. Verified by looking afterwards: nothing existed.
+- **But `_prisma_migrations` keeps a failed row** — `steps = 0`,
+  `finished_at = NULL`, `rolled_back_at = NULL`, `logs` holding the error.
+- The next `migrate deploy` then **refuses with P3009**, and keeps refusing.
+- Recovery, verified end to end:
+
+```
+npx prisma migrate resolve --rolled-back 20260904140000_a1_contribution_ledger
+```
+
+  after which `migrate deploy` succeeds normally.
+
+So a failed apply needs the `resolve`, **not** the rollback file. Running
+`a1_rollback.sql.pending` in that situation is wrong, and its preflight says so
+by raising on the missing table. The rollback file is for the *other* case: A1
+committed successfully and you have decided to undo it.
+
+Also worth knowing: `migrate deploy` and `migrate status` do **not** verify
+checksums of already-applied migrations. Only `migrate dev` detects an edited
+applied migration, and its remedy is a database reset. Never edit an applied
+migration file.
+
+### The point of no return
+
+`a1_rollback.sql.pending` is safe only while `contributions` holds nothing but
+A1's own backfill — because every such row is reconstructable from `squares` and
+`admission_grants`, neither of which A1 modifies. The moment post-A1 code writes
+state with no source outside the ledger, mechanical reversal destroys real data.
+
+The preflight refuses on any of:
+
+```
+donation_amount_cents > 0         a donation has no square to rebuild it from
+checkout_session_id  IS NOT NULL  a Stripe session recorded only here
+recorded_by_host_id  IS NOT NULL  host attribution recorded only here
+confirmed_by_host_id IS NOT NULL  host attribution recorded only here
+voided_at            IS NOT NULL  a void is a decision, not a derivation
+status = 'released'               written by the resolution path, not the backfill
+a contribution owning no squares  a donation-only row — the feature, not A1
+boards.final_prize_basis_cents IS NOT NULL    A1 always leaves this NULL
+```
+
+**Past that line the answer is reconciliation or a restore.** Do not edit the
+preflight to make it pass. If a refusal is wrong, the reasoning above is what
+has to change first, in writing.
+
+### `delete-expired` — corrected wording
+
+An earlier reading of this cron implied A1 introduced a new deletion hazard.
+**It did not, and the correction matters because the original wording would send
+someone looking for a regression that is not there.**
+
+`delete-expired` runs
+`prisma.board.deleteMany({ status: 'expired', expiredAt < 30d })`.
+`Contribution.board` is `onDelete: Restrict`, so a board owning contributions
+cannot be deleted — but **`Square.board` has been `onDelete: Restrict` since
+`0_init`**, and every board has squares. Board deletion was *already* blocked
+before A1 existed.
+
+A1 therefore adds **a second restriction to an already-restricted path**. The
+observable behaviour of the cron is unchanged. Risk: **LOW, and pre-existing.**
+The real `delete-expired` item — that it fails on an aged board still holding
+squares — is item 5 in this file and stands on its own, unrelated to A1.
+
+### Deployment rollback is not database rollback
+
+Reverting the Vercel production deployment restores application code and leaves
+the schema exactly where it is. While nothing reads `contributions`, that is
+harmless. It is not a substitute for `a1_rollback.sql.pending`, and the two must
+not be confused during an incident.
+
+### Removal condition
+
+Delete this section once: PITR is recorded, A1 is applied to production, the
+containment run after it exited 0, and the first release that actually reads
+`contributions` has been in production long enough that reverting the schema is
+no longer a live option. At that point move `a1_rollback.sql.pending` out or
+mark it spent — a rollback script that can no longer legally run is a trap.
