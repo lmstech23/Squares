@@ -419,7 +419,7 @@ paid, but never creates a `PaymentReference`. Only three paths create one:
 `api/host/boards/[id]/confirm-cash/route.ts:79`.
 
 A square confirmed by the cron is therefore `paid` with **no payment record**.
-`raised` is unaffected — it sums `Square.pricePaidCents` (invariant 43), not
+`raised` is unaffected — it sums `Square.pricePaidCents` (invariant 49), not
 payment rows — so money figures stay correct. What is missing is the audit
 trail: `PaymentReference.timestamp` is the confirmation moment, and for these
 squares it does not exist.
