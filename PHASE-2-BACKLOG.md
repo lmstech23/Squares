@@ -1091,3 +1091,50 @@ instruction was narrow; the block it produced reads as complete.
 Proposed: add the launch-readiness amendment to `### Amendments in force`, and
 correct registry row 16 to cite both. **Requires a ruling — the money doc is
 frozen and this is not a typo but a missing rule.**
+
+## `.env.bak` holds production credentials outside the guard's reach
+
+**Added:** 2026-09-04
+**Status:** open. **Do not delete without deciding what replaces it.**
+
+The environment split left two backups in the repository root:
+
+```
+.env.bak         production DATABASE_URL, DIRECT_URL, service_role key
+.env.local.bak   the same
+```
+
+Both are gitignored by `.gitignore:34` (`.env*`) and are untracked, so they have
+never been committed. **They are not a leak. They are a bypass.**
+
+`scripts/guard-env.mjs` inspects `.env` and `.env.local` only. A script that
+reads `.env.bak` directly reaches production with a full `service_role` key —
+RLS-bypassing DML on every table — while the guard reports the environment as
+`dev (iujjlgfrwavfhqatpqdy)` and every `npm run db:*` command passes.
+
+**This is not hypothetical.** Three read-only production `SELECT`s were run this
+way on 2026-09-04, to answer the A1 pre-implementation questions. They were
+authorized, `SELECT`-only, and each asserted the production ref before
+connecting. The same mechanism with an `UPDATE` would have been just as invisible
+to the guard.
+
+**Why it is not simply deleted now.** The credentials are the only local copy;
+production reads for A1 gate calibration may still be needed, and re-fetching
+them means another trip through the dashboard and another file on disk holding
+them. Deleting the file is easy — deciding what legitimate production reads use
+instead is the actual question.
+
+Options, none chosen:
+
+- **delete both**, and fetch production credentials per-use via `vercel env pull`
+  to a scratch path, reading and discarding them in one operation
+- **move them outside the repository** so no repo-relative read finds them
+- **teach the guard to refuse when any `.env*` file in the working directory
+  contains the production ref**, which catches the bypass at its source rather
+  than relying on the file's location
+- **keep them and accept it**, recording that production access is one file read
+  away for anyone with the checkout
+
+The third is the only one that closes the class rather than the instance. It also
+makes the guard fail on the current working tree until the backups are dealt
+with, which is either the point or an obstacle depending on the ruling.

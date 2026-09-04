@@ -2,7 +2,7 @@
 
 **Status:** **READY FOR FREEZE** — product decisions applied. Invariants 51–70.
 **§13 amended after freeze:** the no-backfill premise was false against the production database. Timing decision unchanged; backfill and correctness gate restored. Re-approve §13 only.
-**Version:** 2.2 — cash-void representation resolved; §13 premise corrected against production preflight
+**Version:** 2.3 — A1 gate parameterised; `confirmedAt` and `paymentMethod` sources ruled; assertion 6 eligibility corrected
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on flows) · `fundraiser-admission-addendum.md` (authority on passes) · `fundraiser-signup-addendum.md` (authority on helpers)
 
 Adds donation-only and mixed contributions to fundraiser boards, and promotes `Contribution` to the money primitive that squares hang off.
@@ -665,16 +665,51 @@ Board v2 §3 and admission §3 must be corrected to describe `contributionId` as
 ```
 status        any square paid            → confirmed
               else any reserved_cash     → pending
-paymentMethod from the batch's squares
+paymentMethod from the batch's squares -- homogeneous, see below
 squareAmountCents   = SUM(price_paid_cents) over the batch's non-open squares
 donationAmountCents = 0
 totalPaidCents      = squareAmountCents
-confirmedAt         = earliest confirmation timestamp available, else null
+confirmedAt         = MIN(PaymentReference.timestamp) over the batch's
+                      non-open squares; null when the batch has none
 recordedByHostId    = null      -- unknowable retroactively; do not guess
 confirmedByHostId   = null      -- see below
 ```
 
 Then set `Square.contributionId` on **non-open squares only**, and `AdmissionGrant.contributionId` from the `square_batch_id` → `Contribution.id` mapping.
+
+**`confirmedAt` is `MIN(PaymentReference.timestamp)`, or null — ruled 2026-09-04.**
+v2.2 said *"earliest confirmation timestamp available"* and named no source. The
+two candidates are not interchangeable:
+
+| Field | Coverage on the 38 attachable squares | Meaning |
+|---|---|---|
+| `PaymentReference.timestamp` | **17 of 38** | the confirmation moment |
+| `Square.claimedAt` | 38 of 38 | when the square left `open` |
+
+**Use `PaymentReference.timestamp`. Never `Square.claimedAt`.** A cash square
+reserved on Friday and confirmed the following Thursday has a `claimedAt` days
+earlier than its confirmation; writing it into a confirmation column is the same
+class of error as guessing the actor fields, and this section already rejects
+that: *a plausible guess written into an audit column is worse than an honest
+gap.* Where the batch has no `PaymentReference`, `confirmedAt` is **null**.
+
+That leaves roughly 21 of 38 rows null. The gap is real and pre-existing — the
+`resolveExpiredHolds` cron confirms squares without writing a
+`PaymentReference` — and A1 records it rather than papering over it.
+
+**A batch is homogeneous for payment method — verified, not assumed.** A
+read-only production query on 2026-09-04 returned **zero** batches with more
+than one `payment_method` across their non-open squares:
+
+```
+cash    33 squares across  7 batches
+stripe   5 squares across  5 batches
+```
+
+So `paymentMethod` may be taken from any member square. **This is a property of
+the migration snapshot, not a forward guarantee** — nothing in the schema
+prevents a mixed batch, and A1 should fail loudly rather than pick one if it
+ever meets one.
 
 **Four rules that the data forces:**
 
@@ -690,17 +725,90 @@ Then set `Square.contributionId` on **non-open squares only**, and `AdmissionGra
 
 Runs inside the same transaction. **Any failure aborts the migration.**
 
-1. Per board: `SUM(Contribution.totalPaidCents)` for confirmed contributions equals the pre-migration confirmed square total. Capture that total **before** step 4 and compare after.
-2. Every non-open square with a `batch_id` has a non-null `contributionId`. Expected: 38.
-3. **Legacy-backfill assertion, not a forward invariant.** Every `open` square has a null `contributionId`. Expected exceptions: 0.
+**PARAMETERISED — ruled 2026-09-04.** v2.2 hardcoded 38 attached and 13 grants.
+Those are production's numbers on one day; the same gate must run honestly
+against a rehearsal database with different data. Assertions 2, 4 and 6 now
+**derive** their expected values from the target database **before** the
+backfill, exactly as assertions 1 and 7 already did.
 
-   This holds for the migration snapshot because stale `batch_id` values on released squares must not produce Contributions. **The counts in assertions 2 and 3 — 38 attached, 0 exceptions — describe this database at this moment and must never become application validation.** In normal operation a `pending` Contribution legitimately owns squares while its checkout is live; those squares are `pending` or `reserved_cash`, and that relationship is the point of the ledger. Do not port these numbers into a runtime check.
-4. All 13 `admission_grants` rows have a non-null `contributionId`, and each points at the contribution owning the squares that minted its passes.
-5. `AdmissionGrant.contributionId` is unique where not null — assert on real rows, not an empty table.
-6. Contribution count equals the count of distinct `(board_id, batch_id)` pairs having at least one non-open square.
+Capture first, in the same transaction, before step 4 of the inventory:
+
+```sql
+-- E1  attachable squares
+SELECT count(*) AS expected_attached
+  FROM squares s JOIN boards b ON b.board_id = s.board_id
+ WHERE b.board_type = 'fundraiser'
+   AND s.batch_id IS NOT NULL
+   AND s.payment_status <> 'open';
+
+-- E2  grants that must be relinked
+SELECT count(*) AS expected_grants
+  FROM admission_grants WHERE square_batch_id IS NOT NULL;
+
+-- E3  batches that must each yield exactly one Contribution
+SELECT count(DISTINCT (s.board_id, s.batch_id)) AS expected_contributions
+  FROM squares s JOIN boards b ON b.board_id = s.board_id
+ WHERE b.board_type = 'fundraiser'
+   AND s.batch_id IS NOT NULL
+   AND s.payment_status <> 'open';
+```
+
+Then assert:
+
+1. **Fundraiser boards only.** Per fundraiser board: `SUM(Contribution.totalPaidCents)` for confirmed contributions equals the pre-migration confirmed square total for that board. Capture that total **before** step 4 and compare after. **Game Day boards are outside A1 Contribution validation entirely** — they are not asserted to be zero, they are not visited. A1 creates no Contribution for them and sets no `contributionId` on their squares.
+2. Every non-open square with a `batch_id` on a fundraiser board has a non-null `contributionId`. Expected: **`expected_attached`** (production 38, dev fixture 12).
+3. **Legacy-backfill assertion, not a forward invariant. NOT parameterised — this one is a hard zero.** Every `open` square has a null `contributionId`. Expected exceptions: **0**, always, in every environment.
+
+   Zero here is a rule, not a snapshot: deriving it from the database would make it self-fulfilling. It holds because stale `batch_id` values on released squares must not produce Contributions. **Assertion 2's count and this zero describe a migration snapshot and must never become application validation.** In normal operation a `pending` Contribution legitimately owns squares while its checkout is live; those squares are `pending` or `reserved_cash`, and that relationship is the point of the ledger. Do not port these into a runtime check.
+4. Every `admission_grants` row with a non-null `square_batch_id` has a non-null `contributionId`, and each points at the contribution owning the squares that minted its passes. Expected: **`expected_grants`** (production 13, dev fixture 1).
+5. `AdmissionGrant.contributionId` is unique where not null — assert on real rows, not an empty table. **Already guaranteed structurally:** `admission_grants_square_batch_key` is a unique index on `square_batch_id`, and the backfill maps that column one-to-one onto `contributionId`. Verified 2026-09-04: production has 13 grants across 13 distinct batches, zero duplicates. The assertion stays as a check on the mapping, not on the data.
+6. Contribution count equals **`expected_contributions`** — the count of distinct `(board_id, batch_id)` pairs **on fundraiser boards, with `batch_id IS NOT NULL`, having at least one non-open square**.
+
+   **Corrected 2026-09-04.** v2.2 omitted the non-open filter that the backfill itself applies, so the assertion counted the two stale open batches the backfill deliberately skips — 14 where the backfill produces 12. As written it would have aborted a correctly executed migration.
 7. `rpffdlbf`: `finalRaisedCents` and `finalPrizePoolCents` are byte-identical to their pre-migration values.
 
 **Capture the pre-migration counts and totals as a committed artifact before running anything.** Without a preview environment, the numbers the gate compares against cannot be recovered after the fact.
+
+### 13.3 `finalPrizeBasisCents` on already-finalized boards
+
+Inventory item 6 adds `Board.finalPrizeBasisCents`, nullable. **A1 does not
+backfill it, and must not.**
+
+`rpffdlbf` closed before the field existed. Its basis cannot be reconstructed
+from authoritative historical data — the split between square money and donation
+money was never recorded, because donations did not exist. Any value written
+there would be inferred, and inferring a number into a finalized money column is
+what invariants 4, 13 and 68 exist to prevent.
+
+**It stays null on every board finalized before A1.** A null there means *"this
+board was finalized before the basis was tracked"*, which is true and legible.
+A1 must not recompute, adjust, or touch `finalRaisedCents`, `finalPrizePoolCents`,
+or any square's `price_paid_cents` in order to populate it.
+
+### 13.4 Rehearsal fixtures
+
+A1 is rehearsed against `daali-dev` before production. **Fixture counts are not
+production counts and are not expected to be.** The rehearsal proves logic and
+shape handling; production arithmetic is proved only by the parameterised gate
+running against production.
+
+| | production | dev fixture |
+|---|---|---|
+| attachable non-open squares | **38** | **12** |
+| stale open squares carrying `batch_id` | 2 | 1 |
+| `admission_grants` to relink | **13** | **1** |
+| Contributions expected | **12** | **3** |
+
+**Stale open squares are excluded in both**, and assertion 3's zero applies
+identically to each — that is the point of leaving it unparameterised.
+
+**Known fixture gap: the dev fixture creates no `PaymentReference` rows**, so
+every rehearsed `confirmedAt` takes the null branch and the
+`MIN(PaymentReference.timestamp)` path is never exercised. **Add one or two
+`PaymentReference` rows to the fixture before the rehearsal** so both paths run.
+Until that is done, a green rehearsal says nothing about the populated case.
+
+
 
 ### Code touchpoints
 
@@ -715,6 +823,35 @@ Runs inside the same transaction. **Any failure aborts the migration.**
 | `src/app/board/[slug]/claim-sheet.tsx` | Donation amount field, mixed total, one-payment copy |
 | `src/app/host/boards/[id]/fundraiser-panel.tsx` | Four-number breakdown, cash donation entry |
 | **New** — donation route, cash donation route | |
+
+---
+
+### 13.5 Changelog — v2.2 to v2.3
+
+Every change below is a **ruling recorded from evidence**, not a redesign. The
+backfill's semantics are unchanged: the same batches become the same
+Contributions with the same amounts.
+
+| # | Change | Why |
+|---|---|---|
+| 1 | Assertion 6 gains the `payment_status <> 'open'` and fundraiser-board filters | v2.2's count included the two stale open batches the backfill skips — 14 vs 12. **It would have aborted a correct migration** |
+| 2 | `confirmedAt` defined as `MIN(PaymentReference.timestamp)`, else null; `Square.claimedAt` forbidden | v2.2 named no source. The two candidates differ by days on cash squares and by 21 of 38 rows in coverage |
+| 3 | Assertions 2, 4, 6 parameterised from pre-backfill queries | v2.2 hardcoded production's 38 and 13, which cannot pass in a rehearsal database |
+| 4 | Assertion 3 explicitly **not** parameterised | Zero is a rule; deriving it would make it self-fulfilling |
+| 5 | Assertion 1 scoped to fundraiser boards; Game Day declared out of scope | v2.2 said "per board" without qualification |
+| 6 | Assertion 5 annotated with the structural guarantee | `admission_grants_square_batch_key` already enforces it; production verified 13 grants / 13 distinct batches |
+| 7 | `paymentMethod` homogeneity stated as **verified**, with the caveat that it is a snapshot property | Production returned zero mixed batches |
+| 8 | §13.3 added — `finalPrizeBasisCents` stays null on legacy finalized boards | Inventory item 6 added the field without saying what happens to `rpffdlbf` |
+| 9 | §13.4 added — rehearsal fixture counts and the `PaymentReference` gap | The rehearsal environment did not exist when v2.2 was written |
+
+**Evidence** is three read-only production `SELECT`s run 2026-09-04: grant
+multiplicity, payment-method homogeneity, and timestamp coverage. No production
+write was made.
+
+**Not changed here.** The four numeric cross-reference defects recorded in
+`PHASE-2-BACKLOG.md` — registry rows 16 and 21, the money doc's incomplete
+amendment block, and §8's citation of invariant 13 — **remain open rulings** and
+are deliberately untouched. This revision covers §13 only.
 
 ---
 
