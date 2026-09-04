@@ -832,3 +832,50 @@ holds under concurrency; the displayed number is a courtesy.
 Recorded so nobody mistakes the displayed ceiling for authoritative, and so
 nobody adds polling or a live inventory subscription to "fix" a number that was
 never load-bearing.
+
+## The four production cron endpoints are unguarded execution surfaces
+
+**Added:** 2026-09-04
+**Status:** open. `delete-expired` needs review before A1.
+
+`vercel.json` schedules four endpoints that run **in production, against the
+production database, on a schedule**, with nothing in this repository inspecting
+their environment first:
+
+```
+*/5 * * * *   /api/cron/release-expired
+0 0 * * *     /api/cron/cleanup
+0 6 * * *     /api/cron/expire-boards
+0 12 * * *    /api/cron/delete-expired
+```
+
+`scripts/guard-env.mjs` does not cover them. Established 2026-09-04 by tracing
+every execution path: the guard runs only through wired npm scripts, and a
+Vercel deployment executes neither — `vercel.json` sets no `buildCommand` or
+`installCommand`, `build` is `next build` with no prebuild hook, and
+`postinstall` is `prisma generate` with none either. Cron invocations reach the
+database over HTTP with production credentials and never pass through it.
+
+**This is recorded, not a call to add a guard there.** A prebuild or runtime hook
+was considered and explicitly rejected — the guard is local safety tooling and
+must not be described as a security boundary.
+
+### `delete-expired` needs an authorization and invariant review before A1
+
+It is the destructive one. Before A1 expands the state it can encounter:
+
+- **What it may delete once `Contribution` exists.** Today a board's squares are
+  the money record. After A1 the money lives in `Contribution`, and deleting a
+  board that still has contribution rows would orphan or destroy the ledger
+  those rows constitute.
+- **Interaction with invariant 4 (CONFIRMED is terminal) and 13 (final amounts
+  immutable).** A cron that deletes a finalized board is deleting numbers those
+  invariants say never change.
+- **`releaseAdmissionForBatch` already carries an invariant-42 cleanup guard**
+  refusing to delete a supporter holding any `HelperSignup`. Whether
+  `delete-expired` honours the equivalent for contributions is unverified.
+- **Authorization.** It is reached by `CRON_SECRET`; whether that is checked on
+  every one of the four, and what happens on a missing or wrong secret, has not
+  been read.
+
+Review before A1 lands, not after.

@@ -109,6 +109,24 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, anon, authenticated;
 -- 3. Stop it recurring for anything `postgres` creates from here on.
 --    This is the half that matters for S1: the six sign-up tables will be
 --    created by postgres, so postgres's default ACL is what governs them.
+--
+--    DUPLICATED, DELIBERATELY. The same four statements appear in
+--    prisma/migrations/0_init/migration.sql section 2, positioned before any
+--    CREATE TABLE. This file remediates a database whose tables already exist;
+--    0_init prevents the exposure on a database built from nothing. Neither
+--    replaces the other.
+--
+--    KEEP THE TWO COPIES IN SYNC. A change to the default-privilege policy in
+--    either file must be made in both, or a replayed database and a remediated
+--    one end up with different postures - and only the replayed one is ever
+--    tested from scratch.
+--
+--    THE POINTER LIVES ONLY HERE, NOT IN 0_init. 0_init is an APPLIED migration:
+--    Prisma records its checksum in _prisma_migrations and refuses to proceed if
+--    the file changes. Adding even a comment to it changed the checksum from
+--    ffc4fc57... to ee243ec3... and would have made the next `prisma migrate
+--    deploy` against production fail on a modified-migration error. Reverted
+--    2026-09-04. Never edit an applied migration, comments included.
 -- ---------------------------------------------------------------------------
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   REVOKE ALL ON TABLES FROM anon, authenticated;
