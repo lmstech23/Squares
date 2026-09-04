@@ -77,18 +77,7 @@ BEGIN
          + n_released + n_no_squares;
 
   IF total > 0 THEN
-    RAISE EXCEPTION E'A1 rollback REFUSED -- POINT OF NO RETURN PASSED.\n'
-      E'  donation_amount_cents > 0 : %\n'
-      E'  checkout_session_id set   : %\n'
-      E'  recorded_by_host_id set   : %\n'
-      E'  confirmed_by_host_id set  : %\n'
-      E'  voided_at set             : %\n'
-      E'  status = released         : %\n'
-      E'  contributions owning no squares : %\n'
-      E'\n'
-      E'These rows hold state that CANNOT be reconstructed from squares or\n'
-      E'admission_grants. Dropping the table destroys it permanently.\n'
-      E'Do not force this. Reconcile by hand, or restore the database.',
+    RAISE EXCEPTION E'A1 rollback REFUSED -- POINT OF NO RETURN PASSED.\n  donation_amount_cents > 0 : %\n  checkout_session_id set   : %\n  recorded_by_host_id set   : %\n  confirmed_by_host_id set  : %\n  voided_at set             : %\n  status = released         : %\n  contributions owning no squares : %\n\nThese rows hold state that CANNOT be reconstructed from squares or\nadmission_grants. Dropping the table destroys it permanently.\nDo not force this. Reconcile by hand, or restore the database.',
       n_donation, n_session, n_recorded, n_confirmed, n_voided,
       n_released, n_no_squares;
   END IF;
@@ -99,10 +88,7 @@ BEGIN
   -- therefore written by later code, and is real post-A1 money state.
   SELECT count(*) INTO n_basis FROM boards WHERE final_prize_basis_cents IS NOT NULL;
   IF n_basis > 0 THEN
-    RAISE EXCEPTION E'A1 rollback REFUSED -- % board(s) carry final_prize_basis_cents.\n'
-      E'A1 never writes this column, so later code did. It is finalized money\n'
-      E'state under invariants 13 and 68 and cannot be recomputed. The column\n'
-      E'is NOT dropped. Reconcile by hand or restore.', n_basis;
+    RAISE EXCEPTION E'A1 rollback REFUSED -- % board(s) carry final_prize_basis_cents.\nA1 never writes this column, so later code did. It is finalized money\nstate under invariants 13 and 68 and cannot be recomputed. The column\nis NOT dropped. Reconcile by hand or restore.', n_basis;
   END IF;
 
   RAISE NOTICE 'A1 rollback preflight passed: % contribution(s), all reconstructable backfill',
@@ -196,28 +182,155 @@ COMMIT;
 -- PRISMA BOOKKEEPING -- REQUIRED, and NOT executed by this file.
 -- ===========================================================================
 --
---   npx prisma migrate resolve --rolled-back 20260904140000_a1_contribution_ledger
+-- WHICH CASE ARE YOU IN? Two different situations, TWO DIFFERENT PROCEDURES.
+-- They were documented as one procedure until the daali-dev rehearsal on
+-- 2026-09-04 proved the Case A half wrong. Read the right half.
 --
--- WHICH CASE ARE YOU IN? The same command serves two different situations and
--- confusing them wastes time during an incident.
+-- ===========================================================================
+--   CASE A -- A1 APPLIED SUCCESSFULLY, then you ran THIS file to undo it.
+--            THIS IS THE CASE THIS FILE IS FOR.
+-- ===========================================================================
 --
---   CASE A -- A1 COMMITTED SUCCESSFULLY, then you ran THIS file to undo it.
---     `_prisma_migrations` holds a row with `finished_at` set. Prisma believes
---     A1 is applied, but the objects are gone. Run the resolve so Prisma stops
---     believing it; the next `migrate deploy` will then re-apply A1 cleanly.
---     THIS IS THE CASE THIS FILE IS FOR.
+--   `prisma migrate resolve --rolled-back` DOES NOT WORK HERE. Proven on
+--   daali-dev, 2026-09-04:
 --
+--       npx prisma migrate resolve --rolled-back 20260904140000_a1_contribution_ledger
+--       Error: P3012
+--       Migration `20260904140000_a1_contribution_ledger` cannot be rolled
+--       back because it is not in a failed state.
+--
+--   `--rolled-back` accepts only a migration in a FAILED state. A migration
+--   that applied successfully is not in one, so the command refuses.
+--
+--   THE FAILURE MODE IS WORSE THAN THE ERROR. After this file commits, the
+--   schema is reversed but `_prisma_migrations` still carries a finished row
+--   for A1. Observed on daali-dev in exactly that state:
+--
+--       npx prisma migrate status
+--       5 migrations found in prisma/migrations
+--       Database schema is up to date!
+--
+--   Prisma reported "up to date" while `contributions`, both link columns and
+--   `boards.final_prize_basis_cents` did not exist. Nothing warns you. The
+--   next person to trust `migrate status` is misled.
+--
+--   PRISMA HAS NO SUPPORTED COMMAND FOR "SUCCESSFULLY APPLIED, THEN MANUALLY
+--   REVERSED." The recovery below is DIRECT BOOKKEEPING SURGERY on Prisma's
+--   own table. It is not a routine step and must not be run as one.
+--
+--   +---------------------------------------------------------------------+
+--   |                                                                     |
+--   |   *** DO NOT DELETE FROM `_prisma_migrations` ON PRODUCTION       ***|
+--   |   ***           WITHOUT EXPLICIT APPROVAL.                        ***|
+--   |                                                                     |
+--   |   Capture the row FIRST and show it to whoever approves.            |
+--   |                                                                     |
+--   |   A mistaken bookkeeping delete makes Prisma attempt a migration    |
+--   |   against a schema that STILL CONTAINS its objects. The apply then  |
+--   |   fails on the first CREATE -- or, worse, partially succeeds        |
+--   |   against state the migration did not expect.                       |
+--   |                                                                     |
+--   +---------------------------------------------------------------------+
+--
+--   PROCEDURE -- all seven steps, in order:
+--
+--   1. STOP. This is not a step to run while working through a list.
+--
+--   2. CAPTURE AND PRINT the exact A1 row before touching anything. All of it:
+--
+--        SELECT migration_name, checksum, started_at, finished_at,
+--               rolled_back_at, applied_steps_count, logs
+--          FROM _prisma_migrations
+--         WHERE migration_name = '20260904140000_a1_contribution_ledger';
+--
+--      Save the output outside the database. It is the only record of what
+--      you are about to remove.
+--
+--   3. GET EXPLICIT HUMAN APPROVAL before deleting anything from
+--      `_prisma_migrations` on production. Show the captured row. On a
+--      disposable database this step is judgment; on production it is not
+--      optional.
+--
+--   4. DELETE ONLY THAT ONE ROW. Never a broader predicate:
+--
+--        DELETE FROM _prisma_migrations
+--         WHERE migration_name = '20260904140000_a1_contribution_ledger';
+--
+--      Expect exactly 1 row affected. Anything else means stop.
+--
+--   5. IMMEDIATELY run:
+--
+--        npx prisma migrate status
+--
+--   6. REQUIRE it to report A1 as pending / not yet applied. On daali-dev the
+--      correct output was:
+--
+--        Following migration have not yet been applied:
+--        20260904140000_a1_contribution_ledger
+--
+--   7. DO NOT PROCEED if status still claims the schema is up to date. That
+--      means the delete did not take effect, or it hit a different row, and
+--      re-applying from there would run A1 against a schema that may still
+--      hold parts of it.
+--
+--   Only after step 6 passes is `migrate deploy` safe. On daali-dev the
+--   re-apply through the guarded path then succeeded, all seven gates passed,
+--   and all three contributions were rebuilt with identical semantics.
+--
+-- ===========================================================================
 --   CASE B -- A1 FAILED DURING APPLY and this file was never needed.
---     A gate assertion raised, and the whole migration -- DDL, backfill and
---     gate -- rolled back inside its own transaction. Verified empirically on
---     2026-09-04: no table, no columns, nothing. But `_prisma_migrations` still
---     holds a row with `finished_at = NULL`, `rolled_back_at = NULL` and a
---     `logs` value, and every later `migrate deploy` REFUSES with P3009.
---     Run the same resolve to clear the block, fix whatever the gate caught,
---     then retry through the guarded path.
---     DO NOT RUN THIS FILE IN CASE B -- there is nothing to roll back, and its
---     preflight will tell you so by raising on the missing table.
+-- ===========================================================================
 --
--- In both cases `_prisma_migrations` ends up with a `rolled_back` row and, on
+--   A gate assertion raised, and the whole migration -- DDL, backfill and
+--   gate -- rolled back inside its own transaction. Verified empirically on
+--   2026-09-04: no table, no columns, nothing. But `_prisma_migrations` still
+--   holds a row with `finished_at = NULL`, `rolled_back_at = NULL` and a
+--   `logs` value, and every later `migrate deploy` REFUSES with P3009.
+--
+--   HERE `--rolled-back` IS CORRECT. The migration IS in a failed state, which
+--   is the only state that command accepts.
+--
+--   PROCEDURE:
+--
+--   1. VERIFY the schema objects truly rolled back -- do not assume it from
+--      the error text:
+--
+--        SELECT to_regclass('public.contributions');                  -- NULL
+--        SELECT count(*) FROM information_schema.columns
+--         WHERE table_name = 'squares' AND column_name = 'contribution_id';  -- 0
+--        SELECT count(*) FROM pg_type WHERE typname = 'contribution_status'; -- 0
+--
+--      If any object survived, you are NOT in Case B. Stop and reassess.
+--
+--   2. INSPECT the failed row, and read its `logs` -- that is the gate message
+--      naming what the migration actually caught:
+--
+--        SELECT migration_name, started_at, finished_at, rolled_back_at,
+--               applied_steps_count, logs
+--          FROM _prisma_migrations
+--         WHERE migration_name = '20260904140000_a1_contribution_ledger';
+--
+--   3. MARK IT ROLLED BACK:
+--
+--        npx prisma migrate resolve --rolled-back 20260904140000_a1_contribution_ledger
+--
+--      No DELETE. No approval gate. This is a supported command doing exactly
+--      what it is for.
+--
+--   4. FIX THE ROOT CAUSE the gate reported. A gate that fired found something
+--      real; re-running without fixing it will fire again.
+--
+--   5. RETRY ONLY THROUGH THE GUARDED DEPLOY -- never a bare `npx prisma
+--      migrate deploy`:
+--
+--        npm run db:deploy
+--
+--   DO NOT RUN THIS FILE IN CASE B. There is nothing to roll back, and its
+--   preflight will tell you so by raising on the missing `contributions`.
+--
+-- ===========================================================================
+--
+-- After Case B, `_prisma_migrations` ends up with a `rolled_back` row and, on
 -- a later successful apply, a second `finished` row for the same migration.
--- That history is correct. Leave it alone.
+-- That history is correct. Leave it alone. After Case A the old row is gone
+-- entirely, which is why step 2 captures it.

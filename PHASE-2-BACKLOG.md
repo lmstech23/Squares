@@ -1181,7 +1181,9 @@ change.
 **Rollback artifact:** `migrations/a1_rollback.sql.pending`
 **Rehearsed on:** daali-dev (`iujjlgfrwavfhqatpqdy`) — replayed from zero, seeded
 with synthetic fixtures, A1 applied, all seven gates passed, containment
-re-verified.
+re-verified. **The rollback artifact was then executed there too** — guards,
+reversal and forward re-apply, all proven end to end. See "Rollback rehearsal"
+below.
 
 Production currently holds **four** migrations. A1 would be the fifth. Nothing
 in the deployed application reads `contributions` yet, which is exactly why the
@@ -1269,7 +1271,41 @@ outside the guard's reach entirely — separate open item in this file.
 6. Restore .env to daali-dev and re-run `npm run guard:migrate` (expect PASS).
 ```
 
-### What happens when it fails mid-apply
+### Prisma bookkeeping — two cases, TWO DIFFERENT PROCEDURES
+
+These were documented as one procedure until the daali-dev rehearsal on
+2026-09-04 executed it and found the Case A half wrong. Full step-by-step in
+`migrations/a1_rollback.sql.pending`; the summary here exists so nobody reaches
+for the wrong command from this file.
+
+| | Case A | Case B |
+|---|---|---|
+| **What happened** | A1 applied successfully, then was manually reversed with the rollback SQL | A1 failed during apply; nothing was ever created |
+| **`_prisma_migrations`** | finished row, `rolled_back_at = NULL` | failed row, `finished_at = NULL`, `logs` set |
+| **Symptom** | `migrate status` says **"Database schema is up to date!"** while the objects are gone | every `migrate deploy` **refuses with P3009** |
+| **`resolve --rolled-back`** | **REFUSES — P3012**, "not in a failed state" | **correct**, supported, this is what it is for |
+| **Recovery** | capture the row → **explicit approval** → `DELETE` that one row → `migrate status` must show it pending | `resolve --rolled-back`, fix the cause, retry via `npm run db:deploy` |
+| **Approval gate** | **YES on production — mandatory** | no |
+
+**Case A is bookkeeping surgery on Prisma's own table.** Prisma has no
+supported command for "successfully applied, then manually reversed." The
+`DELETE` is the only mechanism, and it is never a casual step in a sequence:
+capture `migration_name`, `checksum`, `started_at`, `finished_at`,
+`rolled_back_at`, `applied_steps_count` and `logs` first, get explicit human
+approval before deleting anything from `_prisma_migrations` on production,
+delete **only** the row for `20260904140000_a1_contribution_ledger`, then run
+`migrate status` and require it to report A1 as not yet applied. **Do not
+proceed if status still claims the schema is up to date** — a mistaken
+bookkeeping delete makes Prisma attempt a migration against a schema that still
+contains its objects.
+
+The Case A failure mode is worse than an error, which is why it is called out
+here and not left to the artifact: nothing warns you. On daali-dev, with
+`contributions`, both link columns and `boards.final_prize_basis_cents` all
+dropped, `prisma migrate status` reported `5 migrations found` and `Database
+schema is up to date!`.
+
+### Case B — what happens when the apply fails mid-flight
 
 **Proven empirically on 2026-09-04**, on a throwaway Docker Postgres database
 built for the purpose and since dropped. Measured behaviour, not an inference
@@ -1291,8 +1327,9 @@ npx prisma migrate resolve --rolled-back 20260904140000_a1_contribution_ledger
 
 So a failed apply needs the `resolve`, **not** the rollback file. Running
 `a1_rollback.sql.pending` in that situation is wrong, and its preflight says so
-by raising on the missing table. The rollback file is for the *other* case: A1
-committed successfully and you have decided to undo it.
+by raising on the missing table. The rollback file is for Case A: A1 applied
+successfully and you have decided to undo it. Verify the objects are actually
+gone before concluding you are in Case B — the error text is not proof.
 
 Also worth knowing: `migrate deploy` and `migrate status` do **not** verify
 checksums of already-applied migrations. Only `migrate dev` detects an edited
@@ -1347,6 +1384,88 @@ Reverting the Vercel production deployment restores application code and leaves
 the schema exactly where it is. While nothing reads `contributions`, that is
 harmless. It is not a substitute for `a1_rollback.sql.pending`, and the two must
 not be confused during an incident.
+
+### Rollback rehearsal — executed on daali-dev, 2026-09-04
+
+`a1_rollback.sql.pending` is no longer only reviewed. It was **run**, against
+daali-dev (`iujjlgfrwavfhqatpqdy`), from the real post-A1 state: 3 backfilled
+contributions, 12 linked squares, 1 linked admission grant, 135 squares across
+one Game Day and two fundraiser boards. Production and Squares-staging were not
+contacted at any point; the guard was re-run before every write and reported
+`db: dev (iujjlgfrwavfhqatpqdy), supabase-api: iujjlgfrwavfhqatpqdy,
+stripe: test` each time.
+
+**Guards refuse, and refuse without damage.** Both hazards were introduced
+deliberately, one at a time, and removed afterwards:
+
+- Hard-null guard: with `final_prize_basis_cents = 4242` on one fixture board,
+  the rollback aborted naming the column and reporting `1 board(s)`.
+- Point-of-no-return guard: with `donation_amount_cents = 1500` on one
+  contribution, it aborted reporting all seven counts, `donation_amount_cents
+  > 0 : 1` among them.
+- After each refusal: table, both columns, enum, 3 contributions, 12 square
+  links, 1 grant link and all 9 A1 constraints still present. The synthetic
+  hazard value itself was still in place, proving nothing had executed. Both
+  fields were then restored and the full baseline re-read matched exactly.
+
+*(Setting a non-zero donation also required updating `total_paid_cents` —
+`contributions_total_is_sum` rejects the row otherwise. That CHECK doing its
+job is a small independent confirmation.)*
+
+**The real rollback removed everything A1 adds**, and nothing else: table,
+enum, `squares.contribution_id`, `admission_grants.contribution_id`,
+`boards.final_prize_basis_cents`, all 9 constraints, all 5 indexes. Public base
+tables 23 → 22.
+
+**Every legacy reconstruction source survived** — 135 squares, all four
+`batch_id` values with their exact membership (4 paid / 5 paid / 3
+reserved_cash / 1 open), the admission grant with its `square_batch_id`,
+`source` and `declared_at_purchase`, both PaymentReferences, and all finalized
+money (`final_prize_pool_cents = 1000`, `prize_pool_percent = 20` on the closed
+board; squares open 123 / reserved_cash 3 @6000¢ / paid 9 @15000¢).
+
+**A1 then re-applied cleanly through the guarded path** (`npm run db:deploy`),
+all seven gates passing, and rebuilt the ledger with identical semantics —
+UUIDs differ, nothing else does:
+
+- exactly **3** contributions; **12** linked squares; **1** linked grant
+- each batch owned by exactly one contribution; the stale-open batch owned by
+  **none**, its square still `contribution_id = NULL`
+- the admission grant relinked to the contribution that owns its batch
+- `reserved_cash` batch → **pending**; both paid batches → **confirmed**
+- `confirmedAt` reproduced exactly: `2026-09-04T15:30:36.674Z`, equal to
+  `MIN(payment_references.timestamp)` over that batch's 2 rows
+- the two contributions with no PaymentReference kept `confirmed_at = NULL`
+- finalized legacy money unchanged; `final_prize_basis_cents` NULL everywhere
+- **Game Day untouched** — 100 squares, 0 with a batch, 0 with a contribution
+
+**Containment PASS** (`--catalog-only`, since the production site probe would
+have reported on the wrong environment): 23 relations, 0 failures, 0
+inconclusive; `contributions` RLS enabled; zero `anon` / `authenticated` /
+`PUBLIC` table grants anywhere in `public`. **Drift empty** — `migrate diff`
+returned `-- This is an empty migration.` and `migrate status` reported the
+history clean.
+
+**Both defects the rehearsal found were found by executing it, not by reading
+it.** The file had been reviewed twice and neither survived contact with a
+database:
+
+1. **The E-string parse defect.** Every fragment of both `RAISE EXCEPTION`
+   messages carried an `E` prefix. Postgres allows `E` only on the *first*
+   fragment of an implicitly concatenated string constant, so the file failed
+   to parse — `syntax error at or near "E'  donation_amount_cents > 0 : %\n'"`.
+   Not destructive, but it would have failed at parse during an incident with
+   the schema fully in place: useless at the exact moment it was needed. Fixed
+   by collapsing each message to one `E'…'` literal.
+2. **The Case A bookkeeping procedure was wrong.** The file prescribed
+   `migrate resolve --rolled-back` for the case it is written for; that command
+   returns **P3012** and refuses, because the migration is not in a failed
+   state. Corrected above and in the artifact.
+
+The first defect was introduced by a "correction" made after the file was
+written, on reasoning that was itself wrong — the original single-`E` form
+parses *and* processes the escapes throughout. Worth remembering when a tidy-up
+edit to unexecuted SQL looks obviously safe.
 
 ### Removal condition
 
