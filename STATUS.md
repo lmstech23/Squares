@@ -15,6 +15,81 @@ governing document for the area — for sign-up sheets that is
 
 ---
 
+## Environment findings — 2026-09-03
+
+Established by read-only inspection during the spec-freeze preflight. Cross-
+referenced to **E1–E5** in `invariant-registry.md`.
+
+### Stripe
+
+| | |
+|---|---|
+| Vercel **Production** `STRIPE_SECRET_KEY` | **`sk_live_`** |
+| Local `.env` and `.env.local` | **`sk_test_`** |
+| Publishable key | **none — anywhere** |
+| Browser-side Stripe | **none.** No `@stripe/stripe-js`, no `loadStripe(`, no Elements |
+| `apiVersion` pin | **none** in `src/lib/stripe.ts` |
+| Test/live switch | **none. A single key pair**, mode decided by the environment |
+
+Payment flow is **redirect Checkout**, which needs no publishable key, so its
+absence is correct rather than a gap.
+
+**Connect accounts are created in LIVE mode.** `src/app/api/stripe/connect/route.ts`
+creates `type: "express"` accounts through the shared client, which reads
+`STRIPE_SECRET_KEY`. This **confirms** the earlier record of Express onboarding
+with `card_payments` verified in live mode.
+
+**Correction.** A prior backlog note said `STRIPE_PLATFORM_WEBHOOK_SECRET` was
+absent and asked whether it existed in Vercel. **It exists, on Development,
+Preview and Production, added 192 days ago.** The missing webhook *destination*
+was the real defect; the secret was never the problem. That note is wrong and
+should be read as superseded by this line.
+
+### Database
+
+**Local `DATABASE_URL` currently points at production.** `.env` and `.env.local`
+hold byte-identical values, both resolving to the production Supabase pooler.
+
+**This is PROHIBITED for migration development and for payment testing.** It
+violates **E1** (local development never points at the production database) and
+**E2** (Stripe mode and database must agree — today local pairs `sk_test_` with
+the *live* database, so a test-mode payment would write production rows).
+
+### Card acceptance tests — REQUIRED, ENVIRONMENT BLOCKED, NOT EXECUTED
+
+| Document | Tests |
+|---|---|
+| `fundraiser-donations-addendum.md` | **12, 13, 14, 17, 19, 20** |
+| `fundraiser-launch-readiness-addendum.md` | **28** |
+
+These exercise the card path, which cannot be reached safely: production runs
+`sk_live_`, so a card checkout is a real charge against a real connected account
+and writes real `paid` squares to the same database holding the preserved S3b
+fixture. Local holds `sk_test_` but points at the production database, so it
+fails **E2**.
+
+**Their status is ENVIRONMENT BLOCKED — NOT EXECUTED.** Per **E5** they are
+**never skipped, never marked green, never dropped from the suite.** They gate
+**release**, not merge: code may land with them blocked, but nothing ships to a
+paying host until they have run somewhere they can actually run.
+
+### Proposals — NOT IMPLEMENTED
+
+**Environment guard, `scripts/guard-env.mjs`. PROPOSAL ONLY.** Would refuse to
+run when `DATABASE_URL` resolves to the production host while a test-mode Stripe
+key is present, and refuse `prisma migrate` against production outright. Enforces
+E1–E3 mechanically rather than by memory. **Not written, not wired.**
+
+**Stripe `apiVersion` pin in `src/lib/stripe.ts`. PROPOSAL ONLY.** The client
+currently pins nothing, so the account's dashboard default applies and Stripe can
+move it under a deployed app. **Requires verifying the account's current default
+version first.** If the account has already moved past `2026-01-28.clover`,
+pinning to clover is a **revert**, not a stabilisation — it would silently change
+response shapes the deployed code has been receiving. Verify, then pin to what is
+actually in force.
+
+---
+
 ## S3 — supporter sign-up sheet, manual acceptance
 
 **Date:** 2026-09-01

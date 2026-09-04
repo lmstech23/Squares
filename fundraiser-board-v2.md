@@ -130,7 +130,7 @@ All four are dormant against existing data — every Game Day row satisfies them
 |---|---|---|
 | `holdExpiresAt` | DateTime? | Set on `pending` — invariant 18 |
 | `checkoutSessionId` | String? | Needed to resolve/expire — invariant 18 |
-| `batchId` | String? | Groups a multi-square claim |
+| `batchId` | String? | Groups a multi-square claim. **Retained and deprecated** — superseded by `contributionId` (donations §13). The A1 migration is additive and does not drop it; existing rows keep their values |
 | `isHostEntry` | Boolean | Default false. Funded, never eligible — invariant 15 |
 | `pricePaidCents` | Int? | Null while `open`. **Written when the square leaves `open`. Never recomputed** — invariant 42 |
 
@@ -325,7 +325,7 @@ A single blended percentage would be a made-up number on a host-facing money scr
 
 ### Early bird pricing
 
-Optional, one changeover, date-based. Money doc §8B and invariants 42–44.
+Optional, one changeover, date-based. Money doc §8B and invariants 48–50.
 
 Public copy states the deadline, because urgency is the whole point:
 
@@ -684,7 +684,7 @@ $1,850 raised
 
 No bar, no denominator. This is why §6's above-the-fold block shows a bare raised figure and this section shows one with a goal — they are the same block in two states, not two specifications.
 
-The raised figure is the **sum of `pricePaidCents`** on confirmed squares (invariant 43), never a count multiplied by a price.
+The raised figure is the **sum of `pricePaidCents`** on confirmed squares (invariant 49), never a count multiplied by a price.
 
 On a Phase A no-prize board, no prize pool line renders.
 

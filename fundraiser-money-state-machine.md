@@ -332,13 +332,58 @@ Every one of these must hold at all times.
 21. Finalization cannot occur while any square is `pending` or `reserved_cash`. `CLOSING` reconciles every outstanding payment against Stripe before `finalRaisedCents` is written.
 22. Paid ticket numbers may have gaps. Contiguity is never required or asserted.
 
-### Pricing (invariants 42–44)
+### Pricing (invariants 48–50)
 
-42. `Square.pricePaidCents` is written the moment a square leaves `open` — at claim or at cash reservation — and is **never recomputed**. Price is fixed when the square is taken, not when the money arrives.
-43. `raised` is the sum of `pricePaidCents` over confirmed squares. No code path may derive it from a board-level price.
-44. The price schedule is a boundary in **time**, evaluated once per claim. It is never a function of how many squares have sold, so no counter, lock, or ordering guarantee is required.
+48. `Square.pricePaidCents` is written the moment a square leaves `open` — at claim or at cash reservation — and is **never recomputed**. Price is fixed when the square is taken, not when the money arrives.
+49. `raised` is the sum of `pricePaidCents` over confirmed squares. No code path may derive it from a board-level price.
+50. The price schedule is a boundary in **time**, evaluated once per claim. It is never a function of how many squares have sold, so no counter, lock, or ordering guarantee is required.
 
-Invariants 23–33 govern event admission and are defined in `fundraiser-admission-addendum.md`. They are numbered continuously with this list so a single sequence covers both documents. Admission never moves money, never touches `raised`, and never alters drawing eligibility.
+### Amendments in force
+
+Four invariants above are **superseded** by the wording below. Where they differ,
+the amended text governs. Each is marked with its amending document; the
+reasoning lives there and is not repeated.
+
+**Invariant 2 — amended by `fundraiser-donations-addendum.md` §3.**
+
+> `prizePool = round(prizePoolPercent × prizeBasisCents / 100)`, where
+> `prizeBasisCents` is the sum of confirmed **square** money only. Donations
+> never enter the prize basis. `raisedCents` is `prizeBasisCents` plus confirmed
+> donation money, and prize math never reads it.
+
+**Invariant 16 — amended by `fundraiser-donations-addendum.md` §3.**
+
+> After the first confirmed **square** contribution, these are locked: square
+> count, the contribution price schedule (both prices and the changeover time),
+> prize on/off, prize percent, tier count, drawing rule, drawing date, and — on
+> boards with an event — event date and the maximum attendee allowance per
+> supporter. **A confirmed donation-only contribution locks nothing.**
+
+**Invariant 21 — amended by `fundraiser-donations-addendum.md` §3.**
+
+> Finalization cannot occur while any square is `pending` or `reserved_cash`,
+> **or while any `Contribution` is `pending`**. `CLOSING` reconciles every
+> outstanding payment session against Stripe — square batches and donation-only
+> sessions alike — before `finalRaisedCents`, `finalPrizeBasisCents`, and
+> `finalPrizePoolCents` are written.
+
+**Invariant 49 — amended by `fundraiser-donations-addendum.md` §3.**
+
+> `prizeBasisCents` is the sum of `pricePaidCents` on confirmed squares, never a
+> count multiplied by a price. `raisedCents` is the sum of `totalPaidCents` on
+> confirmed contributions. Neither is ever derived from a square count.
+
+Invariants 1, 4, 5, 13, 15, 17 are **unchanged**; donations §3 clarifies their
+scope without altering their text.
+
+Invariant numbers are identifiers, not sort keys, and are allocated by
+invariant-registry.md. This document owns 1–22 and 48–50. Other blocks are owned
+by the addenda registered there. Gaps in this document's sequence are expected
+and are not defects.
+
+Invariants 23–33 govern event admission and are defined in
+`fundraiser-admission-addendum.md`. Admission never moves money, never touches
+`raised`, and never alters drawing eligibility.
 
 ---
 

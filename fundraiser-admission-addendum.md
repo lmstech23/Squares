@@ -112,7 +112,8 @@ No admission column lands on `Board` or `Square`.
 | Field | Type | Notes |
 |---|---|---|
 | `id`, `eventId`, `eventSupporterId` | | |
-| `squareBatchId` | String? | Unique where not null. Makes preparation idempotent |
+| `contributionId` | String? | Unique where not null. Makes preparation idempotent. Supersedes `squareBatchId` (donations §13) |
+| `squareBatchId` | String? | **Retained and deprecated.** Unique where not null. The A1 migration is additive and does not drop it; existing rows keep their values |
 | `source` | enum | `FUNDRAISER` · `STANDALONE` · `GATE_ALLOWANCE` · `HOST_APPROVED` |
 | `donateAdmissions` | Boolean | **NEW.** Default false. True mints no passes |
 | `declaredAtPurchase` | Int? | **Unused, and made nullable in migration 3.** Was `NOT NULL` with no default |
@@ -166,7 +167,8 @@ planned window with no event nearby.
 ```
 Event.boardId                                     unique
 EventSupporter (eventId, identityKey)             unique
-AdmissionGrant.squareBatchId                      unique where not null
+AdmissionGrant.contributionId                     unique where not null
+AdmissionGrant.squareBatchId                      unique where not null — RETAINED, DEPRECATED
 AdmissionPass (eventSupporterId, sequenceNumber)  unique
 AdmissionPass.token                               unique
 ```

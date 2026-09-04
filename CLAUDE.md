@@ -140,7 +140,8 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 
 | Document | Authority over |
 |---|---|
-| `fundraiser-money-state-machine.md` | Money, drawing eligibility, pricing. Invariants 1–22 and 42–44. **Wins every conflict** |
+| `fundraiser-money-state-machine.md` | Money, drawing eligibility, pricing. Owns invariants 1–22 and 48–50. **Wins every conflict — AS AMENDED by the documents registered in `invariant-registry.md`.** Invariants 2, 16, 21 and 49 are amended; the amended text is in its §9 and governs |
+| `invariant-registry.md` | **Numbering authority.** Which document owns which invariant number, and what each one says |
 | `fundraiser-admission-addendum.md` | Admission model and schema. **v2.0.** Invariants 23–33 |
 | `fundraiser-board-v2.md` | All fundraiser flows and screens. **Flow authority for fundraiser work** |
 | `fundraiser-signup-addendum.md` | **Sign-up sheets and volunteer flow. v1.6.** Authority for S0–S5 |
@@ -163,6 +164,29 @@ two versions of one. Every admission copy outside this repo is v1.2 or older
 and is superseded.
 
 **If two documents disagree, that is a bug. Report it. Do not choose.**
+
+---
+
+## Deployment reality
+
+**Production baseline: `06ebe46`, deployment `dpl_HwKrgDa95kpzHKBGNvkrovTccDZG`.**
+
+**Every push to `main` deploys to production.** There is no preview environment —
+every Vercel deployment targets Production, and `beta.daali.app` plus three
+`vercel.app` hostnames alias the same deployment. **Docs-only commits deploy
+too.** A commit that changes nothing but markdown still rebuilds and re-aliases
+production, and it pushes the previous deployment one step further down the
+rollback list.
+
+"Deploy to beta" has always meant deploy to production, against the production
+database, with real contributor rows.
+
+**Package-import safeguard.** When replacing a spec package from similarly named
+ZIPs, **compare file hashes, not byte length.** Two same-length revisions have
+already shipped in this project: `files (58)` vs `(59)` differed in the
+collaborators addendum at an identical 31955 bytes, and `(62)` vs `(63)` differed
+in the donations addendum at an identical 54831 bytes. A size or date check would
+have accepted the wrong one both times.
 
 ---
 
@@ -198,7 +222,14 @@ and is superseded.
 ## Untouchable without explicit approval
 
 - The **drawing ticket concept**. There is no `Ticket` table and none should be built. Admission never touches it.
-- Invariants 1–22 and 42–44 in the money doc.
+- Invariants 1–22 in the money doc, **except 2, 16 and 21**, which are amended by
+  `fundraiser-donations-addendum.md` §3. Invariants 48–50 — renumbered from 42–44,
+  which no longer exist — except 49, which is amended by the same document.
+
+**Numbering is allocated by `invariant-registry.md`, not by whoever writes next.**
+Next free number: **110**. Environment invariants **E1–E5** are lettered and
+consume no product number. Never reuse a retired number; a renumbering leaves the
+old number dead, not available.
 - Any Game Day flow, route, or test.
 - Adding admission columns to `Board` or `Square`. The model deliberately puts none there. If the code seems to need one, the model is being misread.
 
@@ -223,7 +254,7 @@ Money doc §5 is the authority. Two consequences:
 
 ## Pricing
 
-`raised` is the **sum of `Square.pricePaidCents`** over confirmed squares. Never `count × price` — invariant 43.
+`prizeBasisCents` is the **sum of `Square.pricePaidCents`** over confirmed squares. Never `count × price` — invariant 49, as amended by `fundraiser-donations-addendum.md` §3. `raisedCents` is the sum of `totalPaidCents` over confirmed contributions and includes donations; **prize math never reads it.**
 
 Price is fixed the moment a square leaves `open`, at claim or at cash reservation, and never recomputed — invariant 42. A cash square reserved at the early-bird price and confirmed a week later is still owed the early price, and the host's cash panel must show the amount that square was reserved at.
 
