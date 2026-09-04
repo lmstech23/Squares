@@ -30,11 +30,39 @@ export async function GET(request: Request) {
   try {
     const now = new Date();
 
-    // 1. Release expired Stripe checkouts (pending → open)
+    // 1. Release expired Stripe checkouts (pending → open) — GAME DAY ONLY.
+    //
+    // This route predates fundraiser boards (initial commit, Feb 2026) and was
+    // written when every board was Game Day, where a batch, a grant and a
+    // supporter do not exist. It was never revisited when A5/A6 added
+    // fundraiser holds, and until this filter it released fundraiser squares
+    // too — matching `release-expired`'s scoping is the whole fix.
+    //
+    // Two things went wrong without it, both observed in production on
+    // 2026-08-28 (board umt9dpqq, batch 78a53f80…):
+    //
+    //   1. It leaves a fundraiser square `open` while still carrying batchId,
+    //      holdExpiresAt, pricePaidCents and checkoutSessionId, and it never
+    //      calls releaseAdmissionForBatch — so the AdmissionGrant is stranded
+    //      pointing at squares nobody holds. Worse, once the square is `open`
+    //      it no longer matches resolveExpiredHolds' `paymentStatus: "pending"`
+    //      selector, so the correct path can never reach it again.
+    //
+    //   2. checkoutExpiresAt is claim + 10 min while the Stripe session lives
+    //      30 (checkout/route.ts). Releasing on that timestamp hands the square
+    //      to someone else while the first contributor's card can still
+    //      succeed — invariants 18 and 20, the double-sell this codebase has no
+    //      recovery path for.
+    //
+    // Fundraiser holds are resolved ONLY by resolveExpiredHolds, which queries
+    // the Stripe session and EXPIRES it before releasing. The 10-vs-30 minute
+    // asymmetry is by design and is safe there precisely because of that
+    // ordering; it was never safe here.
     const { count: stripeReleased } = await prisma.square.updateMany({
       where: {
         paymentStatus: "pending",
         checkoutExpiresAt: { lt: now },
+        board: { boardType: "game" },
       },
       data: {
         paymentStatus: "open",
