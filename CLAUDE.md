@@ -145,12 +145,44 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 | `fundraiser-admission-addendum.md` | Admission model and schema. **v2.0.** Invariants 23–33 |
 | `fundraiser-board-v2.md` | All fundraiser flows and screens. **Flow authority for fundraiser work** |
 | `fundraiser-signup-addendum.md` | **Sign-up sheets and volunteer flow. v1.6.** Authority for S0–S5 |
+| `fundraiser-donations-addendum.md` | **Donations, the `Contribution` ledger, and the A1 migration. v2.3.** Invariants 51–70 |
+| `fundraiser-launch-readiness-addendum.md` | **Deferred pricing, dietary attributes, volunteer interest. v2.1.** Invariants 71–90 |
+| `board-collaborators-addendum.md` | **Owner/manager roles and the audit trail. v2.1.** Invariants 91–109 |
 | `slice-1-handoff.md` | Admission Slice 1 (A8) build brief. Derives from the three above. **Numbering corrected to 23–33** |
 | `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
 
+### The frozen package, and what supersedes it
+
+The fundraiser specification package was frozen on 2026-09-03 from `files (63)`:
+donations **v2.2**, launch readiness **v2.1**, collaborators **v2.1**, plus
+`invariant-registry.md`.
+
+**Donations v2.3 supersedes v2.2 for §13 — the A1 migration, backfill and
+correctness gate.** Ruled 2026-09-04 from three read-only production queries.
+v2.2 was genuinely frozen and is not being rewritten out of history: v2.3's
+§13.5 changelog records each of the nine changes against it, and the reasoning
+for each is in the section it amends.
+
+**The authoritative set is now:**
+
+| Document | Version |
+|---|---|
+| `fundraiser-donations-addendum.md` | **v2.3** — supersedes v2.2 for §13 |
+| `fundraiser-launch-readiness-addendum.md` | v2.1 — unchanged since the freeze |
+| `board-collaborators-addendum.md` | v2.1 — unchanged since the freeze |
+| `invariant-registry.md` | unversioned; numbering authority |
+| `fundraiser-admission-addendum.md` | v2.0 |
+| `fundraiser-signup-addendum.md` | v1.6 |
+
+**A freeze is not immutability.** It means changes are versioned, evidenced and
+changelogged rather than made in passing. v2.3 met that bar; nothing else in the
+package has been touched since, and the four open numeric cross-reference
+rulings recorded in `PHASE-2-BACKLOG.md` remain open and unrepaired.
+
 Consistent as of admission addendum **v2.0** and sign-up addendum **v1.6**,
-reconciled 2026-08-31.
+reconciled 2026-08-31; donations **v2.3**, launch readiness **v2.1** and
+collaborators **v2.1**, reconciled 2026-09-04.
 
 **The sign-up addendum was missing from this repository until then.** S0 was
 built from a copy in a Downloads folder, and this file cited a "§2" nobody

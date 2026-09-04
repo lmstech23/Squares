@@ -106,6 +106,34 @@ async function main() {
     },
   });
 
+  // FIXTURE 1b — PaymentReference rows for the PAID batch only.
+  //
+  // A1 derives `Contribution.confirmedAt` from MIN(PaymentReference.timestamp)
+  // over the batch's non-open squares, and null where the batch has none
+  // (donations addendum §13.1, ruled 2026-09-04). Both paths need exercising, so
+  // exactly one batch gets payment references and the others deliberately do
+  // not:
+  //
+  //   paid batch          -> 2 rows, 90 and 45 minutes ago. MIN is the older.
+  //   reserved_cash batch -> none. Cash is not confirmed; there is no payment.
+  //   closed paid batch   -> none. Mirrors production, where the
+  //                          resolveExpiredHolds cron confirms squares without
+  //                          writing a PaymentReference — which is why 21 of 38
+  //                          production rows have none.
+  //
+  // Synthetic ids only. No Stripe call is made and no real session exists.
+  const paidSquares = squaresA.slice(0, 2);
+  const t0 = new Date(Date.now() - 90 * 60_000);
+  const t1 = new Date(Date.now() - 45 * 60_000);
+  await prisma.paymentReference.createMany({
+    data: [
+      { squareId: paidSquares[0].squareId, stripeSessionId: `cs_test_fixture_${randomUUID().slice(0, 12)}`,
+        amount: 2500, method: "stripe", timestamp: t0 },
+      { squareId: paidSquares[1].squareId, stripeSessionId: `cs_test_fixture_${randomUUID().slice(0, 12)}`,
+        amount: 2500, method: "stripe", timestamp: t1 },
+    ],
+  });
+
   // FIXTURE 2 — reserved_cash batch. Priced at reservation, not yet confirmed.
   const cashBatch = randomUUID();
   const p2 = person("Cash");
@@ -178,6 +206,8 @@ async function main() {
   console.log(`  3  stale open square, legacy batch_id, releaseReason expired`);
   console.log(`  4  admission grant on square_batch_id  declaredAtPurchase 4, supporter active`);
   console.log(`  5  closed fundraiser, finalPrizePoolCents 1000, 5 paid @ 1000`);
+  console.log(`  1b 2 PaymentReference rows on the paid batch only — MIN ${t0.toISOString()}`);
+  console.log(`     reserved_cash and closed batches deliberately have none (null confirmedAt path)`);
   console.log(`  +  Game Day board, 100 open squares, untouched control\n`);
   console.log(`  No production data. No real PII. No Stripe ids. No PaymentReference rows.\n`);
 }
