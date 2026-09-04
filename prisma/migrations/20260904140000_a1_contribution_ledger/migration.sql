@@ -93,6 +93,21 @@ ALTER TABLE "contributions" ADD CONSTRAINT "contributions_amount_positive"
   CHECK (square_amount_cents > 0 OR donation_amount_cents > 0);
 
 -- Card requires an email; cash may omit it (donations section 10).
+--
+-- SNAPSHOT-VALIDATED, NOT STRUCTURALLY GUARANTEED. A read-only production
+-- preflight on 2026-09-04 found ZERO eligible squares with a null
+-- `player_email` -- 33 cash and 5 stripe, all populated -- so no contribution
+-- backfilled from today's data can violate this.
+--
+-- That is a fact about the current rows, not a promise from the schema.
+-- `squares.player_email` is nullable and always has been, so legacy data
+-- containing a stripe batch with no email is possible in principle.
+--
+-- IF THAT EVER HAPPENS, THIS CHECK FAILS AND THE MIGRATION ABORTS. That is the
+-- intended behaviour, not a defect: the alternative is silently writing a
+-- Contribution with no way to reach the contributor, on a card payment where
+-- an email is the only channel there is. A loud failure asks a human what the
+-- right answer is; a silent one decides for them.
 ALTER TABLE "contributions" ADD CONSTRAINT "contributions_card_requires_email"
   CHECK (payment_method = 'cash' OR contributor_email IS NOT NULL);
 
