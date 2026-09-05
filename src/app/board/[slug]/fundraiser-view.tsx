@@ -43,7 +43,9 @@ interface Props {
   raisedCents: number;
   /// Null = no goal set. No bar, no denominator — v2 §7.
   goalCents: number | null;
-  supporterCount: number;
+  /// No longer displayed — money doc §10, see the note in the header block.
+  /// Kept on the interface so the page's call site is unchanged.
+  supporterCount?: number;
   openCount: number;
   slug: string;
   hasEvent: boolean;
@@ -103,7 +105,6 @@ export default function FundraiserView({
   timezone,
   raisedCents,
   goalCents,
-  supporterCount,
   openCount,
   slug,
   hasEvent,
@@ -230,6 +231,12 @@ export default function FundraiserView({
   // DERIVED, not state. Whether we are navigating is entirely a function of
   // what the server sent — a token means go — so holding it in state would be
   // a second copy of a fact that already exists, kept in sync by an effect.
+  // The page is in its post-purchase state. Same condition the confirmation
+  // panel renders on, so the two can never disagree about which page this is.
+  const showingConfirmation = Boolean(
+    confirmation && confirmation.positions.length > 0
+  );
+
   // NO AUTOMATIC NAVIGATION. Approved amendment to sign-up addendum §5: the
   // supporter reaches the sheet by choosing to.
   //
@@ -420,14 +427,16 @@ export default function FundraiserView({
           )}
         </div>
 
-        {/* What's the fun — supporter momentum on a no-prize board. Phase A
-            renders no prize pool line at all. */}
-        <p className="text-sm text-gray-400 mt-3">
-          {supporterCount} {supporterCount === 1 ? "supporter" : "supporters"} so
-          far
-          <span className="text-gray-600"> · </span>
-          {openCount} {openCount === 1 ? u.one : u.many} left
-        </p>
+        {/* NO STATE COUNTS. Money doc §10: the public board shows two numbers,
+            and a count of squares beside a dollar figure invites a
+            multiplication that will not reconcile. It did not reconcile here —
+            "$29 raised · 68 tickets left" on a 100-ticket $1 board — and it was
+            visible to anyone with the link. The raised amount, the goal and the
+            progress bar stay; they are the two numbers.
+
+            `openCount` is still a PROP and still load-bearing: it disables the
+            purchase CTA at zero and promotes Donate to primary. Only the
+            display is gone. */}
 
         {/* Confirmation — v2 §6. Not a generic success page.
             Never says "ticket" on a no-prize board: ticket to what? The word
@@ -558,6 +567,16 @@ export default function FundraiserView({
           </div>
         )}
 
+        {/* PURCHASE UI IS HIDDEN IN THE CONFIRMATION STATE. She has just done
+            all of this: "Purchase tickets — $1" sitting directly beneath her
+            receipt is an invitation to buy again by accident, and "How it
+            works" explains a thing she has finished doing.
+
+            Not a second exit — "Back to the fundraiser" in the confirmation
+            panel returns to the normal board with everything restored, and
+            adding a purchase entry point here would be a second one. */}
+        {!showingConfirmation && (
+          <>
         {/* What do I do */}
         {status !== "open" ? (
           <div className="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4">
@@ -616,6 +635,8 @@ export default function FundraiserView({
         <div className="mt-6">
           <HowItWorks hasEvent={hasEvent} hasPrize={hasPrize} />
         </div>
+          </>
+        )}
 
         {donating && (
           <DonateSheet
