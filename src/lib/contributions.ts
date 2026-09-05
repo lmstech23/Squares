@@ -1,6 +1,12 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { resolveSupporter } from "@/lib/admission";
+// RELATIVE, WITH EXTENSIONS, not the "@/" alias - same reason board-lock.ts
+// uses them. `node --experimental-strip-types --test` does not read tsconfig
+// paths, so a module importing "@/lib/..." cannot be loaded by a plain
+// `npm test` at all: it dies with ERR_MODULE_NOT_FOUND before the first
+// assertion, even in a file whose suite would have skipped. boardTotals owns
+// the raised total on three surfaces and has to be testable.
+import { prisma } from "./prisma.ts";
+import { resolveSupporter } from "./admission.ts";
 
 // Contributions — fundraiser-donations-addendum.md v2.3, invariants 51-70.
 //

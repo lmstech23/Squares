@@ -2,6 +2,7 @@ import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { purchaseUnit } from "@/lib/board-vocabulary";
+import { boardTotals } from "@/lib/contributions";
 import { redirect, notFound } from "next/navigation";
 import ShareCard from "./share-card";
 import BoardGrid from "./grid";
@@ -105,10 +106,14 @@ export default async function HostBoardPage({ params }: Props) {
   // this screen too: no pot in the header, no "numbers will randomize", no
   // score entry, no winner cards. Absent by construction, not by omission.
   if (isFundraiser) {
-    const raised = await prisma.square.aggregate({
-      where: { boardId: board.boardId, paymentStatus: "paid" },
-      _sum: { pricePaidCents: true },
-    });
+    // THE SAME LEDGER THE PUBLIC BAR AND THE DONATIONS PAGE READ.
+    //
+    // Fixed here as well as on the public page, because the alternative is
+    // worse than the bug: with only the public side corrected, a host with a
+    // donation would see one total on her board page and a different one on
+    // the board her contributors are looking at. Same defect, same line,
+    // three surfaces - boardTotals is now the only one.
+    const totals = await boardTotals(board.boardId);
 
     // Sign-up sheet state for the COMPACT ENTRY POINT ONLY. Management lives on
     // /host/boards/[id]/volunteers (§8, S3b); this page needs open/closed and
@@ -368,7 +373,7 @@ export default async function HostBoardPage({ params }: Props) {
             is no single price to multiply by. This reuses the aggregate already
             computed above for FundraiserPanel; no extra query. */}
         <p className="text-sm text-gray-400 mt-0.5">
-          {`$${(((board.finalRaisedCents ?? raised._sum.pricePaidCents) ?? 0) / 100).toFixed(2)} raised`}
+          {`$${((board.finalRaisedCents ?? totals.raisedCents) / 100).toFixed(2)} raised`}
           {` · ${byStatus("paid").length} of ${board.totalSquares} ${hostUnit.many} confirmed`}
         </p>
         {board.causeDescription && (
@@ -423,7 +428,7 @@ export default async function HostBoardPage({ params }: Props) {
           hasEvent={board.event != null}
           hasPrize={board.prizePoolPercent > 0}
           finalRaisedCents={board.finalRaisedCents}
-          raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
+          raisedCents={board.finalRaisedCents ?? totals.raisedCents}
           goalCents={board.fundraisingGoalCents}
           confirmedCount={byStatus("paid").length}
           awaitingCount={awaiting.length}

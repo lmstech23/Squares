@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { countsTowardRaised } from "@/lib/contributions";
 import { resolveHoldBatch } from "@/lib/checkout-holds";
 
 // Campaign close — fundraiser-money-state-machine.md §7.
@@ -133,14 +134,24 @@ export async function closeBoard(
   // No finalPrizePoolCents and no draw: Phase A boards carry no prize, so
   // there is nothing to compute and nothing to enable.
   const finalRaisedCents = await prisma.$transaction(async (tx) => {
-    // Recompute from confirmed squares only, as a sum of pricePaidCents —
-    // never count times price (invariant 43). A board with early-bird squares
-    // has no single price to multiply by.
-    const sum = await tx.square.aggregate({
-      where: { boardId, paymentStatus: "paid" },
-      _sum: { pricePaidCents: true },
+    // FROM THE LEDGER, NOT THE SQUARES.
+    //
+    // This summed Square.pricePaidCents, so a campaign that raised $4,000 in
+    // tickets and $1,000 in donations FROZE ITS FINAL TOTAL AT $4,000 - and
+    // finalRaisedCents is write-once, so the donations were lost from the
+    // number permanently, on the surface contributors read after close.
+    //
+    // Still never count times price (invariant 43): this is a sum of
+    // totalPaidCents over confirmed, unvoided contributions - the same
+    // definition boardTotals uses, filtered by the same `countsTowardRaised`.
+    //
+    // Fundraiser-only, as this whole module is (`not_fundraiser` above), so
+    // Game Day is untouched.
+    const sum = await tx.contribution.aggregate({
+      where: { boardId, ...countsTowardRaised },
+      _sum: { totalPaidCents: true },
     });
-    const total = sum._sum.pricePaidCents ?? 0;
+    const total = sum._sum.totalPaidCents ?? 0;
 
     // Conditional on finalRaisedCents still being null. Two concurrent
     // finalizations cannot both write, and the second reads back the first

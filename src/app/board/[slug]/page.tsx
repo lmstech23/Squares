@@ -5,6 +5,7 @@ import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
 import { donationReturnState } from "@/lib/donation-return";
+import { boardTotals } from "@/lib/contributions";
 import { issueSupporterAccessLink, mayClaim } from "@/lib/signups";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
@@ -102,13 +103,22 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
   // That separation is the point — every item on v2 §7's "must not appear"
   // list leaked in by a shared code path.
   if (board.boardType === "fundraiser") {
-    // `raised` is the sum of pricePaidCents over confirmed squares, never a
-    // count multiplied by a price — invariant 43. Summed in the database so a
-    // partially-early-bird board is exact.
-    const raised = await prisma.square.aggregate({
-      where: { boardId: board.boardId, paymentStatus: "paid" },
-      _sum: { pricePaidCents: true },
-    });
+    // RAISED IS THE LEDGER, NOT THE SQUARES.
+    //
+    // This summed Square.pricePaidCents over paid squares, which silently
+    // excludes every donation - a $500 gift moved the host ledger and left the
+    // public progress bar unchanged. CLAUDE.md states the rule plainly:
+    // "raisedCents is the sum of totalPaidCents over confirmed contributions
+    // and includes donations."
+    //
+    // boardTotals is the SAME function the host donations page uses, so the
+    // two surfaces cannot disagree. It filters `confirmed AND voidedAt IS
+    // NULL` - both halves, per the schema comment: testing status alone
+    // "silently resurrects voided money into totals".
+    //
+    // Prize math is untouched and still reads the square basis, never this
+    // (invariant 57, and invariant 49 as amended).
+    const totals = await boardTotals(board.boardId);
 
     // Distinct contributors. Emails are counted server-side and never sent to
     // the client — only the count crosses.
@@ -271,7 +281,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         price={price}
         donation={donation}
         timezone={board.timezone}
-        raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
+        raisedCents={board.finalRaisedCents ?? totals.raisedCents}
         goalCents={board.fundraisingGoalCents}
         supporterCount={supporters.length}
         openCount={openCount}

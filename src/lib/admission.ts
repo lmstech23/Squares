@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+// Relative, with the extension - see the note in contributions.ts.
+import { prisma } from "./prisma.ts";
 
 // Admission — fundraiser-admission-addendum.md v2.0.
 //
