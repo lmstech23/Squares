@@ -273,55 +273,71 @@ export default function ClaimSheet({
 
   // RESERVED — the screen that was missing entirely. Mirrors the donate
   // sheet's post-submit shape: confirmation, the handles, what happens next.
+  //
+  // THIS IS A RECEIPT, NOT A CONVERSATION. It is written in the third person
+  // on purpose: an earlier draft used "you"/"your" nine times on one screen,
+  // which reads as the app narrating the contributor's feelings back at her.
+  // "Your host" is gone for the same reason and one more — the host is not
+  // hers.
   if (reserved) {
+    const reservedTotal = reserved.count * priceCents;
     return (
       <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50">
         <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
           <h2 className="text-base font-medium">
             {reserved.count} {reserved.count === 1 ? u.one : u.many} reserved
           </h2>
-          <p className="mt-1 text-xs text-gray-500 leading-relaxed">
-            {/* NO TIMER PROMISED. A cash reservation does not auto-expire —
-                the host releases it at her discretion — so a countdown here
-                would be inventing a deadline that does not exist. */}
-            They&apos;re held for you until the host marks your payment
-            received. Nothing expires on a clock.
+          {/* MAKES NO CLAIM ABOUT DURATION, deliberately. The previous line
+              said "nothing expires on a clock", which is false under the money
+              doc: a cash reservation is capped by the cash-hold window and by
+              campaign close, and the scheduled close auto-releases whatever is
+              unresolved at the cutoff. This is a PLACEHOLDER until the real
+              expiry semantics are settled — do not put a duration back here
+              before then. */}
+          <p className="mt-1 text-sm text-gray-400">
+            Reserved until the host confirms payment.
           </p>
 
           <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3">
             <DirectPaymentHandles
-              amountLabel={money(reserved.count * priceCents)}
+              amountLabel={money(reservedTotal)}
               handles={handles}
             />
           </div>
 
+          {/* FUNCTIONAL, NOT DECORATIVE. Four handles, no reference, and a host
+              reconciling app notifications by hand: without a name on the
+              transfer there is nothing to match a payment to a reservation.
+              Uses the name already captured at reservation — no new field, no
+              placeholder. */}
+          <p className="mt-3 text-sm text-gray-300">
+            Include the name &ldquo;{name.trim()}&rdquo; in the payment note.
+          </p>
+
           <div className="mt-4">
             <p className="text-sm font-medium">What happens next</p>
             <ol className="mt-2 space-y-1.5 text-sm text-gray-400 list-decimal list-inside">
-              <li>Send the amount above using any of those.</li>
-              <li>Your host marks your payment received.</li>
+              <li>Send {money(reservedTotal)} using any of the options above.</li>
+              <li>The host marks the payment received.</li>
               <li>
                 {hasEvent
-                  ? "Your admission passes arrive by email."
-                  : "Your receipt arrives by email."}
+                  ? "Admission passes arrive by email."
+                  : "A receipt arrives by email."}
               </li>
             </ol>
           </div>
 
           {wantsToHelp && (
-            <p className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3 text-sm text-gray-300">
-              {/* NO REDIRECT PROMISED HERE. There is no ticket yet: the
-                  supporter does not go active until the host confirms, so
-                  there is no sign-up link to send them to. Say where it will
-                  come from instead of implying it is one tap away. */}
-              You offered to help — your sign-up link comes with your
-              confirmation email.
+            <p className="mt-4 text-sm text-gray-400">
+              Volunteer sign-up link is included with the confirmation email.
             </p>
           )}
 
+          {/* STAYS, AND STAYS VISIBLE. On the direct-payment path this screen
+              is the pre-payment moment, and the money doc requires the
+              no-refund policy be disclosed before payment. Quiet, not absent. */}
           <p className="mt-4 text-xs text-gray-600 leading-relaxed">
-            Contributions are final. Once your payment is confirmed it cannot
-            be refunded.
+            Contributions are final and cannot be refunded once confirmed.
           </p>
 
           <button
