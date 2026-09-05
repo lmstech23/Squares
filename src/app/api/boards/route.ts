@@ -3,6 +3,7 @@ import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { ticketCountFor } from "@/lib/board-inventory";
 import { Prisma } from "@prisma/client";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { generateSlug } from "@/lib/slug";
@@ -50,7 +51,11 @@ const PERIOD_LABELS: Record<string, string[]> = {
 
 type BoardType = "game" | "fundraiser";
 
+// Game Day still offers a fixed set of grid sizes — its board IS the grid, and
+// 25/50/75/100 are the shapes that draw. Fundraiser no longer uses this: its
+// inventory is derived from goal and price (src/lib/board-inventory.ts).
 const VALID_SQUARE_COUNTS = [25, 50, 75, 100];
+void VALID_SQUARE_COUNTS;
 
 /** Phase A is single-region — v2 §5. IANA, never a fixed offset. */
 const BOARD_TIMEZONE = "America/New_York";
@@ -241,13 +246,13 @@ export async function POST(request: Request) {
       // ---------- Fundraiser — v2 §5 ----------
       // No sport, teams, periods, payout split, or host cut. If any of those
       // arrive they are ignored, not stored.
-      totalSquares = body.totalSquares ?? 100;
-      if (!VALID_SQUARE_COUNTS.includes(totalSquares)) {
-        return NextResponse.json(
-          { error: "Number of squares must be 25, 50, 75, or 100." },
-          { status: 400 }
-        );
-      }
+      // INVENTORY IS DERIVED, NOT SUBMITTED. `body.totalSquares` is ignored on
+      // a fundraiser: the count follows from the goal and the regular price, so
+      // accepting a client value would let the two disagree. See
+      // src/lib/board-inventory.ts.
+      //
+      // Computed after the goal and price are validated, below.
+      totalSquares = 0;
 
       // Phase A is single-region. Hardcoded rather than selected, and stored
       // as an IANA zone rather than a fixed offset: "EST" as a literal -5
@@ -297,17 +302,32 @@ export async function POST(request: Request) {
         }
       }
 
-      // Optional host-entered goal. Null means no progress bar — v2 §7.
-      let fundraisingGoalCents: number | null = null;
-      if (body.fundraisingGoalCents != null) {
-        fundraisingGoalCents = body.fundraisingGoalCents;
-        if (!Number.isInteger(fundraisingGoalCents) || fundraisingGoalCents < 100) {
-          return NextResponse.json(
-            { error: "Fundraising goal must be at least $1." },
-            { status: 400 }
-          );
-        }
+      // REQUIRED NOW, because it determines inventory. It was optional while it
+      // only drove a progress bar (v2 §7); a board cannot be sized without it.
+      // Boards created before this change may still carry null and every
+      // consumer still handles that — nothing is backfilled.
+      if (body.fundraisingGoalCents == null) {
+        return NextResponse.json(
+          { error: "A fundraising goal is required — it sets how many tickets the board has." },
+          { status: 400 }
+        );
       }
+      const fundraisingGoalCents: number = body.fundraisingGoalCents;
+      if (!Number.isInteger(fundraisingGoalCents) || fundraisingGoalCents < 100) {
+        return NextResponse.json(
+          { error: "Fundraising goal must be at least $1." },
+          { status: 400 }
+        );
+      }
+
+      const derived = ticketCountFor(fundraisingGoalCents, body.squarePrice);
+      if (derived == null || derived < 1) {
+        return NextResponse.json(
+          { error: "The goal and ticket price do not produce a usable number of tickets." },
+          { status: 400 }
+        );
+      }
+      totalSquares = derived;
 
       const cashHoldDays = body.cashHoldDays ?? 7;
       if (!Number.isInteger(cashHoldDays) || cashHoldDays < 1 || cashHoldDays > 60) {

@@ -38,10 +38,14 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { parseZoned } from "@/lib/zoned-time";
+import { ticketCountFor } from "@/lib/board-inventory";
 import {
   hasConfirmedContribution,
   EVENT_FIELDS_LOCKED_AFTER_CONTRIBUTION,
   LOCK_REASON,
+  pricingLocks,
+  EARLY_BIRD_LOCK_REASON,
+  REGULAR_LOCK_REASON,
 } from "@/lib/board-lock";
 
 interface Props {
@@ -59,6 +63,10 @@ type Body = {
   endsAt?: string | null;
   timezone?: string | null;
   fundraisingGoalCents?: number | null;
+  /// Pricing. Locked independently per launch-readiness v2.1 invariant 76.
+  squarePrice?: number;
+  earlyBirdPriceCents?: number | null;
+  earlyBirdEndsAt?: string | null;
 };
 
 export async function PATCH(request: Request, { params }: Props) {
@@ -82,6 +90,10 @@ export async function PATCH(request: Request, { params }: Props) {
         boardType: true,
         // Fallback zone when an event is being ADDED — see effectiveTz.
         timezone: true,
+        squarePrice: true,
+        earlyBirdPriceCents: true,
+        earlyBirdEndsAt: true,
+        fundraisingGoalCents: true,
         event: { select: { id: true, timezone: true, startsAt: true, endsAt: true } },
       },
     });
@@ -108,6 +120,90 @@ export async function PATCH(request: Request, { params }: Props) {
           { status: 400 }
         );
       } else goalCents = g;
+    }
+
+    // --- pricing and inventory ------------------------------------------------
+    //
+    // THREE SEPARATE RULES, deliberately not merged.
+    //
+    // PRICE — launch-readiness v2.1 §1.4, invariant 76: "The early bird fields
+    // lock at the first confirmed square whose priceSource = early_bird. The
+    // regular price (squarePrice) locks at the first confirmed square whose
+    // priceSource = regular. Neither lock affects the other." So after the
+    // first EARLY BIRD sale the regular price may still change — nobody has
+    // bought at it.
+    //
+    // INVENTORY — money doc invariant 16 locks square count at the first
+    // confirmed contribution OF ANY KIND. Ticket numbers are square positions;
+    // an early-bird buyer holding ticket #87 must not have the board shrink.
+    //
+    // GOAL — v2 §7, aspirational, never locked. It simply stops driving
+    // inventory once inventory is locked.
+    const locks = await pricingLocks(board.boardId);
+
+    if ("squarePrice" in body && locks.regularLocked) {
+      return NextResponse.json({ error: REGULAR_LOCK_REASON }, { status: 409 });
+    }
+    if (("earlyBirdPriceCents" in body || "earlyBirdEndsAt" in body) && locks.earlyBirdLocked) {
+      return NextResponse.json({ error: EARLY_BIRD_LOCK_REASON }, { status: 409 });
+    }
+
+    const boardData: Record<string, unknown> = {};
+
+    if ("squarePrice" in body) {
+      const v = body.squarePrice;
+      if (!Number.isInteger(v) || (v as number) < 100) {
+        return NextResponse.json({ error: "Ticket price must be at least $1." }, { status: 400 });
+      }
+      boardData.squarePrice = v;
+    }
+    if ("earlyBirdPriceCents" in body) {
+      const v = body.earlyBirdPriceCents;
+      if (v == null) boardData.earlyBirdPriceCents = null;
+      else {
+        if (!Number.isInteger(v) || v < 100) {
+          return NextResponse.json({ error: "Early bird price must be at least $1." }, { status: 400 });
+        }
+        boardData.earlyBirdPriceCents = v;
+      }
+    }
+    if ("earlyBirdEndsAt" in body) {
+      boardData.earlyBirdEndsAt = body.earlyBirdEndsAt
+        ? new Date(body.earlyBirdEndsAt)
+        : null;
+    }
+
+    // A REAL MESSAGE, not a generic 400 — launch-readiness §1.4 is explicit:
+    // "An 'early bird price' that isn't lower than the regular price is not an
+    // early bird price, and the host has almost certainly typed the two into
+    // the wrong fields."
+    const finalRegular = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
+    const finalEarly =
+      "earlyBirdPriceCents" in boardData
+        ? (boardData.earlyBirdPriceCents as number | null)
+        : board.earlyBirdPriceCents;
+    if (finalEarly != null && finalEarly >= finalRegular) {
+      return NextResponse.json(
+        {
+          error:
+            "The early bird price must be below the ticket price. " +
+            "Check the two amounts are not the wrong way round.",
+        },
+        { status: 400 }
+      );
+    }
+    // The live CHECK also requires an end date whenever an early price exists.
+    if (finalEarly != null) {
+      const finalEnds =
+        "earlyBirdEndsAt" in boardData
+          ? (boardData.earlyBirdEndsAt as Date | null)
+          : board.earlyBirdEndsAt;
+      if (!finalEnds) {
+        return NextResponse.json(
+          { error: "An early bird price needs an end date." },
+          { status: 400 }
+        );
+      }
     }
 
     // --- event fields --------------------------------------------------------
@@ -239,11 +335,49 @@ export async function PATCH(request: Request, { params }: Props) {
 
     // --- write ---------------------------------------------------------------
     await prisma.$transaction(async (tx) => {
-      if (goalCents !== undefined) {
-        await tx.board.update({
-          where: { boardId: board.boardId },
-          data: { fundraisingGoalCents: goalCents },
-        });
+      if (goalCents !== undefined) boardData.fundraisingGoalCents = goalCents;
+      if (Object.keys(boardData).length > 0) {
+        await tx.board.update({ where: { boardId: board.boardId }, data: boardData });
+      }
+
+      // INVENTORY RECALCULATION — only while NOTHING is confirmed. After the
+      // first confirmed square neither a goal change nor a price change
+      // resizes the board; the goal still saves, it just stops driving size.
+      if (!locks.inventoryLocked && (goalCents !== undefined || "squarePrice" in boardData)) {
+        const nextGoal =
+          goalCents !== undefined ? goalCents : board.fundraisingGoalCents;
+        const nextPrice = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
+        const want = ticketCountFor(nextGoal, nextPrice);
+        if (want != null) {
+          const existing = await tx.square.count({ where: { boardId: board.boardId } });
+          if (want > existing) {
+            await tx.square.createMany({
+              data: Array.from({ length: want - existing }, (_, i) => ({
+                boardId: board.boardId,
+                position: existing + i,
+                paymentStatus: "open" as const,
+              })),
+            });
+          } else if (want < existing) {
+            // Only `open` squares may be removed, highest positions first. A
+            // pending or reserved square is somebody's claim in flight; nothing
+            // is confirmed yet, but deleting it would take a hold out from
+            // under a live checkout.
+            const removable = await tx.square.findMany({
+              where: { boardId: board.boardId, paymentStatus: "open" },
+              orderBy: { position: "desc" },
+              take: existing - want,
+              select: { squareId: true },
+            });
+            if (removable.length > 0) {
+              await tx.square.deleteMany({
+                where: { squareId: { in: removable.map((r) => r.squareId) } },
+              });
+            }
+            // Falling short is not an error: the board keeps the squares it
+            // could not free, and the count settles once those holds resolve.
+          }
+        }
       }
       if (Object.keys(eventData).length === 0) return;
       if (board.event) {

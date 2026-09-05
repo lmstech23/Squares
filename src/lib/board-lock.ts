@@ -97,3 +97,111 @@ export type LockedEventField = (typeof EVENT_FIELDS_LOCKED_AFTER_CONTRIBUTION)[n
 export const LOCK_REASON =
   "Locked because this campaign has confirmed contributions. " +
   "Event timing is part of what contributors agreed to when they gave.";
+
+/**
+ * The three independent locks that govern a fundraiser's pricing and size.
+ *
+ * INVENTORY and PRICE are separate rules and must not be merged.
+ *
+ * INVENTORY — money doc invariant 16 already locks *square count* at the first
+ * confirmed contribution. What changed is that the host no longer sets it
+ * directly; it is derived. The trigger is ANY confirmed square, early bird or
+ * regular, because TICKET NUMBERS ARE SQUARE POSITIONS: an early-bird buyer
+ * holding ticket #87 must not have the board shrink underneath her.
+ *
+ * PRICE — launch-readiness v2.1 §1.4, invariant 76:
+ *
+ *   "The early bird fields (earlyBirdPriceCents, earlyBirdEndsAt) lock at the
+ *    first confirmed square whose priceSource = early_bird. The regular price
+ *    (squarePrice) locks at the first confirmed square whose priceSource =
+ *    regular. Neither lock affects the other."
+ *
+ * DERIVING priceSource WITHOUT THE COLUMN. There is no `priceSource` enum in
+ * this schema and none is being added. The source is derived by comparing a
+ * confirmed square's `pricePaidCents` against the board's two prices, which is
+ * sound ONLY because `boards_early_bird_coherent` guarantees they are distinct:
+ *
+ *   CHECK (early_bird_price_cents IS NULL
+ *          OR (early_bird_ends_at IS NOT NULL
+ *              AND early_bird_price_cents < square_price))
+ *
+ * The addendum warns that derivation by comparison "silently produces the wrong
+ * answer if the CHECK is ever relaxed". IT IS NOT RELIED ON HERE. That CHECK is
+ * live in PRODUCTION but is absent from `prisma/migrations/0_init` and from
+ * daali-dev, so any database rebuilt from migrations does not have it — found
+ * while testing this change and reported separately.
+ *
+ * So this function does not assume the prices are distinct. If they are equal,
+ * a confirmed square at that amount could have been bought under either, and
+ * BOTH lock. The comparison is only trusted where it is unambiguous.
+ *
+ * A confirmed square matching NEITHER price is treated as locking BOTH. It
+ * should be impossible — the locks below are what stop a price moving out from
+ * under a confirmed square — so its existence means an assumption has already
+ * failed, and the safe response to that is to stop allowing price edits rather
+ * than to guess which price it was.
+ */
+export interface PricingLocks {
+  /** A confirmed square exists at all. Board size is fixed. */
+  inventoryLocked: boolean;
+  /** A confirmed square was bought at the early bird price. */
+  earlyBirdLocked: boolean;
+  /** A confirmed square was bought at the regular price. */
+  regularLocked: boolean;
+}
+
+export async function pricingLocks(
+  boardId: string,
+  client: Prisma.TransactionClient | typeof defaultClient = defaultClient
+): Promise<PricingLocks> {
+  const board = await client.board.findUnique({
+    where: { boardId },
+    select: { squarePrice: true, earlyBirdPriceCents: true },
+  });
+  if (!board) {
+    return { inventoryLocked: true, earlyBirdLocked: true, regularLocked: true };
+  }
+
+  const confirmed = await client.square.findMany({
+    where: { boardId, paymentStatus: "paid" },
+    select: { pricePaidCents: true },
+  });
+
+  if (confirmed.length === 0) {
+    return { inventoryLocked: false, earlyBirdLocked: false, regularLocked: false };
+  }
+
+  // Equal prices make the comparison meaningless — lock both rather than guess.
+  const ambiguous =
+    board.earlyBirdPriceCents != null && board.earlyBirdPriceCents === board.squarePrice;
+  if (ambiguous) {
+    return { inventoryLocked: true, earlyBirdLocked: true, regularLocked: true };
+  }
+
+  let earlyBirdLocked = false;
+  let regularLocked = false;
+  for (const sq of confirmed) {
+    // A Game Day square, or a fundraiser square from before pricePaidCents
+    // existed, carries null. Fall back to the board price it must have been.
+    const paid = sq.pricePaidCents ?? board.squarePrice;
+    if (board.earlyBirdPriceCents != null && paid === board.earlyBirdPriceCents) {
+      earlyBirdLocked = true;
+    } else if (paid === board.squarePrice) {
+      regularLocked = true;
+    } else {
+      earlyBirdLocked = true;
+      regularLocked = true;
+    }
+  }
+
+  return { inventoryLocked: true, earlyBirdLocked, regularLocked };
+}
+
+/** Shown beside a disabled price field. */
+export const EARLY_BIRD_LOCK_REASON =
+  "Locked because tickets have been bought at the early bird price.";
+export const REGULAR_LOCK_REASON =
+  "Locked because tickets have been bought at this price.";
+export const INVENTORY_LOCK_REASON =
+  "The number of tickets is fixed once the first contribution is confirmed — " +
+  "ticket numbers are already issued.";

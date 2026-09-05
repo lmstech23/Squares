@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ticketCountFor } from "@/lib/board-inventory";
 import { useRouter } from "next/navigation";
 
 // Fundraiser create form — fundraiser-board-v2.md §5.
@@ -12,7 +13,6 @@ import { useRouter } from "next/navigation";
 // server never accepts it — a host must not be able to switch on a drawing
 // that has nothing behind it (v2 §16).
 
-const SQUARE_COUNTS = [25, 50, 75, 100];
 
 const inputClass =
   "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
@@ -35,9 +35,11 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
 
   const [gameName, setGameName] = useState("");
   const [causeDescription, setCauseDescription] = useState("");
-  const [totalSquares, setTotalSquares] = useState(100);
   const [price, setPrice] = useState("");
   const [goal, setGoal] = useState("");
+  // Unchecked by default. Early bird is the exception, not the shape of the
+  // form — asking every host to consider it costs more attention than it saves.
+  const [earlyBirdOn, setEarlyBirdOn] = useState(false);
   const [earlyBirdPrice, setEarlyBirdPrice] = useState("");
   const [earlyBirdEndsAt, setEarlyBirdEndsAt] = useState("");
   const [campaignEndsAt, setCampaignEndsAt] = useState("");
@@ -62,13 +64,16 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
     ? Math.round(parseFloat(earlyBirdPrice) * 100)
     : null;
 
-  // Live preview — v2 §5. A range when early bird is set, because the total
-  // depends on when squares sell: every square early is the low end, none
-  // sold early is the high end. Flat pricing collapses it to one figure.
-  const showPreview = priceCents >= 100;
-  const highTotal = priceCents * totalSquares;
-  const lowTotal =
-    earlyCents && earlyCents < priceCents ? earlyCents * totalSquares : highTotal;
+  // DERIVED INVENTORY — always the REGULAR price. Early bird is a temporary
+  // discount, not a resize: a $5,000 goal at $50 makes 100 tickets even if the
+  // first twenty sell at $40.
+  //
+  // The old preview showed a RANGE ("if all 100 squares fill you raise
+  // $2,500 – $3,000") because the total depended on when squares sold. That
+  // sentence is gone: the count is no longer something she chose, so the thing
+  // worth telling her is what her numbers produced.
+  const ticketCount = ticketCountFor(goalCents, priceCents);
+  const highTotal = priceCents * (ticketCount ?? 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,11 +86,19 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
       setError("Contribution per square must be at least $1.");
       return;
     }
-    if (goal && (!goalCents || goalCents < 100)) {
-      setError("Fundraising goal must be at least $1.");
+    if (!goalCents || goalCents < 100) {
+      setError("A fundraising goal is required — it sets how many tickets the board has.");
       return;
     }
-    if (earlyBirdPrice) {
+    if (earlyBirdOn) {
+      if (!earlyBirdPrice.trim()) {
+        setError("Enter an early bird ticket price, or turn Early Bird off.");
+        return;
+      }
+      if (!earlyBirdEndsAt) {
+        setError("Choose the date early bird pricing ends, or turn Early Bird off.");
+        return;
+      }
       if (!earlyCents || earlyCents < 100) {
         setError("Early bird price must be at least $1.");
         return;
@@ -125,7 +138,6 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           boardType: "fundraiser",
           gameName: gameName.trim(),
           causeDescription: causeDescription.trim() || null,
-          totalSquares,
           squarePrice: priceCents,
           fundraisingGoalCents: goalCents,
           campaignEndsAt,
@@ -211,30 +223,13 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         />
       </div>
 
-      {/* --- Squares and price --- */}
-      <div>
-        <span className={labelClass}>Number of squares</span>
-        <div className="grid grid-cols-4 gap-2">
-          {SQUARE_COUNTS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setTotalSquares(n)}
-              className={`rounded-lg border py-2.5 text-sm font-medium transition-colors ${
-                totalSquares === n
-                  ? "border-green-500 bg-green-950/20 text-white"
-                  : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-      </div>
-
+      {/* --- Price and goal. NO SQUARE COUNT: inventory is derived from these
+           two (src/lib/board-inventory.ts). The host was previously asked to
+           choose 25/50/75/100, a question about grid mechanics that has no
+           relationship to what she needs to raise. --- */}
       <div>
         <label htmlFor="squarePrice" className={labelClass}>
-          Contribution per square
+          Ticket price
         </label>
         <input
           id="squarePrice"
@@ -251,7 +246,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
 
       <div>
         <label htmlFor="goal" className={labelClass}>
-          Fundraising goal <span className="text-gray-600">(optional)</span>
+          Fundraising goal
         </label>
         <input
           id="goal"
@@ -265,16 +260,42 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           className={inputClass}
         />
         <p className="text-xs text-gray-600 mt-1.5">
-          Shows a progress bar on the board. Leave blank for none. You can
-          change this any time.
+          Sets how many tickets the board has, and shows a progress bar. You
+          can change the goal later; the ticket count is fixed once the first
+          contribution is confirmed.
         </p>
       </div>
 
-      {/* --- Early bird — money doc §8B --- */}
+      {/* --- Early bird — money doc §8B. Opt-in, off by default. --- */}
       <div className="rounded-lg border border-gray-800 p-4 space-y-4">
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={earlyBirdOn}
+            onChange={(e) => {
+              setEarlyBirdOn(e.target.checked);
+              // Clearing on uncheck is what makes the checkbox the single
+              // source of truth: a stale price left in a hidden field would
+              // still be submitted.
+              if (!e.target.checked) {
+                setEarlyBirdPrice("");
+                setEarlyBirdEndsAt("");
+              }
+            }}
+            className="mt-0.5 accent-green-500"
+          />
+          <span>
+            <span className="block text-sm">Offer Early Bird pricing</span>
+            <span className="block text-xs text-gray-600 mt-0.5">
+              A lower price until a date you choose.
+            </span>
+          </span>
+        </label>
+
+        {earlyBirdOn && (
         <div>
           <label htmlFor="earlyBirdPrice" className={labelClass}>
-            Early bird price <span className="text-gray-600">(optional)</span>
+            Early bird ticket price
           </label>
           <input
             id="earlyBirdPrice"
@@ -288,12 +309,13 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
             className={inputClass}
           />
           <p className="text-xs text-gray-600 mt-1.5">
-            Must be below the standard price. The price is fixed when a square
-            is claimed, not when payment lands.
+            Must be below the ticket price. The price is fixed when a ticket is
+            claimed, not when payment lands.
           </p>
         </div>
+        )}
 
-        {earlyBirdPrice && (
+        {earlyBirdOn && (
           <div>
             <label htmlFor="earlyBirdEndsAt" className={labelClass}>
               Early bird ends
@@ -480,21 +502,26 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         </div>
       </div>
 
-      {/* --- Live preview --- */}
-      {showPreview && (
+      {/* --- What the inputs produce. Shown BEFORE submitting, because the
+           ticket count is now a consequence of her numbers rather than
+           something she chose, and discovering it after creation is the
+           failure this replaces. --- */}
+      {ticketCount != null && (
         <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
           <p className="text-sm">
-            If all {totalSquares} squares fill you raise{" "}
-            <span className="font-semibold">
-              {lowTotal === highTotal
-                ? money(highTotal)
-                : `${money(lowTotal)} – ${money(highTotal)}`}
-            </span>
+            <span className="font-semibold">{ticketCount}</span>{" "}
+            {ticketCount === 1 ? "ticket" : "tickets"} at {money(priceCents)}
           </p>
-          {lowTotal !== highTotal && (
-            <p className="text-xs text-gray-600 mt-1.5">
-              A range because the total depends on when squares sell — the low
-              end is every square at the early bird price.
+          <p className="text-xs text-gray-600 mt-1.5">
+            Enough to reach {money(goalCents ?? 0)}
+            {highTotal > (goalCents ?? 0)
+              ? ` — selling every ticket raises ${money(highTotal)}.`
+              : "."}
+          </p>
+          {earlyBirdOn && earlyCents && earlyCents < priceCents && (
+            <p className="text-xs text-gray-600 mt-1">
+              Early bird does not change the count — it is a discount, not a
+              smaller board.
             </p>
           )}
         </div>
