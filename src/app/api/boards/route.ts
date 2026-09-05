@@ -3,7 +3,7 @@ import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { ticketCountFor } from "@/lib/board-inventory";
+import { validateTicketCount } from "@/lib/board-inventory";
 import { Prisma } from "@prisma/client";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { generateSlug } from "@/lib/slug";
@@ -320,14 +320,14 @@ export async function POST(request: Request) {
         );
       }
 
-      const derived = ticketCountFor(fundraisingGoalCents, body.squarePrice);
-      if (derived == null || derived < 1) {
-        return NextResponse.json(
-          { error: "The goal and ticket price do not produce a usable number of tickets." },
-          { status: 400 }
-        );
+      // THE SERVER CHECK IS THE ONE THAT MATTERS. The client validates as she
+      // types, but it can be bypassed, and the failure mode of an uncapped
+      // count here is a route attempting to insert a million rows.
+      const derived = validateTicketCount(fundraisingGoalCents, body.squarePrice);
+      if (!derived.ok) {
+        return NextResponse.json({ error: derived.error }, { status: 400 });
       }
-      totalSquares = derived;
+      totalSquares = derived.count;
 
       const cashHoldDays = body.cashHoldDays ?? 7;
       if (!Number.isInteger(cashHoldDays) || cashHoldDays < 1 || cashHoldDays > 60) {

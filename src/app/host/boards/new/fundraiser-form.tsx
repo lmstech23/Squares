@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ticketCountFor } from "@/lib/board-inventory";
+import { ticketCountFor, MAX_TICKETS, TOO_MANY_TICKETS } from "@/lib/board-inventory";
 import { useRouter } from "next/navigation";
 
 // Fundraiser create form — fundraiser-board-v2.md §5.
@@ -73,6 +73,9 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   // sentence is gone: the count is no longer something she chose, so the thing
   // worth telling her is what her numbers produced.
   const ticketCount = ticketCountFor(goalCents, priceCents);
+  // MVP safety cap. Shown as she types, and enforced again on the server —
+  // this one is a courtesy, that one is the guarantee.
+  const tooManyTickets = ticketCount != null && ticketCount > MAX_TICKETS;
   const highTotal = priceCents * (ticketCount ?? 0);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -83,11 +86,15 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
       return;
     }
     if (!priceCents || priceCents < 100) {
-      setError("Contribution per square must be at least $1.");
+      setError("Ticket price must be at least $1.");
       return;
     }
     if (!goalCents || goalCents < 100) {
       setError("A fundraising goal is required — it sets how many tickets the board has.");
+      return;
+    }
+    if (tooManyTickets) {
+      setError(TOO_MANY_TICKETS);
       return;
     }
     if (earlyBirdOn) {
@@ -387,8 +394,9 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
               This fundraiser includes event admission
             </span>
             <span className="block text-xs text-gray-600 mt-0.5">
-              Each confirmed square is one ticket to the event. Contributors
-              who aren&apos;t attending can donate their tickets at checkout.
+              Each confirmed ticket includes one admission pass to the event.
+              Contributors who aren&apos;t attending can donate their passes at
+              checkout.
             </span>
           </span>
         </label>
@@ -506,7 +514,13 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
            ticket count is now a consequence of her numbers rather than
            something she chose, and discovering it after creation is the
            failure this replaces. --- */}
-      {ticketCount != null && (
+      {tooManyTickets && (
+        <div className="rounded-lg border border-red-900/60 bg-red-950/20 p-4">
+          <p className="text-sm text-red-300">{TOO_MANY_TICKETS}</p>
+        </div>
+      )}
+
+      {ticketCount != null && !tooManyTickets && (
         <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
           <p className="text-sm">
             <span className="font-semibold">{ticketCount}</span>{" "}

@@ -38,7 +38,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { parseZoned } from "@/lib/zoned-time";
-import { ticketCountFor } from "@/lib/board-inventory";
+import { ticketCountFor, validateTicketCount } from "@/lib/board-inventory";
 import {
   hasConfirmedContribution,
   EVENT_FIELDS_LOCKED_AFTER_CONTRIBUTION,
@@ -203,6 +203,19 @@ export async function PATCH(request: Request, { params }: Props) {
           { error: "An early bird price needs an end date." },
           { status: 400 }
         );
+      }
+    }
+
+    // The resize path below reaches the same ceiling as creation, so it is
+    // rejected here rather than silently declining to resize.
+    if (!locks.inventoryLocked && (goalCents !== undefined || "squarePrice" in boardData)) {
+      const nextGoal = goalCents !== undefined ? goalCents : board.fundraisingGoalCents;
+      const nextPrice = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
+      if (nextGoal != null) {
+        const check = validateTicketCount(nextGoal, nextPrice);
+        if (!check.ok) {
+          return NextResponse.json({ error: check.error }, { status: 400 });
+        }
       }
     }
 

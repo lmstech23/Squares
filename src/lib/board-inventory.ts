@@ -31,3 +31,44 @@ export function ticketCountFor(
   // one outcome the derivation exists to prevent.
   return Math.ceil(goalCents / regularPriceCents);
 }
+
+/**
+ * MVP SAFETY CAP, not a product ceiling.
+ *
+ * Without it, `ceil(goal / price)` is unbounded: a $1,000,000,000 goal at $1 a
+ * ticket asks the create route to insert a billion square rows. The cap exists
+ * to stop a typo becoming an outage, and nothing is built toward raising it or
+ * configuring it.
+ */
+export const MAX_TICKETS = 1000;
+
+export type TicketCountResult =
+  | { ok: true; count: number }
+  | { ok: false; error: string };
+
+export const TOO_MANY_TICKETS =
+  "This goal and ticket price would require more than 1,000 tickets. " +
+  "Increase the ticket price or lower the fundraising goal.";
+
+/**
+ * The count, or the reason there isn't one.
+ *
+ * NEVER SILENTLY CLAMPS. Quietly building a 1,000-ticket board for a host who
+ * asked for 40,000 would leave her with a board that cannot reach the goal she
+ * typed, discovered weeks later. Refusing tells her now, while the two numbers
+ * she needs to change are still in front of her.
+ */
+export function validateTicketCount(
+  goalCents: number | null | undefined,
+  regularPriceCents: number | null | undefined
+): TicketCountResult {
+  const count = ticketCountFor(goalCents, regularPriceCents);
+  if (count == null || count < 1) {
+    return {
+      ok: false,
+      error: "The goal and ticket price do not produce a usable number of tickets.",
+    };
+  }
+  if (count > MAX_TICKETS) return { ok: false, error: TOO_MANY_TICKETS };
+  return { ok: true, count };
+}
