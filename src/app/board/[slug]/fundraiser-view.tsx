@@ -4,7 +4,6 @@ import { priceScheduleLabel } from "@/lib/claim-price";
 import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import FundraiserGrid from "./fundraiser-grid";
 import ClaimSheet from "./claim-sheet";
 import DonateSheet from "./donate-sheet";
 import HoldTimer from "./hold-timer";
@@ -440,24 +439,25 @@ export default function FundraiserView({
         </div>
         )}
 
-        {/* The board is the visualization; the button is the action. Nobody
-            should have to study the grid to work out what to do. */}
-        <div className="mt-6">
-          {/* PROGRESS AND AVAILABILITY, NOT A PICKER. Purchase is
-              quantity-first: the sheet assigns the next open squares. A grid
-              that also sold squares would be a second purchase model, and two
-              models means two sets of edge cases for one job. */}
-          <FundraiserGrid squares={squares} />
-        </div>
+        {/* NO GRID. A contributor buys a QUANTITY; the server assigns the
+            positions. The 10x10 grid was the last thing on this page still
+            teaching the square-picking mental model the fundraiser experience
+            exists to hide — even read-only, a grid of numbered cells invites
+            "which one do I get?", which is a question this product has no
+            answer to and does not want asked.
 
-        {/* selectedCount is always 0: nothing on this page selects squares any
-            more — the sheet assigns them from a quantity. The prop stays in the
-            HowItWorks API because Game Day still passes a real count. */}
+            Availability still has to be legible, and it is: the header carries
+            the raised total, the price, the early-bird schedule, the supporter
+            count and how many are left. Those are the facts a grid was
+            conveying; the grid was the least direct way to convey them.
+
+            GAME DAY IS UNAFFECTED. It renders player-board.tsx, not this
+            component, and its grid is the product. */}
+
         <div className="mt-6">
           <HowItWorks
             hasEvent={hasEvent}
             hasPrize={hasPrize}
-            selectedCount={0}
             onCheckout={() => setClaiming(true)}
           />
         </div>

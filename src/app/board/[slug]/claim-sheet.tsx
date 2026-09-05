@@ -350,7 +350,18 @@ export default function ClaimSheet({
               Total — <span className="font-semibold">{money(total)}</span>
             </p>
           )}
-          {selectedPositions.length > 0 && (
+          {/* NUMBERS ONLY ON A PRIZE BOARD. On a prize board these are drawing
+              ENTRY numbers: the contributor verifies them against the public
+              audit before the draw, so they are the point. On a no-prize board
+              they are raw grid positions the contributor never chose and can
+              do nothing with, and a numbered list sitting under a quantity box
+              reads as "here are the ones you picked" — the square-picking
+              model this flow exists to hide.
+
+              The post-purchase confirmation on fundraiser-view already gates
+              its entry line the same way. This makes the sheet agree with it
+              instead of promising numbers that then disappear. */}
+          {hasPrize && selectedPositions.length > 0 && (
             <p className="text-xs text-gray-500 mt-1 tabular-nums">
               {/* Summarised past a dozen. Ninety-seven numbers is not
                   information, it is a wall — and reintroducing a purchase cap
