@@ -1,13 +1,16 @@
 "use client";
 
 import type { PublicPrice } from "@/lib/fundraiser-pricing";
-import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
+import {
+  purchaseUnit,
+  ADMISSION,
+  CONTRIBUTION_THANKS,
+} from "@/lib/board-vocabulary";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ClaimSheet from "./claim-sheet";
 import DonateSheet from "./donate-sheet";
 import HoldTimer from "./hold-timer";
-import HowItWorks from "./how-it-works";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
 //
@@ -432,18 +435,17 @@ export default function FundraiserView({
                 fundraiser contributor bought a ticket, not a grid position; the
                 square number names an internal detail they never chose and
                 cannot use. Game Day keeps its own confirmation copy. */}
-            {/* THE HEADLINE. This block had none: the old "Square #4 is yours"
-                line was removed because it said "square", and nothing replaced
-                it. On a no-prize board with donated admissions that left a
-                green box whose only sentence was a nudge about the total — a
-                contributor came back from paying and was told nothing about
-                their payment. Say it plainly, first. */}
+            {/* THE SAME FIRST LINE AS EVERY OTHER SUCCESSFUL SUBMIT STATE.
+                Four of them exist across three components; the sentence is a
+                constant so they cannot drift apart. What actually happened is
+                the line underneath, never mixed into the thank-you. */}
             <p className="text-sm font-medium text-green-100">
-              Payment received — thank you.
+              {CONTRIBUTION_THANKS}
             </p>
+            <p className="text-sm text-green-200/80 mt-1">Payment received</p>
             <p className="text-sm text-green-200/80 mt-1">
               {confirmation.positions.length}{" "}
-              {confirmation.positions.length === 1 ? u.one : u.many} confirmed.
+              {confirmation.positions.length === 1 ? u.one : u.many} confirmed
             </p>
 
             {/* Entry lines only on a prize board — "Entry #23" means nothing
@@ -471,11 +473,6 @@ export default function FundraiserView({
                 )}
               </p>
             )}
-            <p className="text-xs text-green-200/60 mt-2">
-              You just moved this{" "}
-              {money(currentPrice * confirmation.positions.length)} closer.
-            </p>
-
             {/* Sign-up addendum SS5, as amended: the supporter chooses to go.
                 The button carries the same gate the redirect did — see the
                 comment on the removed effect above. Only a supporter who
@@ -618,7 +615,6 @@ export default function FundraiserView({
             component, and its grid is the product. */}
 
         <div className="mt-6">
-          <HowItWorks hasEvent={hasEvent} hasPrize={hasPrize} />
         </div>
           </>
         )}

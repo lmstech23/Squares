@@ -76,6 +76,9 @@ type Body = {
   endsAt?: string | null;
   timezone?: string | null;
   fundraisingGoalCents?: number | null;
+  /// v2 §11 lists the description as always editable. Until now nothing
+  /// could edit it: it was set at creation and reachable by no route.
+  causeDescription?: string | null;
   /// Pricing. Locked independently per launch-readiness v2.1 invariant 76.
   squarePrice?: number;
   earlyBirdPriceCents?: number | null;
@@ -122,6 +125,7 @@ export async function PATCH(request: Request, { params }: Props) {
         earlyBirdPriceCents: true,
         earlyBirdEndsAt: true,
         fundraisingGoalCents: true,
+        causeDescription: true,
         hostVenmo: true,
         hostZelle: true,
         hostCashapp: true,
@@ -152,6 +156,15 @@ export async function PATCH(request: Request, { params }: Props) {
           { status: 400 }
         );
       } else goalCents = g;
+    }
+
+    // --- the cause description, which is never locked ------------------------
+    //
+    // NO LENGTH CAP, matching creation, which applies none. Adding one here
+    // would let this route refuse a description creation had already accepted.
+    let boardDataCause: string | null | undefined;
+    if ("causeDescription" in body) {
+      boardDataCause = body.causeDescription?.trim() || null;
     }
 
     // --- pricing and inventory ------------------------------------------------
@@ -460,6 +473,7 @@ export async function PATCH(request: Request, { params }: Props) {
     // --- write ---------------------------------------------------------------
     await prisma.$transaction(async (tx) => {
       if (goalCents !== undefined) boardData.fundraisingGoalCents = goalCents;
+      if (boardDataCause !== undefined) boardData.causeDescription = boardDataCause;
       if (Object.keys(boardData).length > 0) {
         await tx.board.update({ where: { boardId: board.boardId }, data: boardData });
       }

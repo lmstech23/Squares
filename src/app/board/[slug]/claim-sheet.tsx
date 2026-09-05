@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import DirectPaymentHandles from "./direct-payment";
+import {
+  CONTRIBUTION_THANKS,
+  AWAITING_HOST_CONFIRMATION,
+} from "@/lib/board-vocabulary";
 import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
 
 // Claim sheet — fundraiser-board-v2.md §6.
@@ -284,25 +288,26 @@ export default function ClaimSheet({
     return (
       <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50">
         <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
-          <h2 className="text-base font-medium">
+          {/* SAME FIRST LINE AS EVERY OTHER SUCCESSFUL SUBMIT STATE, including
+              here, where no money has arrived yet. This screen is the ONLY one
+              a direct payer ever sees; leaving the thank-you off it means that
+              contributor is never thanked at all. What has and has not
+              happened is said below it, never mixed into it. */}
+          <p className="text-base font-medium">{CONTRIBUTION_THANKS}</p>
+          <h2 className="mt-1 text-sm text-gray-300">
             {reserved.count} {reserved.count === 1 ? u.one : u.many} reserved
           </h2>
-          {/* MAKES NO CLAIM ABOUT DURATION, deliberately. The previous line
-              said "nothing expires on a clock", which is false under the money
-              doc: a cash reservation is capped by the cash-hold window and by
-              campaign close, and the scheduled close auto-releases whatever is
-              unresolved at the cutoff. This is a PLACEHOLDER until the real
-              expiry semantics are settled — do not put a duration back here
-              before then. */}
+          {/* NO CLAIM ABOUT DURATION, deliberately. "Nothing expires on a
+              clock" was false under the money doc: a cash reservation is
+              capped by the cash-hold window and by campaign close, and the
+              scheduled close auto-releases whatever is unresolved. Do not put
+              a duration here before the expiry semantics are settled. */}
           <p className="mt-1 text-sm text-gray-400">
-            Reserved until the host confirms payment.
+            Payment due: {money(reservedTotal)}
           </p>
 
           <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3">
-            <DirectPaymentHandles
-              amountLabel={money(reservedTotal)}
-              handles={handles}
-            />
+            <DirectPaymentHandles amountLabel={null} handles={handles} />
           </div>
 
           {/* FUNCTIONAL, NOT DECORATIVE. Four handles, no reference, and a host
@@ -314,18 +319,14 @@ export default function ClaimSheet({
             Include the name &ldquo;{name.trim()}&rdquo; in the payment note.
           </p>
 
-          <div className="mt-4">
-            <p className="text-sm font-medium">What happens next</p>
-            <ol className="mt-2 space-y-1.5 text-sm text-gray-400 list-decimal list-inside">
-              <li>Send {money(reservedTotal)} using any of the options above.</li>
-              <li>The host marks the payment received.</li>
-              <li>
-                {hasEvent
-                  ? "Admission passes arrive by email."
-                  : "A receipt arrives by email."}
-              </li>
-            </ol>
-          </div>
+          {/* The three-step "What happens next" list collapsed to this. Step
+              one repeated the amount already stated above, and step three
+              described an email that arrives whether or not it is promised
+              here. THE NAME LINE ABOVE IS NOT FILLER and stays: four handles,
+              no reference, and a host reconciling app notifications by hand -
+              without a name on the transfer there is nothing to match a
+              payment to a reservation. */}
+          <p className="mt-4 text-sm text-gray-400">{AWAITING_HOST_CONFIRMATION}</p>
 
           {wantsToHelp && (
             <p className="mt-4 text-sm text-gray-400">

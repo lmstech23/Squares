@@ -27,6 +27,10 @@ interface Props {
   initialStartsAt: string;
   initialEndsAt: string;
   initialTimezone: string;
+  /** The campaign title. Board.gameName - NOT the event name. */
+  initialTitle: string;
+  /** "" means none set. */
+  initialCause: string;
   /** Dollars, as typed. Empty string means no goal. */
   initialGoal: string;
   /** Dollars, as typed. */
@@ -76,6 +80,7 @@ function toCents(v: string): number | null {
 export default function EditFundraiserButton({
   boardId, hasEvent, locked, lockReason,
   initialName, initialVenue, initialStartsAt, initialEndsAt, initialTimezone, initialGoal,
+  initialTitle, initialCause,
   initialPrice, initialEarlyBirdPrice, initialEarlyBirdEndsAt, currentTicketCount,
   initialVenmo, initialZelle, initialCashapp, initialPaypal,
   inventoryLocked, regularLocked, earlyBirdLocked,
@@ -88,6 +93,10 @@ export default function EditFundraiserButton({
   const [startsAt, setStartsAt] = useState(initialStartsAt);
   const [endsAt, setEndsAt] = useState(initialEndsAt);
   const [timezone, setTimezone] = useState(initialTimezone);
+  // THE CAMPAIGN TITLE, and it goes to a DIFFERENT ROUTE than everything else
+  // on this panel - see save(). Board.gameName, never Event.name.
+  const [title, setTitle] = useState(initialTitle);
+  const [cause, setCause] = useState(initialCause);
   const [goal, setGoal] = useState(initialGoal);
   const [price, setPrice] = useState(initialPrice);
   // Reflects whether the board HAS an early bird price, not a stored flag -
@@ -107,6 +116,12 @@ export default function EditFundraiserButton({
   // in here and the form below is the one she already knows.
   const [addingEvent, setAddingEvent] = useState(false);
   const showEventFields = hasEvent || addingEvent;
+
+  // v2 §11: after the first confirmed contribution every title change is
+  // appended to titleHistory by /details. `inventoryLocked` is exactly the
+  // predicate "a confirmed square exists" - reused rather than adding a second
+  // prop that could disagree with it.
+  const titleRecorded = inventoryLocked;
 
   // The regular price actually in force after this save. When the field is
   // locked it is disabled and still holds the stored value, but reading the
@@ -158,6 +173,10 @@ export default function EditFundraiserButton({
         return;
       }
     }
+    if (title.trim().length === 0) {
+      setError("A campaign title is required.");
+      return;
+    }
     // Mirrors the route. At least one handle must survive - clearing Venmo
     // while Zelle remains is fine; clearing the last one leaves contributors a
     // board with nowhere to send money.
@@ -180,7 +199,14 @@ export default function EditFundraiserButton({
       // it merely displayed.
       const body: Record<string, unknown> = {
         fundraisingGoalCents: goalCents,
+        causeDescription: cause.trim() || null,
       };
+      // THE TITLE IS NOT IN THIS BODY, AND MUST NEVER BE.
+      //
+      // `name` on /fundraiser-details is the EVENT name. Putting the campaign
+      // title there would rename the event AND skip the titleHistory append
+      // that v2 §11 requires — two failures from one plausible-looking
+      // line. /details is the title's only owner; it is sent below.
       // A LOCKED PRICE FIELD IS NOT SENT AT ALL. It is disabled and merely
       // displaying its stored value; echoing that value back would be a write
       // the route answers with 409 even though nothing changed.
@@ -219,6 +245,30 @@ export default function EditFundraiserButton({
         setError(data.error ?? "Could not save.");
         return;
       }
+
+      // THE TITLE, SECOND AND SEPARATELY, and only when it actually changed.
+      //
+      // ORDER IS DELIBERATE. Everything else goes first, so a failure there
+      // writes nothing at all. If the title then fails, the host is told
+      // exactly what did and did not save and can retry the cheapest field.
+      // The other order would append a titleHistory entry recording a save the
+      // host believes failed.
+      if (title.trim() !== initialTitle) {
+        const titleRes = await fetch(`/api/host/boards/${boardId}/details`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gameName: title.trim() }),
+        });
+        const titleData = await titleRes.json();
+        if (!titleRes.ok) {
+          router.refresh();
+          setError(
+            "Saved, except the title: " + (titleData.error ?? "could not save it.")
+          );
+          return;
+        }
+      }
+
       setOpen(false);
       router.refresh();
     } catch {
@@ -234,7 +284,7 @@ export default function EditFundraiserButton({
         onClick={() => setOpen(true)}
         className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
       >
-        Edit campaign details
+        Edit details
       </button>
     );
   }
@@ -242,6 +292,38 @@ export default function EditFundraiserButton({
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 space-y-4">
       <h3 className="text-sm font-semibold text-white">Campaign details</h3>
+
+      {/* --- Campaign ---------------------------------------------------------
+          THE TITLE LIVES HERE NOW. It used to be behind a second, low-emphasis
+          "Edit details" link sitting beside this button - two controls with
+          overlapping names editing disjoint fields, which read as duplicates
+          and left the host guessing which one held what.
+
+          It still SAVES to /details, not to this panel's route. See save().
+          ------------------------------------------------------------------- */}
+      <div>
+        <label htmlFor="title" className={labelClass}>Campaign title</label>
+        <input
+          id="title" className={inputClass} value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        {titleRecorded && (
+          <p className="text-xs text-gray-600 mt-1">
+            Changes are recorded now that this campaign has contributions.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label htmlFor="cause" className={labelClass}>
+          What are you raising money for?
+        </label>
+        <textarea
+          id="cause" rows={3} className={inputClass} value={cause}
+          placeholder="Supporters read this first."
+          onChange={(e) => setCause(e.target.value)}
+        />
+      </div>
 
       <div>
         <label htmlFor="goal" className={labelClass}>

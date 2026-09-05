@@ -384,6 +384,38 @@ describe(
       assert.deepEqual(await handles(), before);
     });
 
+    // ---- cause description -------------------------------------------------
+    //
+    // v2 §11 lists the description as always editable. Until this change
+    // nothing could edit it: set at creation, reachable by no route.
+    test("causeDescription saves, and an empty value clears it", async () => {
+      await seedBoard();
+      assert.equal(status200(await call({ causeDescription: "  Band uniforms  " })), 200);
+      let b = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(b.causeDescription, "Band uniforms", "trimmed");
+
+      assert.equal(status200(await call({ causeDescription: "" })), 200);
+      b = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(b.causeDescription, null);
+    });
+
+    // THE TRAP THIS ROUTE CARRIES. `name` here is the EVENT name. The campaign
+    // title is Board.gameName and belongs to /details, which is the only route
+    // that appends to titleHistory. If the consolidated edit panel ever sent
+    // the title here it would rename the event and skip the audit record, so
+    // this asserts the two stay separate.
+    test("`name` writes the EVENT name and never the campaign title", async () => {
+      await seedBoard();
+      const before = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(status200(await call({ name: "Tailgate 2026" })), 200);
+
+      const ev = await db.event.findUniqueOrThrow({ where: { id: eventId } });
+      assert.equal(ev.name, "Tailgate 2026");
+      const after = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(after.gameName, before.gameName, "the campaign title is untouched");
+      assert.equal(after.titleHistory, null, "and no audit record was written here");
+    });
+
     // The 1,000 cap is reached by the resize path too, and is refused rather
     // than silently clamped — but only when a resize is actually on the table.
     test("a goal that would exceed 1,000 tickets is refused", async () => {

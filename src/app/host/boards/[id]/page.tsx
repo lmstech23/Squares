@@ -375,13 +375,6 @@ export default async function HostBoardPage({ params }: Props) {
           <p className="text-sm text-gray-400 mt-1.5">{board.causeDescription}</p>
         )}
         <div className="mt-2 mb-6 space-y-3">
-          <EditDetailsButton
-            boardId={board.boardId}
-            boardType="fundraiser"
-            gameName={board.gameName}
-            teamCol=""
-            teamRow=""
-          />
           <EditFundraiserButton
             boardId={board.boardId}
             hasEvent={eventDetail != null}
@@ -392,6 +385,8 @@ export default async function HostBoardPage({ params }: Props) {
             initialStartsAt={forInput(eventDetail?.startsAt ?? null, eventDetail?.timezone ?? "America/New_York")}
             initialEndsAt={forInput(eventDetail?.endsAt ?? null, eventDetail?.timezone ?? "America/New_York")}
             initialTimezone={eventDetail?.timezone ?? "America/New_York"}
+            initialTitle={board.gameName}
+            initialCause={board.causeDescription ?? ""}
             initialGoal={board.fundraisingGoalCents != null ? String(board.fundraisingGoalCents / 100) : ""}
             initialPrice={String(board.squarePrice / 100)}
             initialEarlyBirdPrice={

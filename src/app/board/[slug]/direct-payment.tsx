@@ -26,32 +26,39 @@ export default function DirectPaymentHandles({
   amountLabel,
   handles,
 }: {
-  /** Pre-formatted, because the two callers format money differently. */
-  amountLabel: string;
+  /**
+   * Pre-formatted, because the callers format money differently.
+   *
+   * NULL SUPPRESSES THE LEAD LINE. The post-submit screens now state the
+   * amount themselves ("Send $25", "Payment due: $40") directly above this, so
+   * the built-in "Send $25 to:" repeated it one line later. The pre-submit
+   * sheets still pass a label — nothing above them says it.
+   */
+  amountLabel: string | null;
   handles: Handles;
 }) {
   return (
     <>
-      <p className="text-sm mb-2">Send {amountLabel} to:</p>
+      {amountLabel && <p className="text-sm mb-2">Send {amountLabel} to:</p>}
       <ul className="space-y-1 text-sm">
         {handles.zelle && (
           <li>
-            <span className="text-gray-500">Zelle</span> {handles.zelle}
+            <span className="text-gray-500">Zelle</span> — {handles.zelle}
           </li>
         )}
         {handles.cashapp && (
           <li>
-            <span className="text-gray-500">Cash App</span> {handles.cashapp}
+            <span className="text-gray-500">Cash App</span> — {handles.cashapp}
           </li>
         )}
         {handles.venmo && (
           <li>
-            <span className="text-gray-500">Venmo</span> {handles.venmo}
+            <span className="text-gray-500">Venmo</span> — {handles.venmo}
           </li>
         )}
         {handles.paypal && (
           <li>
-            <span className="text-gray-500">PayPal</span> {handles.paypal}
+            <span className="text-gray-500">PayPal</span> — {handles.paypal}
           </li>
         )}
       </ul>

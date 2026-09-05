@@ -75,3 +75,22 @@ export function purchaseUnit(board: BoardVocabularyInput): UnitWords {
  * TICKETS; what gets them through the gate is an admission PASS.
  */
 export const ADMISSION: UnitWords = { one: "pass", many: "passes", One: "Pass", Many: "Passes" };
+
+/**
+ * The first line of EVERY successful fundraiser submit state.
+ *
+ * Four screens reach it — ticket by card, ticket by direct payment, donation
+ * by card, donation by direct payment — and they live in three different
+ * components. A constant, because four hand-written copies of one sentence is
+ * four places for it to drift, and the whole point is that it does not.
+ *
+ * IT APPEARS ON THE RESERVATION SCREENS TOO, where no money has arrived yet.
+ * Deliberate: the reservation screen is the ONLY screen a direct payer ever
+ * sees, so leaving the thank-you off it means that contributor is never
+ * thanked at all. What has and has not happened is said on the line below.
+ */
+export const CONTRIBUTION_THANKS = "Thank you for your contribution.";
+
+/** The next-step line wherever payment is still owed. */
+export const AWAITING_HOST_CONFIRMATION =
+  "Payment is recorded once the host confirms receipt.";

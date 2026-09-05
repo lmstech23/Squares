@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import DirectPaymentHandles from "./direct-payment";
+import {
+  CONTRIBUTION_THANKS,
+  AWAITING_HOST_CONFIRMATION,
+} from "@/lib/board-vocabulary";
 
 // Donation-only entry — donations §6.
 //
@@ -138,23 +142,20 @@ export default function DonateSheet({
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
         <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-gray-800 bg-gray-950 p-5 max-h-[92vh] overflow-y-auto">
-          <h2 className="text-base font-medium">Send {money(declared)}</h2>
-          <p className="mt-1 text-xs text-gray-500 leading-relaxed">
-            Use any of these. The host marks it received once it arrives, and
-            your donation counts toward the total then.
+          {/* SAME FIRST LINE AS EVERY OTHER SUCCESSFUL SUBMIT STATE, including
+              here, where no money has arrived yet. This screen is the ONLY one
+              a direct payer ever sees; leaving the thank-you off it means that
+              contributor is never thanked at all. What has and has not
+              happened is the next-step line at the bottom. */}
+          <p className="text-base font-medium">{CONTRIBUTION_THANKS}</p>
+          <h2 className="mt-1 text-sm text-gray-300">Send {money(declared)}</h2>
+          <p className="mt-1 text-sm text-gray-400">
+            Use one of the payment options below.
           </p>
           <div className="mt-4">
-            <DirectPaymentHandles amountLabel={money(declared)} handles={handles} />
+            <DirectPaymentHandles amountLabel={null} handles={handles} />
           </div>
-          <p className="mt-4 text-xs text-gray-600 leading-relaxed">
-            {/* NOTHING IS HELD. The ticket sheet says squares are held because
-                they are inventory taken off the board. A donation takes no
-                inventory, so there is nothing to hold and nothing to expire -
-                invariants 55 and 64. Saying otherwise would be a lie about
-                what this does. */}
-            Nothing is being held and nothing expires. If you change your mind,
-            just don&apos;t send it.
-          </p>
+          <p className="mt-4 text-sm text-gray-400">{AWAITING_HOST_CONFIRMATION}</p>
           <button
             type="button"
             onClick={onClose}
