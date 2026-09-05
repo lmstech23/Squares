@@ -401,6 +401,10 @@ export default async function HostBoardPage({ params }: Props) {
               board.timezone ?? "America/New_York"
             )}
             currentTicketCount={board.totalSquares}
+            initialVenmo={board.hostVenmo ?? ""}
+            initialZelle={board.hostZelle ?? ""}
+            initialCashapp={board.hostCashapp ?? ""}
+            initialPaypal={board.hostPaypal ?? ""}
             inventoryLocked={priceLocks.inventoryLocked}
             regularLocked={priceLocks.regularLocked}
             earlyBirdLocked={priceLocks.earlyBirdLocked}

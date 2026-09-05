@@ -70,7 +70,11 @@ describe(
     }
 
     /** A board matching the production shape: 100 rows, goal $200 at $2. */
-    async function seedBoard(positions?: number[], goal: number = GOAL) {
+    async function seedBoard(
+      positions?: number[],
+      goal: number = GOAL,
+      handles: Record<string, string | null> = { hostZelle: "555-0100", hostVenmo: "@host" }
+    ) {
       const board = await db.board.create({
         data: {
           hostId,
@@ -82,6 +86,7 @@ describe(
           totalSquares: 100,
           timezone: "America/New_York",
           campaignEndsAt: new Date(Date.now() + 7 * 864e5),
+          ...handles,
         },
       });
       boardId = board.boardId;
@@ -103,6 +108,12 @@ describe(
           paymentStatus: "open" as const,
         })),
       });
+    }
+
+    /** Surfaces the server's message on an unexpected non-200. */
+    function status200(r: { status: number; json: { error?: string } }) {
+      if (r.status !== 200) throw new Error("expected 200, got " + r.status + ": " + r.json.error);
+      return r.status;
     }
 
     const rowCount = () => db.square.count({ where: { boardId } });
@@ -269,6 +280,108 @@ describe(
       assert.equal(b.fundraisingGoalCents, 30_000, "aspirational, never locked");
       assert.equal(await rowCount(), 100);
       assert.equal(b.totalSquares, 100);
+    });
+
+    // ---- direct-payment handles ------------------------------------------
+    //
+    // Immutable until now because nothing wrote them, not because anything
+    // protected them. A mistyped Cash App tag sends real money to a stranger.
+
+    const handles = async () =>
+      await db.board.findUniqueOrThrow({
+        where: { boardId },
+        select: { hostVenmo: true, hostZelle: true, hostCashapp: true, hostPaypal: true },
+      });
+
+    test("each handle edits independently", async () => {
+      await seedBoard();
+      assert.equal(status200(await call({ hostVenmo: "@corrected" })), 200);
+      let h = await handles();
+      assert.equal(h.hostVenmo, "@corrected");
+      assert.equal(h.hostZelle, "555-0100", "the others are untouched");
+
+      assert.equal(status200(await call({ hostZelle: "host@example.com" })), 200);
+      h = await handles();
+      assert.equal(h.hostZelle, "host@example.com");
+      assert.equal(h.hostVenmo, "@corrected");
+
+      assert.equal(status200(await call({ hostCashapp: "$daali" })), 200);
+      assert.equal((await handles()).hostCashapp, "$daali");
+
+      assert.equal(status200(await call({ hostPaypal: "paypal.me/daali" })), 200);
+      assert.equal((await handles()).hostPaypal, "paypal.me/daali");
+    });
+
+    // Trimmed, and empty means absent - the same normalisation as creation.
+    test("whitespace is trimmed and an empty string clears the field", async () => {
+      await seedBoard();
+      await call({ hostVenmo: "  @spaced  " });
+      assert.equal((await handles()).hostVenmo, "@spaced");
+      await call({ hostVenmo: "   " });
+      assert.equal((await handles()).hostVenmo, null);
+    });
+
+    test("clearing one handle while another remains succeeds", async () => {
+      await seedBoard();
+      const { status } = await call({ hostVenmo: null });
+      assert.equal(status, 200);
+      const h = await handles();
+      assert.equal(h.hostVenmo, null, "the host stopped using Venmo");
+      assert.equal(h.hostZelle, "555-0100", "and can still be paid");
+    });
+
+    // Creation refuses a board with no handle. An edit must not be able to
+    // produce the state creation refuses to create.
+    test("clearing the LAST handle is refused and writes nothing", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100" });
+      const { status, json } = await call({ hostZelle: null });
+      assert.equal(status, 400);
+      assert.match(json.error, /at least one way to receive payment/);
+      assert.equal((await handles()).hostZelle, "555-0100", "unchanged");
+    });
+
+    test("clearing all four at once is refused", async () => {
+      await seedBoard();
+      const { status, json } = await call({
+        hostVenmo: null, hostZelle: null, hostCashapp: null, hostPaypal: null,
+      });
+      assert.equal(status, 400);
+      assert.match(json.error, /at least one way to receive payment/);
+      const h = await handles();
+      assert.equal(h.hostZelle, "555-0100");
+      assert.equal(h.hostVenmo, "@host");
+    });
+
+    // THE POINT OF THE WHOLE CHANGE. A wrong handle is most urgent while money
+    // is moving, so there is no lock and no gate on contribution state.
+    test("handles edit with confirmed contributions present", async () => {
+      await seedBoard();
+      const first = await db.square.findFirstOrThrow({ where: { boardId } });
+      await db.square.update({
+        where: { squareId: first.squareId },
+        data: { paymentStatus: "paid", pricePaidCents: PRICE, batchId: randomUUID() },
+      });
+      // Everything else on this board is now locked. Handles are not.
+      const { status } = await call({ hostZelle: "corrected@example.com" });
+      assert.equal(status, 200);
+      assert.equal((await handles()).hostZelle, "corrected@example.com");
+    });
+
+    test("handles edit after the campaign has closed", async () => {
+      await seedBoard();
+      await db.board.update({ where: { boardId }, data: { status: "closed" } });
+      const { status } = await call({ hostCashapp: "$late-fix" });
+      assert.equal(status, 200);
+      assert.equal((await handles()).hostCashapp, "$late-fix");
+    });
+
+    // A save that never mentions handles must leave all four alone.
+    test("a save omitting handles leaves all four untouched", async () => {
+      await seedBoard();
+      const before = await handles();
+      const { status } = await call({ venue: "Lot D" });
+      assert.equal(status, 200);
+      assert.deepEqual(await handles(), before);
     });
 
     // The 1,000 cap is reached by the resize path too, and is refused rather

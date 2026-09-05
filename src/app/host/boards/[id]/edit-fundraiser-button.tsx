@@ -36,6 +36,11 @@ interface Props {
   /** `YYYY-MM-DD`, already rendered in the board's zone. */
   initialEarlyBirdEndsAt: string;
   currentTicketCount: number;
+  /** The four direct-payment handles, as stored. "" means not set. */
+  initialVenmo: string;
+  initialZelle: string;
+  initialCashapp: string;
+  initialPaypal: string;
   // THE THREE PRICE LOCKS, computed by lib/board-lock.ts on the server. Passed
   // in rather than re-derived here: the form must disable exactly what the
   // route refuses, and two implementations of invariant 76 is one too many.
@@ -72,6 +77,7 @@ export default function EditFundraiserButton({
   boardId, hasEvent, locked, lockReason,
   initialName, initialVenue, initialStartsAt, initialEndsAt, initialTimezone, initialGoal,
   initialPrice, initialEarlyBirdPrice, initialEarlyBirdEndsAt, currentTicketCount,
+  initialVenmo, initialZelle, initialCashapp, initialPaypal,
   inventoryLocked, regularLocked, earlyBirdLocked,
   inventoryLockReason, regularLockReason, earlyBirdLockReason,
 }: Props) {
@@ -89,6 +95,10 @@ export default function EditFundraiserButton({
   const [earlyBirdOn, setEarlyBirdOn] = useState(initialEarlyBirdPrice !== "");
   const [earlyPrice, setEarlyPrice] = useState(initialEarlyBirdPrice);
   const [earlyEndsAt, setEarlyEndsAt] = useState(initialEarlyBirdEndsAt);
+  const [venmo, setVenmo] = useState(initialVenmo);
+  const [zelle, setZelle] = useState(initialZelle);
+  const [cashapp, setCashapp] = useState(initialCashapp);
+  const [paypal, setPaypal] = useState(initialPaypal);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Adding an event to a board that never had one. The creation-time checkbox
@@ -148,6 +158,15 @@ export default function EditFundraiserButton({
         return;
       }
     }
+    // Mirrors the route. At least one handle must survive - clearing Venmo
+    // while Zelle remains is fine; clearing the last one leaves contributors a
+    // board with nowhere to send money.
+    if (![venmo, zelle, cashapp, paypal].some((h) => h.trim())) {
+      setError(
+        "Add at least one way to receive payment — Venmo, Zelle, Cash App, or PayPal."
+      );
+      return;
+    }
     if (preview && !preview.ok && goalCents != null) {
       setError(preview.error === TOO_MANY_TICKETS ? TOO_MANY_TICKETS : preview.error);
       return;
@@ -165,6 +184,13 @@ export default function EditFundraiserButton({
       // A LOCKED PRICE FIELD IS NOT SENT AT ALL. It is disabled and merely
       // displaying its stored value; echoing that value back would be a write
       // the route answers with 409 even though nothing changed.
+      // ALL FOUR, ALWAYS. Nothing locks them at any point in the board's life,
+      // so there is no locked value to avoid echoing back, and sending the full
+      // set is what lets a host clear one.
+      body.hostVenmo = venmo.trim() || null;
+      body.hostZelle = zelle.trim() || null;
+      body.hostCashapp = cashapp.trim() || null;
+      body.hostPaypal = paypal.trim() || null;
       if (!regularLocked) body.squarePrice = priceCents;
       if (!earlyBirdLocked) {
         body.earlyBirdPriceCents = earlyBirdOn ? earlyCents : null;
@@ -328,6 +354,53 @@ export default function EditFundraiserButton({
             </div>
           </>
         )}
+      </div>
+
+      {/* --- Direct payment handles ------------------------------------------
+          NEVER LOCKED, at any point in the board's life. These were immutable
+          until now only because no route wrote them - nothing protected them,
+          and no invariant names them. A mistyped Cash App tag sends real money
+          to a stranger every time a contributor reads it, and that is most
+          urgent AFTER contributions start, not before.
+
+          No format validation, matching creation. There is no reliable shape
+          for a Cash App tag, a Zelle enrolment or a PayPal.me link, and a regex
+          that rejected a valid handle would block the very correction this
+          exists to allow. ---------------------------------------------------- */}
+      <div className="space-y-4 rounded-lg border border-gray-800 p-3">
+        <p className="text-xs font-semibold text-gray-300">How you get paid</p>
+        <p className="text-xs text-gray-600 leading-relaxed">
+          Contributors paying directly see these. Leave one blank to stop
+          offering it. At least one must stay set.
+        </p>
+
+        <div>
+          <label htmlFor="zelle" className={labelClass}>Zelle</label>
+          <input id="zelle" className={inputClass} value={zelle}
+                 placeholder="Phone or email"
+                 onChange={(e) => setZelle(e.target.value)} />
+        </div>
+
+        <div>
+          <label htmlFor="cashapp" className={labelClass}>Cash App</label>
+          <input id="cashapp" className={inputClass} value={cashapp}
+                 placeholder="$cashtag"
+                 onChange={(e) => setCashapp(e.target.value)} />
+        </div>
+
+        <div>
+          <label htmlFor="venmo" className={labelClass}>Venmo</label>
+          <input id="venmo" className={inputClass} value={venmo}
+                 placeholder="@username"
+                 onChange={(e) => setVenmo(e.target.value)} />
+        </div>
+
+        <div>
+          <label htmlFor="paypal" className={labelClass}>PayPal</label>
+          <input id="paypal" className={inputClass} value={paypal}
+                 placeholder="paypal.me/you or email"
+                 onChange={(e) => setPaypal(e.target.value)} />
+        </div>
       </div>
 
       {!hasEvent && !addingEvent && (

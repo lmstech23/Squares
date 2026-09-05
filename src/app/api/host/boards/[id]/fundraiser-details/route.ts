@@ -26,6 +26,9 @@
 //   squarePrice          until the first confirmed REGULAR-price square
 //   earlyBirdPriceCents  until the first confirmed EARLY-BIRD square
 //   earlyBirdEndsAt      until the first confirmed EARLY-BIRD square
+//   hostVenmo / hostZelle / hostCashapp / hostPaypal
+//                        ALWAYS, including after the campaign closes, subject
+//                        only to at least one surviving
 //
 // The lock predicates live in lib/board-lock.ts and are shared WITH THE EDIT
 // SURFACE, so the form disables exactly what this route would refuse. A host
@@ -77,7 +80,22 @@ type Body = {
   squarePrice?: number;
   earlyBirdPriceCents?: number | null;
   earlyBirdEndsAt?: string | null;
+  /// Direct-payment handles. NEVER LOCKED - see the block that applies them.
+  hostVenmo?: string | null;
+  hostZelle?: string | null;
+  hostCashapp?: string | null;
+  hostPaypal?: string | null;
 };
+
+const HANDLE_FIELDS = ["hostVenmo", "hostZelle", "hostCashapp", "hostPaypal"] as const;
+type HandleField = (typeof HANDLE_FIELDS)[number];
+
+// The SAME sentence api/boards/route.ts uses when refusing a board with no
+// handle. Duplicated as a literal rather than shared, because extracting it
+// would mean editing the creation route, which this change is scoped out of.
+// Flagged: if one is ever reworded the other must be too.
+const NO_PAYMENT_HANDLE =
+  "Add at least one way to receive payment — Venmo, Zelle, Cash App, or PayPal.";
 
 export async function PATCH(request: Request, { params }: Props) {
   try {
@@ -104,6 +122,10 @@ export async function PATCH(request: Request, { params }: Props) {
         earlyBirdPriceCents: true,
         earlyBirdEndsAt: true,
         fundraisingGoalCents: true,
+        hostVenmo: true,
+        hostZelle: true,
+        hostCashapp: true,
+        hostPaypal: true,
         event: { select: { id: true, timezone: true, startsAt: true, endsAt: true } },
       },
     });
@@ -264,6 +286,47 @@ export async function PATCH(request: Request, { params }: Props) {
       const check = validateTicketCount(nextGoal, nextPrice);
       if (!check.ok) {
         return NextResponse.json({ error: check.error }, { status: 400 });
+      }
+    }
+
+    // --- direct-payment handles ----------------------------------------------
+    //
+    // NO LOCK, AT ANY POINT IN THE BOARD'S LIFE. Not after the first confirmed
+    // contribution, not after the campaign closes. Handles are named in no
+    // invariant; they were immutable only because nothing wrote them, which is
+    // not the same as being protected. A wrong handle is MOST urgent while
+    // money is moving: every contributor who reads it sends real money to a
+    // stranger, and the host cannot get it back.
+    //
+    // NO FORMAT VALIDATION, deliberately and consistently with creation. There
+    // is no reliable shape for a Cash App tag, a Zelle enrolment (a phone
+    // number or an email) or a PayPal.me link, and a regex that rejects a valid
+    // handle would be worse than one that accepts a typo - it would block the
+    // correction this route exists to allow.
+    //
+    // AT LEAST ONE MUST SURVIVE, matching creation. Clearing Venmo while Zelle
+    // remains is an ordinary edit and is allowed. Clearing the last one would
+    // leave contributors a board with nowhere to send money, which is the state
+    // creation already refuses to produce.
+    const finalHandles: Record<HandleField, string | null> = {
+      hostVenmo: board.hostVenmo,
+      hostZelle: board.hostZelle,
+      hostCashapp: board.hostCashapp,
+      hostPaypal: board.hostPaypal,
+    };
+    let touchedHandles = false;
+    for (const f of HANDLE_FIELDS) {
+      if (!(f in body)) continue;
+      touchedHandles = true;
+      // Same normalisation as creation: trim, and empty means absent.
+      finalHandles[f] = body[f]?.trim() || null;
+    }
+    if (touchedHandles) {
+      if (!HANDLE_FIELDS.some((f) => finalHandles[f])) {
+        return NextResponse.json({ error: NO_PAYMENT_HANDLE }, { status: 400 });
+      }
+      for (const f of HANDLE_FIELDS) {
+        if (f in body) boardData[f] = finalHandles[f];
       }
     }
 
