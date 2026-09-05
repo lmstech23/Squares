@@ -72,6 +72,10 @@ export async function createGrant(
     eventSupporterId: string;
     squareBatchId: string;
     donateAdmissions: boolean;
+    /// Sign-up addendum SS3: INTENT, never entitlement. Eligibility to claim a
+    /// slot is derived from EventSupporter.status = active, not from this flag.
+    /// This only records that they asked, which is what the redirect keys on.
+    wantsToHelp?: boolean;
   }
 ) {
   const existing = await tx.admissionGrant.findUnique({
@@ -86,6 +90,7 @@ export async function createGrant(
       squareBatchId: input.squareBatchId,
       source: "FUNDRAISER",
       donateAdmissions: input.donateAdmissions,
+      wantsToHelp: input.wantsToHelp ?? false,
     },
   });
 }
@@ -102,7 +107,8 @@ export async function prepareAdmission(
   eventId: string,
   squareBatchId: string,
   contact: { name: string; email: string; phone?: string | null },
-  donateAdmissions: boolean
+  donateAdmissions: boolean,
+  wantsToHelp = false
 ) {
   const supporter = await resolveSupporter(tx, eventId, contact);
   await createGrant(tx, {
@@ -110,6 +116,7 @@ export async function prepareAdmission(
     eventSupporterId: supporter.id,
     squareBatchId,
     donateAdmissions,
+    wantsToHelp,
   });
   return supporter;
 }

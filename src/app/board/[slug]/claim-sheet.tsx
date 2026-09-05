@@ -46,6 +46,10 @@ interface Props {
     paypal: string | null;
   };
   slug: string;
+  /// True when this board has a sign-up sheet a helper could actually land on.
+  /// The checkbox is hidden without one: an unchecked box that leads nowhere is
+  /// the dead control this page just finished removing.
+  signupSheetExists: boolean;
   /// Squares to preselect — used when re-claiming after a hold expired.
   initialPicked?: string[];
   onClose: () => void;
@@ -71,6 +75,7 @@ export default function ClaimSheet({
   stripeConnected,
   handles,
   slug,
+  signupSheetExists,
   initialPicked,
   onClose,
 }: Props) {
@@ -95,6 +100,10 @@ export default function ClaimSheet({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [donateAdmissions, setDonateAdmissions] = useState(false);
+  // Sign-up addendum SS3. INTENT, never entitlement: checking this does not make
+  // anyone eligible for anything. Eligibility is derived from
+  // EventSupporter.status = active at the moment they open the sheet.
+  const [wantsToHelp, setWantsToHelp] = useState(false);
   // Extra donation riding on this checkout - donations SS6. One session,
   // two line items, one Contribution (invariant 59). Held as text for the
   // same reason the quantity is: the field has to be clearable.
@@ -199,6 +208,7 @@ export default function ClaimSheet({
           playerEmail: email.trim(),
           playerPhone: phone.trim(),
           donateAdmissions,
+          wantsToHelp,
           ...(donationCents > 0 ? { donationAmountCents: donationCents } : {}),
         }),
       });
@@ -446,6 +456,32 @@ export default function ClaimSheet({
                 {donateAdmissions
                   ? "My contribution still supports the fundraiser, but I don't need admission tickets."
                   : `Includes ${count} admission ${count === 1 ? ADMISSION.one : ADMISSION.many}.`}
+              </span>
+            </span>
+          </label>
+        )}
+
+        {/* Volunteer intent — sign-up addendum SS3. Offered alongside the
+            purchase because that is the one moment the supporter is already
+            thinking about the event; asking later means an email nobody opens.
+
+            NOT gated on `donateAdmissions`. Someone who is not attending can
+            still drop supplies, which the addendum calls out directly, so the
+            two questions are independent. */}
+        {hasEvent && signupSheetExists && (
+          <label className="flex items-start gap-2.5 cursor-pointer mb-4">
+            <input
+              type="checkbox"
+              checked={wantsToHelp}
+              onChange={(e) => setWantsToHelp(e.target.checked)}
+              className="mt-0.5 accent-green-500"
+            />
+            <span>
+              <span className="block text-sm">
+                I&apos;d like to help with the event
+              </span>
+              <span className="block text-xs text-gray-600 mt-0.5">
+                We&apos;ll take you to the sign-up sheet right after you pay.
               </span>
             </span>
           </label>

@@ -52,6 +52,9 @@ interface Props {
   /// prizePoolPercent > 0. Gates prize language everywhere — never board type,
   /// because a Phase B fundraiser with prizes needs it back.
   hasPrize: boolean;
+  /// A sign-up sheet exists on this board, so the helper checkbox has a
+  /// destination. Sign-up addendum SS3.
+  signupSheetExists: boolean;
   /// open | closing | closed. A closed campaign shows its final total and
   /// stops offering the claim button.
   status: string;
@@ -67,6 +70,8 @@ interface Props {
     admissionPasses: number;
     hasEvent: boolean;
     passesUrl: string | null;
+    wantsToHelp: boolean;
+    signupUrl: string | null;
   } | null;
 }
 
@@ -105,6 +110,7 @@ export default function FundraiserView({
   cashModeEnabled,
   stripeConnected,
   hasPrize,
+  signupSheetExists,
   status,
   handles,
   confirmation,
@@ -191,6 +197,11 @@ export default function FundraiserView({
       (pos) => squares.find((sq) => sq.position + 1 === pos)?.paymentStatus === "paid"
     );
 
+  // Ten tries at two seconds is the twenty-second budget sign-up addendum §5
+  // names. `pollExhausted` is what turns that budget into the fallback copy
+  // rather than a spinner that never resolves.
+  const [pollExhausted, setPollExhausted] = useState(false);
+
   useEffect(() => {
     if (!confirmation || purchaseSettled) return;
     let tries = 0;
@@ -198,12 +209,30 @@ export default function FundraiserView({
       tries += 1;
       if (tries > 10) {
         clearInterval(id);
+        setPollExhausted(true);
         return;
       }
       router.refresh();
     }, 2000);
     return () => clearInterval(id);
   }, [confirmation, purchaseSettled, router]);
+
+  // VOLUNTEER REDIRECT — sign-up addendum §5.
+  //
+  // Fires only once the server has minted a token, which it does only for a
+  // CONFIRMED supporter. So this cannot race the webhook: while the purchase
+  // is pending there is no url to navigate to, the poll above keeps refreshing,
+  // and if twenty seconds pass without one the fallback below takes over.
+  // DERIVED, not state. Whether we are navigating is entirely a function of
+  // what the server sent — a token means go — so holding it in state would be
+  // a second copy of a fact that already exists, kept in sync by an effect.
+  const redirecting = Boolean(
+    confirmation?.wantsToHelp && confirmation.signupUrl
+  );
+  useEffect(() => {
+    if (!redirecting || !confirmation?.signupUrl) return;
+    router.push(confirmation.signupUrl);
+  }, [redirecting, confirmation, router]);
 
   function clearHold() {
     try {
@@ -381,6 +410,40 @@ export default function FundraiserView({
               You just moved this{" "}
               {money(currentPrice * confirmation.positions.length)} closer.
             </p>
+
+            {/* Sign-up addendum SS5, the three states this can be in. */}
+            {confirmation.wantsToHelp && (
+              <div className="mt-3 border-t border-green-800/40 pt-3">
+                {redirecting ? (
+                  <p className="text-sm text-green-200/80">
+                    Taking you to the sign-up sheet…
+                  </p>
+                ) : pollExhausted ? (
+                  /* Confirmation has not landed inside the twenty-second
+                     budget. Do NOT offer a link: there is no token yet,
+                     because there is no active supporter yet, and a CTA that
+                     404s is worse than a sentence that tells the truth. */
+                  <p className="text-sm text-green-200/80">
+                    We&apos;ll email your sign-up link as soon as your payment
+                    finishes processing.
+                  </p>
+                ) : confirmation.signupUrl ? (
+                  /* THE MANUAL CTA, and the only case it is offered in: a
+                     confirmed supporter holding a real token whose automatic
+                     redirect did not fire. SS5 reserves it for exactly this. */
+                  <a
+                    href={confirmation.signupUrl}
+                    className="text-sm underline underline-offset-4 text-green-200 hover:text-green-100"
+                  >
+                    Go to the volunteer sign-up sheet
+                  </a>
+                ) : (
+                  <p className="text-sm text-green-200/80">
+                    Setting up your sign-up link…
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -455,11 +518,7 @@ export default function FundraiserView({
             component, and its grid is the product. */}
 
         <div className="mt-6">
-          <HowItWorks
-            hasEvent={hasEvent}
-            hasPrize={hasPrize}
-            onCheckout={() => setClaiming(true)}
-          />
+          <HowItWorks hasEvent={hasEvent} hasPrize={hasPrize} />
         </div>
 
         {donating && (
@@ -484,6 +543,7 @@ export default function FundraiserView({
             stripeConnected={stripeConnected}
             handles={handles}
             slug={slug}
+            signupSheetExists={signupSheetExists}
             initialPicked={reclaim?.filter((id) =>
               squares.some(
                 (sq) => sq.squareId === id && sq.paymentStatus === "open"

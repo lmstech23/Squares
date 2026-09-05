@@ -26,6 +26,8 @@ interface CashReserveBody {
   smsOptIn?: boolean;
   /// Fundraiser only — "I'm not attending, donate my admissions" (v2 §6).
   donateAdmissions?: boolean;
+  /// Fundraiser + event only. Intent, never entitlement — sign-up addendum SS3.
+  wantsToHelp?: boolean;
 }
 
 export async function POST(
@@ -186,7 +188,8 @@ export async function POST(
           board.event!.id,
           batchId,
           { name, email, phone: body.playerPhone },
-          body.donateAdmissions ?? false
+          body.donateAdmissions ?? false,
+          body.wantsToHelp ?? false
         );
       });
     }

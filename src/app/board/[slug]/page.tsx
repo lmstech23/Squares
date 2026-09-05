@@ -4,6 +4,7 @@ import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { earlyBirdActive } from "@/lib/claim-price";
+import { getOrCreateSupporterAccessToken, mayClaim } from "@/lib/signups";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       host: {
         select: { name: true, stripeAccountId: true, stripeChargesEnabled: true },
       },
-      event: { select: { id: true } },
+      event: { select: { id: true, signupSheet: { select: { id: true } } } },
     },
   });
  
@@ -123,6 +124,13 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       admissionPasses: number;
       hasEvent: boolean;
       passesUrl: string | null;
+      /// They ticked "I'd like to help" at checkout. Drives the redirect and,
+      /// when the redirect cannot be built, the fallback copy.
+      wantsToHelp: boolean;
+      /// Present only once the purchase is CONFIRMED and a fresh token could be
+      /// minted. Null while pending, and null when a live token already exists
+      /// whose raw value is unrecoverable by design (only its hash is stored).
+      signupUrl: string | null;
     } | null = null;
 
     if (sp.success === "true" && sp.session_id) {
@@ -154,6 +162,42 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
 
         const batchId = purchased.find((sq) => sq.batchId)?.batchId ?? null;
 
+        // Volunteer redirect — sign-up addendum §5.
+        //
+        // ELIGIBILITY IS DERIVED, NEVER STORED: the token is minted only once
+        // the supporter is `active`, which happens inside the confirmation
+        // transaction. A pending purchase yields no token, which is what makes
+        // the 20-second fallback below correct rather than a workaround.
+        let wantsToHelp = false;
+        let signupUrl: string | null = null;
+
+        if (board.event && batchId) {
+          const grant = await prisma.admissionGrant.findUnique({
+            where: { squareBatchId: batchId },
+            select: {
+              wantsToHelp: true,
+              supporter: { select: { id: true, status: true } },
+            },
+          });
+          wantsToHelp = grant?.wantsToHelp ?? false;
+
+          if (
+            wantsToHelp &&
+            grant?.supporter &&
+            mayClaim(grant.supporter.status) &&
+            board.event.signupSheet
+          ) {
+            const issued = await getOrCreateSupporterAccessToken(
+              grant.supporter.id
+            );
+            // `token` is null when a live one already exists: only the hash is
+            // stored, so the raw value cannot be recovered and no URL can be
+            // built. That is the design working, not a failure — the fallback
+            // copy covers it.
+            if (issued.token) signupUrl = `/signup/${issued.token}`;
+          }
+        }
+
         confirmation = {
           positions: purchased.map((sq) => sq.position + 1),
           admissionPasses: passes,
@@ -161,6 +205,8 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           // Only offered when there is something behind it — A9 is what makes
           // the ticket line safe to show again.
           passesUrl: passes > 0 && batchId ? `/passes/${batchId}` : null,
+          wantsToHelp,
+          signupUrl,
         };
       }
     }
@@ -198,6 +244,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         openCount={openCount}
         slug={board.slug}
         hasEvent={board.event != null}
+        signupSheetExists={board.event?.signupSheet != null}
         cashModeEnabled={board.cashModeEnabled}
         stripeConnected={board.host.stripeChargesEnabled ?? false}
         hasPrize={board.prizePoolPercent > 0}

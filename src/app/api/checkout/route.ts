@@ -27,6 +27,9 @@ interface CheckoutBody {
   /// One session, two line items, one Contribution. Zero or absent means a
   /// plain square purchase and nothing about this route changes.
   donationAmountCents?: number;
+  /// Fundraiser + event only — "I'd like to help with the event". Intent only;
+  /// eligibility is derived from supporter status. Sign-up addendum SS3.
+  wantsToHelp?: boolean;
 }
 
 // 30-minute checkout TTL (Stripe minimum for checkout sessions)
@@ -394,7 +397,8 @@ export async function POST(request: Request) {
           board.event.id,
           batchId,
           { name, email, phone },
-          donateAdmissions
+          donateAdmissions,
+          body.wantsToHelp ?? false
         );
 
         // Merged squares are re-batched onto the new id above, which leaves

@@ -24,6 +24,11 @@
 // a dead control instructing the contributor to do something the page could
 // not do. Both are gone. The button opens the sheet.
 //
+// NO BUTTON. This panel used to carry its own checkout button, which put a
+// SECOND "Purchase tickets" on the page a few hundred pixels under the header
+// one. Two identical primary actions is a question — "are these different?" —
+// and the answer was no. The header CTA is the action; this card explains it.
+//
 // The square is not renamed anywhere internal — this is copy.
 
 import { purchaseUnit } from "@/lib/board-vocabulary";
@@ -31,13 +36,12 @@ import { purchaseUnit } from "@/lib/board-vocabulary";
 interface Props {
   hasEvent: boolean;
   hasPrize: boolean;
-  onCheckout: () => void;
 }
 
 const heading =
   "text-[10px] font-medium text-gray-500 uppercase tracking-wider";
 
-export default function HowItWorks({ hasEvent, hasPrize, onCheckout }: Props) {
+export default function HowItWorks({ hasEvent, hasPrize }: Props) {
   // One shared resolver, never branched locally — src/lib/board-vocabulary.ts.
   const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
 
@@ -84,21 +88,6 @@ export default function HowItWorks({ hasEvent, hasPrize, onCheckout }: Props) {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={onCheckout}
-        className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
-      >
-        {/* Same precedence the header CTA uses — hasEvent wins, because
-            admission is something they need at a gate. Stated explicitly
-            rather than by && ordering so a Phase B board that is both
-            ticketed and prize-bearing cannot silently change wording. */}
-        {hasEvent
-          ? `Purchase ${u.many}`
-          : hasPrize
-            ? `Get ${u.many}`
-            : "Support this fundraiser"}
-      </button>
     </div>
   );
 }
