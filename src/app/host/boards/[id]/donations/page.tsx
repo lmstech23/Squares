@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import { boardTotals } from "@/lib/contributions";
 import CashDonationForm from "./cash-donation-form";
+import ConfirmButton from "./confirm-button";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,16 @@ export default async function DonationsPage({
 
   const hasPrize = board.prizePoolPercent > 0;
 
+  // Contributor-declared direct payments that have not landed yet. Scoped the
+  // same way the confirm endpoint is: cash, donation-only, still pending.
+  const awaitingCash = contributions.filter(
+    (c) =>
+      c.status === "pending" &&
+      c.paymentMethod === "cash" &&
+      c.squareAmountCents === 0 &&
+      c.donationAmountCents > 0
+  );
+
   return (
     <main className="min-h-screen bg-gray-950 text-white">
       <div className="mx-auto max-w-3xl px-4 py-6">
@@ -127,6 +138,40 @@ export default async function DonationsPage({
             prize basis.
           </p>
         </div>
+
+        {/* Declared by a contributor, not yet in hand. These are the people who
+            chose Zelle/CashApp/Venmo/PayPal on the board and said they would
+            send it. Nothing is held and nothing expires - a donation takes no
+            inventory (invariants 55 and 64) - so a row sitting here forever is
+            simply someone who changed their mind. */}
+        {awaitingCash.length > 0 && (
+          <div className="mt-5 rounded-lg border border-amber-900/60 bg-amber-950/10 p-4">
+            <p className="text-sm font-medium">Awaiting payment</p>
+            <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+              Declared on the board. Not counted in the totals above until you
+              mark it received.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {awaitingCash.map((c) => (
+                <li
+                  key={c.id}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="min-w-0">
+                    <span className="text-gray-200">{c.contributorName}</span>
+                    <span className="text-gray-500"> — {money(c.totalPaidCents)}</span>
+                    {c.contributorEmail && (
+                      <span className="block text-xs text-gray-600 truncate">
+                        {c.contributorEmail}
+                      </span>
+                    )}
+                  </span>
+                  <ConfirmButton boardId={board.boardId} contributionId={c.id} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="mt-5">
           <CashDonationForm boardId={board.boardId} />

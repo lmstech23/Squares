@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
-import { boardTotals, recordCashDonation, countsTowardRaised } from "@/lib/contributions";
+import {
+  boardTotals,
+  recordCashDonation,
+  countsTowardRaised,
+  activateDonorSupporter,
+} from "@/lib/contributions";
 
 // ============================================================
 // HOST: record a cash donation — donations §7, invariant 65.
@@ -118,6 +123,92 @@ export async function POST(
     });
   } catch (error) {
     console.error("Cash donation error:", error);
+    return NextResponse.json(
+      { error: "Something went wrong. Please try again." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Confirm a cash donation a CONTRIBUTOR declared from the board — the host
+ * marking "received" when the Zelle transfer lands.
+ *
+ * The host-recorded path (POST above) writes `confirmed` in one action because
+ * the money is already in her hand. This one exists because the contributor
+ * declared it first, so there is a row waiting.
+ *
+ * Conditional update, scoped hard: pending AND cash AND donation-only. A card
+ * contribution is confirmed by Stripe and a cash SQUARE is confirmed through
+ * confirm-cash, which mints passes — neither may be reached from here.
+ * Attributed to whoever confirms, which may differ from whoever recorded it.
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: boardId } = await params;
+    const loaded = await loadOwnedBoard(boardId);
+    if ("error" in loaded) return loaded.error;
+    const { host, board } = loaded;
+
+    const body: { contributionId?: string } = await request.json();
+    if (!body.contributionId) {
+      return NextResponse.json(
+        { error: "A contribution id is required." },
+        { status: 400 }
+      );
+    }
+
+    const { count } = await prisma.contribution.updateMany({
+      where: {
+        id: body.contributionId,
+        boardId: board.boardId,
+        status: "pending",
+        paymentMethod: "cash",
+        squareAmountCents: 0,
+        donationAmountCents: { gt: 0 },
+      },
+      data: {
+        status: "confirmed",
+        confirmedAt: new Date(),
+        confirmedByHostId: host.id,
+      },
+    });
+
+    if (count === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "That contribution is not an unconfirmed cash donation. It may already be confirmed.",
+        },
+        { status: 409 }
+      );
+    }
+
+    // Supporter activation fires at CONFIRMATION, not declaration — donations
+    // §9. A donation nobody has received yet entitles nothing.
+    const row = await prisma.contribution.findUnique({
+      where: { id: body.contributionId },
+      select: { contributorName: true, contributorEmail: true, contributorPhone: true },
+    });
+    if (board.event && row?.contributorEmail) {
+      await prisma.$transaction((tx) =>
+        activateDonorSupporter(tx, board.event!.id, {
+          name: row.contributorName,
+          email: row.contributorEmail!,
+          phone: row.contributorPhone,
+        })
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      totals: await boardTotals(board.boardId),
+    });
+  } catch (error) {
+    console.error("Confirm cash donation error:", error);
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },
       { status: 500 }

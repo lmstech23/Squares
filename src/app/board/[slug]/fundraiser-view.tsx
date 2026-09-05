@@ -462,7 +462,15 @@ export default function FundraiserView({
           />
         </div>
 
-        {donating && <DonateSheet slug={slug} onClose={() => setDonating(false)} />}
+        {donating && (
+          <DonateSheet
+            slug={slug}
+            cashModeEnabled={cashModeEnabled}
+            stripeConnected={stripeConnected}
+            handles={handles}
+            onClose={() => setDonating(false)}
+          />
+        )}
 
         {claiming && (
           <ClaimSheet

@@ -33,6 +33,10 @@ interface DonateBody {
   donorName: string;
   donorEmail: string;
   donorPhone?: string | null;
+  /// "card" -> Stripe Checkout. "cash" -> Zelle/CashApp/Venmo/PayPal, recorded
+  /// pending for the host to confirm on receipt. Defaults to card so every
+  /// existing caller is unchanged.
+  method?: "card" | "cash";
 }
 
 export async function POST(
@@ -44,6 +48,7 @@ export async function POST(
     const body: DonateBody = await request.json();
 
     const amountCents = Math.trunc(body.amountCents ?? 0);
+    const method = body.method === "cash" ? "cash" : "card";
     const name = body.donorName?.trim() ?? "";
     const email = body.donorEmail?.trim().toLowerCase() ?? "";
 
@@ -55,8 +60,16 @@ export async function POST(
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
     }
-    // Server-side, not only in the picker — donations §6.
-    if (!Number.isFinite(amountCents) || amountCents < MIN_CARD_DONATION_CENTS) {
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      return NextResponse.json(
+        { error: "Enter an amount greater than zero." },
+        { status: 400 }
+      );
+    }
+    // Server-side, not only in the picker — donations §6. CARD ONLY: the floor
+    // exists because Stripe's per-transaction cost consumes most of a small
+    // gift. A direct payment has no processor and therefore no floor.
+    if (method === "card" && amountCents < MIN_CARD_DONATION_CENTS) {
       return NextResponse.json(
         { error: `The minimum donation is $${MIN_CARD_DONATION_CENTS / 100}.` },
         { status: 400 }
@@ -92,6 +105,72 @@ export async function POST(
     if (board.campaignEndsAt && board.campaignEndsAt <= new Date()) {
       return NextResponse.json({ error: "This campaign has closed." }, { status: 409 });
     }
+
+    // ---------------------------------------------------------------- CASH --
+    //
+    // The contributor declares a direct payment - Zelle, Cash App, Venmo or
+    // PayPal - and the host confirms it from the donations panel when it
+    // lands. Same shape the ticket sheet has offered all along; this is the
+    // donation half of it.
+    //
+    // READING OF INVARIANT 65, stated because it is load-bearing. That
+    // invariant forbids a cash donation having "no reserved state... no
+    // cash-donation hold, expiry, or release", and donations SS7 describes the
+    // host-recorded path as "one host action". A contributor-declared cash
+    // donation has NO hold, NO expiry and NO release path - nothing is held
+    // because a donation holds no inventory - so none of the three
+    // prohibitions is engaged. `pending` here is invariant 61's ordinary
+    // payment-lifecycle value meaning "the host has not received it yet",
+    // which is exactly where a Zelle transfer sits between sending and
+    // arriving. SS7 simply does not contemplate the contributor-initiated
+    // case; it is unspecified rather than forbidden.
+    if (method === "cash") {
+      if (!board.cashModeEnabled) {
+        return NextResponse.json(
+          { error: "Direct payments are not enabled for this board." },
+          { status: 403 }
+        );
+      }
+      const hasHandle =
+        board.hostZelle || board.hostCashapp || board.hostVenmo || board.hostPaypal;
+      if (!hasHandle) {
+        return NextResponse.json(
+          { error: "This host has not set up a direct payment method." },
+          { status: 503 }
+        );
+      }
+
+      const pending = await prisma.contribution.create({
+        data: {
+          boardId: board.boardId,
+          status: "pending",
+          paymentMethod: "cash",
+          squareAmountCents: 0,
+          donationAmountCents: amountCents,
+          totalPaidCents: amountCents,
+          contributorName: name,
+          contributorEmail: email,
+          contributorPhone: body.donorPhone?.trim() || null,
+          // No holdExpiresAt. Nothing is held, so there is nothing to expire
+          // and no sweep will ever touch this row - invariants 64 and 65.
+          holdExpiresAt: null,
+        },
+      });
+
+      return NextResponse.json({
+        pending: true,
+        contributionId: pending.id,
+        amountCents,
+        handles: {
+          zelle: board.hostZelle,
+          cashapp: board.hostCashapp,
+          venmo: board.hostVenmo,
+          paypal: board.hostPaypal,
+        },
+      });
+    }
+
+    // ---------------------------------------------------------------- CARD --
     if (!board.host.stripeAccountId || !board.host.stripeChargesEnabled) {
       return NextResponse.json(
         { error: "Host payment setup is incomplete." },
