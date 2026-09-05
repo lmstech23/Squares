@@ -4,6 +4,7 @@ import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
+import { donationReturnState } from "@/lib/donation-return";
 import { issueSupporterAccessLink, mayClaim } from "@/lib/signups";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
@@ -218,6 +219,34 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       }
     }
 
+    // DONATION-ONLY CARD RETURN — donations §6.
+    //
+    // The donate route has always sent `?donated=true&session_id=...` and
+    // NOTHING READ IT. A donor who paid by card came back to the plain board
+    // with no acknowledgement of any kind - the only one of the four submit
+    // states with no screen at all.
+    //
+    // RESOLVED THE SAME WAY THE TICKET RETURN IS: the session id from the URL
+    // is a lookup key, never a claim. It selects the ledger row and the row's
+    // own status decides what renders, so a fabricated or replayed session_id
+    // cannot produce a confirmation. Contribution.checkoutSessionId is the
+    // same key the webhook uses, so this is one lookup, not a parallel one.
+    let donation: { settled: boolean } | null = null;
+    if (sp.donated === "true" && sp.session_id) {
+      const row = await prisma.contribution.findUnique({
+        where: { checkoutSessionId: sp.session_id },
+        select: {
+          boardId: true,
+          status: true,
+          squareAmountCents: true,
+          voidedAt: true,
+        },
+      });
+      // The guards live in donationReturnState so they can be tested against
+      // real rows in every state. Null means render NOTHING.
+      donation = donationReturnState(row, board.boardId);
+    }
+
     // The ONE price a contributor sees, and its deadline while early bird is
     // live. Decided here rather than in the view, which stays pure.
     // publicPriceDisplay() calls the same predicate claim-price.ts charges on -
@@ -240,6 +269,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           paymentStatus: sq.paymentStatus,
         }))}
         price={price}
+        donation={donation}
         timezone={board.timezone}
         raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
         goalCents={board.fundraisingGoalCents}

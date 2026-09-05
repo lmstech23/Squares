@@ -39,6 +39,12 @@ interface Props {
   /** The one price a contributor sees, from publicPriceDisplay() on the
       server. Never two prices - see src/lib/fundraiser-pricing.ts. */
   price: PublicPrice;
+  /**
+   * Set only on return from a donation-only card checkout, and only when the
+   * ledger row for that session actually exists on this board. `settled` is
+   * the row reading `confirmed`; `false` means the webhook has not landed yet.
+   */
+  donation: { settled: boolean } | null;
   /// Decided by the caller, not here: "is the changeover still ahead" depends
   /// on the current time, which makes it impure inside render.
   timezone: string | null;
@@ -101,6 +107,7 @@ export default function FundraiserView({
   hostName,
   squares,
   price,
+  donation,
   timezone,
   raisedCents,
   goalCents,
@@ -206,8 +213,15 @@ export default function FundraiserView({
   // rather than a spinner that never resolves.
   const [pollExhausted, setPollExhausted] = useState(false);
 
+  // A donation whose webhook has not landed is the same race as a ticket
+  // purchase whose squares have not flipped, so it uses the same poll rather
+  // than a second one with its own budget.
+  const awaitingWebhook =
+    (confirmation != null && !purchaseSettled) ||
+    (donation != null && !donation.settled);
+
   useEffect(() => {
-    if (!confirmation || purchaseSettled) return;
+    if (!awaitingWebhook) return;
     let tries = 0;
     const id = setInterval(() => {
       tries += 1;
@@ -219,7 +233,7 @@ export default function FundraiserView({
       router.refresh();
     }, 2000);
     return () => clearInterval(id);
-  }, [confirmation, purchaseSettled, router]);
+  }, [awaitingWebhook, router]);
 
   // VOLUNTEER REDIRECT — sign-up addendum §5.
   //
@@ -425,6 +439,22 @@ export default function FundraiserView({
             `openCount` is still a PROP and still load-bearing: it disables the
             purchase CTA at zero and promotes Donate to primary. Only the
             display is gone. */}
+
+        {/* DONATION-ONLY CARD RETURN. Same first line as every other successful
+            submit state; what happened is the line under it, never mixed into
+            it. A pending row says so plainly rather than claiming a payment
+            that has not confirmed - the poll above is refreshing, and if the
+            webhook never lands the contributor is not told a falsehood. */}
+        {donation && (
+          <div className="rounded-lg border border-green-900/50 bg-green-950/30 p-4 mt-5">
+            <p className="text-sm font-medium text-green-100">
+              {CONTRIBUTION_THANKS}
+            </p>
+            <p className="text-sm text-green-200/80 mt-1">
+              {donation.settled ? "Payment received" : "Payment is still processing"}
+            </p>
+          </div>
+        )}
 
         {/* Confirmation — v2 §6. Not a generic success page.
             Never says "ticket" on a no-prize board: ticket to what? The word
