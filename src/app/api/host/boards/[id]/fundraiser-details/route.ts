@@ -234,16 +234,36 @@ export async function PATCH(request: Request, { params }: Props) {
       }
     }
 
+    // A RESIZE NEEDS AN ACTUAL CHANGE, not merely a field being present.
+    //
+    // The edit form always sends fundraisingGoalCents - it is one dialog and
+    // the goal is one of its inputs - so `"goal" in body` was true on every
+    // save, including one that fixed a venue typo. That ran the resize on an
+    // unlocked board for no reason. Nothing visibly broke, because recomputing
+    // the same count from the same two numbers is a no-op, but it meant an
+    // unrelated edit could create or delete rows the moment anything else
+    // drifted.
+    //
+    // Compared in CENTS against the stored values, not as strings: "50" and
+    // "50.00" are the same price, and re-saving the same number must not count
+    // as a change.
+    const goalChanged =
+      goalCents !== undefined && goalCents !== board.fundraisingGoalCents;
+    const priceChanged =
+      "squarePrice" in boardData && boardData.squarePrice !== board.squarePrice;
+    const willResize = !locks.inventoryLocked && (goalChanged || priceChanged);
+
+    const nextGoal = goalCents !== undefined ? goalCents : board.fundraisingGoalCents;
+    const nextPrice = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
+
     // The resize path below reaches the same ceiling as creation, so it is
-    // rejected here rather than silently declining to resize.
-    if (!locks.inventoryLocked && (goalCents !== undefined || "squarePrice" in boardData)) {
-      const nextGoal = goalCents !== undefined ? goalCents : board.fundraisingGoalCents;
-      const nextPrice = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
-      if (nextGoal != null) {
-        const check = validateTicketCount(nextGoal, nextPrice);
-        if (!check.ok) {
-          return NextResponse.json({ error: check.error }, { status: 400 });
-        }
+    // rejected here rather than silently declining to resize. Gated on
+    // `willResize` too: a board that predates the cap must not have a venue
+    // correction refused over a count nobody is changing.
+    if (willResize && nextGoal != null) {
+      const check = validateTicketCount(nextGoal, nextPrice);
+      if (!check.ok) {
+        return NextResponse.json({ error: check.error }, { status: 400 });
       }
     }
 
@@ -381,13 +401,11 @@ export async function PATCH(request: Request, { params }: Props) {
         await tx.board.update({ where: { boardId: board.boardId }, data: boardData });
       }
 
-      // INVENTORY RECALCULATION — only while NOTHING is confirmed. After the
-      // first confirmed square neither a goal change nor a price change
-      // resizes the board; the goal still saves, it just stops driving size.
-      if (!locks.inventoryLocked && (goalCents !== undefined || "squarePrice" in boardData)) {
-        const nextGoal =
-          goalCents !== undefined ? goalCents : board.fundraisingGoalCents;
-        const nextPrice = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
+      // INVENTORY RECALCULATION — only while NOTHING is confirmed, and only
+      // when the goal or the ticket price ACTUALLY MOVED. After the first
+      // confirmed square neither a goal change nor a price change resizes the
+      // board; the goal still saves, it just stops driving size.
+      if (willResize) {
         const want = ticketCountFor(nextGoal, nextPrice);
         if (want != null) {
           const existing = await tx.square.count({ where: { boardId: board.boardId } });
@@ -417,6 +435,27 @@ export async function PATCH(request: Request, { params }: Props) {
             }
             // Falling short is not an error: the board keeps the squares it
             // could not free, and the count settles once those holds resolve.
+          }
+
+          // totalSquares FOLLOWS THE ROWS, IN THE SAME TRANSACTION.
+          //
+          // This block wrote and deleted Square rows and left the column
+          // alone, so a resize silently desynchronised the two. At least three
+          // screens read the column and not the rows: the host page's
+          // "X of Y confirmed", the boards list "N / M paid", and the progress
+          // bar denominator. A board resized from 100 to 150 kept reporting
+          // "of 100" while fifty real tickets existed underneath.
+          //
+          // RECOUNTED, NOT SET TO `want`. The shrink path above is allowed to
+          // fall short - it will not delete a square somebody is holding - so
+          // `want` is a request and the count is the answer. Writing `want`
+          // here would replace a stale column with a confidently wrong one.
+          if (want !== existing) {
+            const actual = await tx.square.count({ where: { boardId: board.boardId } });
+            await tx.board.update({
+              where: { boardId: board.boardId },
+              data: { totalSquares: actual },
+            });
           }
         }
       }

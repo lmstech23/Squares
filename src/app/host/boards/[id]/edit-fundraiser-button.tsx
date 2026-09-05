@@ -106,11 +106,25 @@ export default function EditFundraiserButton({
   const earlyCents = earlyBirdOn ? toCents(earlyPrice) : null;
   const goalCents = goal.trim() === "" ? null : toCents(goal);
 
-  // INVENTORY PREVIEW. Only meaningful while the count can still move: after
-  // the first confirmed contribution the board keeps the tickets it has and
-  // the goal stops driving size.
-  const preview = inventoryLocked ? null : validateTicketCount(goalCents, priceCents);
+  // INVENTORY PREVIEW — MIRRORS THE ROUTE'S RESIZE CONDITION EXACTLY.
+  //
+  // Only meaningful while the count can still move, and only when the goal or
+  // the price ACTUALLY MOVED. The route resizes on nothing else, so previewing
+  // on nothing else is what keeps this line honest: a board whose stored count
+  // already disagrees with ceil(goal / price) would otherwise be promised a
+  // resize on a save that changes neither number and triggers nothing.
+  //
+  // Compared in cents against the stored values, same as the server. "50" and
+  // "50.00" are the same price.
+  const initialGoalCents = initialGoal.trim() === "" ? null : toCents(initialGoal);
+  const goalChanged = goalCents !== initialGoalCents;
+  const priceChanged = !regularLocked && priceCents !== toCents(initialPrice);
+  const preview =
+    !inventoryLocked && (goalChanged || priceChanged)
+      ? validateTicketCount(goalCents, priceCents)
+      : null;
   const nextCount = preview && preview.ok ? preview.count : null;
+  const willResize = nextCount != null && nextCount !== currentTicketCount;
 
   async function save() {
     // Same rules as the creation form, and the same rules the route enforces.
@@ -253,14 +267,12 @@ export default function EditFundraiserButton({
           {regularLocked ? (
             <p className="text-xs text-amber-200/80 mt-1">{regularLockReason}</p>
           ) : (
-            nextCount != null && (
-              <p className="text-xs text-gray-600 mt-1">
-                {nextCount === currentTicketCount
-                  ? nextCount + " tickets."
-                  : "Saving changes this board from " + currentTicketCount +
-                    " tickets to " + nextCount + "."}
-              </p>
-            )
+            <p className="text-xs text-gray-600 mt-1">
+              {willResize
+                ? "Saving changes this board from " + currentTicketCount +
+                  " tickets to " + nextCount + "."
+                : currentTicketCount + " tickets."}
+            </p>
           )}
         </div>
 
