@@ -58,6 +58,12 @@ export default function EditFundraiserButton({
   const [goal, setGoal] = useState(initialGoal);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Adding an event to a board that never had one. The creation-time checkbox
+  // used to be a one-way door: without an event there can be no SignupSheet,
+  // so no volunteer sign-ups, ever. Same fields, same surface — the host opts
+  // in here and the form below is the one she already knows.
+  const [addingEvent, setAddingEvent] = useState(false);
+  const showEventFields = hasEvent || addingEvent;
 
   async function save() {
     setSaving(true);
@@ -69,10 +75,12 @@ export default function EditFundraiserButton({
       const body: Record<string, unknown> = {
         fundraisingGoalCents: goal.trim() === "" ? null : Math.round(parseFloat(goal) * 100),
       };
-      if (hasEvent) {
+      if (showEventFields) {
         body.name = name;
         body.venue = venue;
-        if (!locked) {
+        // When ADDING, the date and zone are the whole point and there is
+        // nothing locked to protect — the board has no event date yet.
+        if (!locked || !hasEvent) {
           body.startsAt = startsAt;
           body.endsAt = endsAt || null;
           body.timezone = timezone;
@@ -127,7 +135,24 @@ export default function EditFundraiserButton({
         </p>
       </div>
 
-      {hasEvent && (
+      {!hasEvent && !addingEvent && (
+        <div className="rounded-lg border border-gray-800 bg-gray-900 p-3">
+          <p className="text-sm font-medium">No event on this fundraiser</p>
+          <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+            Add one to issue admission passes and run volunteer sign-ups.
+            Contributions that already confirmed will not receive passes.
+          </p>
+          <button
+            type="button"
+            onClick={() => setAddingEvent(true)}
+            className="mt-3 rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
+          >
+            Add an event
+          </button>
+        </div>
+      )}
+
+      {showEventFields && (
         <>
           <div>
             <label htmlFor="eventName" className={labelClass}>Event name</label>

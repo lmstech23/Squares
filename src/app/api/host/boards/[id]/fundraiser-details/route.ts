@@ -80,6 +80,8 @@ export async function PATCH(request: Request, { params }: Props) {
         boardId: true,
         hostId: true,
         boardType: true,
+        // Fallback zone when an event is being ADDED — see effectiveTz.
+        timezone: true,
         event: { select: { id: true, timezone: true, startsAt: true, endsAt: true } },
       },
     });
@@ -113,15 +115,45 @@ export async function PATCH(request: Request, { params }: Props) {
       "name" in body || "venue" in body || "startsAt" in body ||
       "endsAt" in body || "timezone" in body;
 
-    if (wantsEventEdit && !board.event) {
+    // ADDING an event to a board that has none, rather than editing one.
+    //
+    // This used to be refused outright, which made the creation-time checkbox a
+    // ONE-WAY DOOR: a host who did not tick it could never run volunteer
+    // sign-ups, because a SignupSheet keys to an eventId. She makes that choice
+    // before she knows whether she will want volunteers.
+    //
+    // INVARIANT 16 IS NOT ENGAGED BY ADDING ONE. Its event clause reads "on
+    // boards with an event — event date"; a board without one has no event date
+    // to lock, so nothing previously locked is being changed. Note also that
+    // the list locks "prize on/off" explicitly — the doc knows how to freeze a
+    // presence toggle when it means to, and did not do so for events. From this
+    // write forward the new date IS locked, by the same clause.
+    const creatingEvent = wantsEventEdit && !board.event;
+
+    if (creatingEvent && !body.startsAt) {
       return NextResponse.json(
-        { error: "This board has no event to edit." },
+        { error: "An event needs a start time." },
+        { status: 400 }
+      );
+    }
+
+    // Event.timezone is NOT NULL but Board.timezone is nullable, so a board
+    // with neither cannot resolve a zone. ASK rather than assume: interpreting
+    // a wall-clock start time in a guessed zone silently moves the event, which
+    // is the failure src/lib/zoned-time.ts exists to prevent.
+    if (creatingEvent && !body.timezone && !board.timezone) {
+      return NextResponse.json(
+        { error: "An event needs a time zone." },
         { status: 400 }
       );
     }
 
     // One query, reused for every locked field, rather than one per field.
-    const locked = wantsEventEdit ? await hasConfirmedContribution(board.boardId) : false;
+    // Skipped when creating: there is no stored value to protect.
+    const locked =
+      wantsEventEdit && !creatingEvent
+        ? await hasConfirmedContribution(board.boardId)
+        : false;
 
     // Report EVERY violated field at once. Rejecting one at a time makes a host
     // resubmit repeatedly to discover a rule that could have been stated once.
@@ -156,8 +188,13 @@ export async function PATCH(request: Request, { params }: Props) {
     // The timezone in effect for this write: a new one if supplied, else the
     // event's existing one. Wall-clock input must be interpreted in the zone it
     // was typed against, never in the server's.
+    // Falls back to the BOARD's timezone when creating — every board has one,
+    // and it is the zone the host has been entering wall-clock times against
+    // all along (campaign close, early bird).
     const effectiveTz =
-      "timezone" in body && body.timezone ? body.timezone : board.event!.timezone;
+      "timezone" in body && body.timezone
+        ? body.timezone
+        : board.event?.timezone ?? board.timezone ?? "";
 
     if ("timezone" in body && body.timezone) {
       try {
@@ -208,9 +245,23 @@ export async function PATCH(request: Request, { params }: Props) {
           data: { fundraisingGoalCents: goalCents },
         });
       }
-      if (Object.keys(eventData).length > 0 && board.event) {
+      if (Object.keys(eventData).length === 0) return;
+      if (board.event) {
         await tx.event.update({ where: { id: board.event.id }, data: eventData });
+        return;
       }
+      // startsAt and timezone are NOT NULL on Event; both are guaranteed here
+      // by the creatingEvent guard above and the effectiveTz fallback.
+      await tx.event.create({
+        data: {
+          boardId: board.boardId,
+          name: (eventData.name as string | null) ?? null,
+          venue: (eventData.venue as string | null) ?? null,
+          startsAt: eventData.startsAt as Date,
+          endsAt: (eventData.endsAt as Date | null) ?? null,
+          timezone: effectiveTz,
+        },
+      });
     });
 
     return NextResponse.json({ ok: true, locked });
