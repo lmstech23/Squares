@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import DirectPaymentHandles from "./direct-payment";
 import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
 
 // Claim sheet — fundraiser-board-v2.md §6.
@@ -104,6 +105,12 @@ export default function ClaimSheet({
   // anyone eligible for anything. Eligibility is derived from
   // EventSupporter.status = active at the moment they open the sheet.
   const [wantsToHelp, setWantsToHelp] = useState(false);
+  // Set once a direct payment is reserved. The sheet then stops being a form
+  // and becomes the instructions — the same shape the donate sheet uses. It
+  // previously called window.location.reload() here, which destroyed the sheet
+  // and dropped the contributor on a plain board with reserved tickets and no
+  // idea what to do next.
+  const [reserved, setReserved] = useState<{ count: number } | null>(null);
   // Extra donation riding on this checkout - donations SS6. One session,
   // two line items, one Contribution (invariant 59). Held as text for the
   // same reason the quantity is: the field has to be clearable.
@@ -248,11 +255,88 @@ export default function ClaimSheet({
         return;
       }
 
+      // DIRECT PAYMENT. No redirect and no countdown promised: there is no
+      // ticket yet, and a cash reservation does not auto-expire — the host
+      // releases it at her discretion.
+      if (method === "cash") {
+        setReserved({ count: data.reserved?.length ?? count });
+        setLoading(false);
+        return;
+      }
+
       window.location.reload();
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
     }
+  }
+
+  // RESERVED — the screen that was missing entirely. Mirrors the donate
+  // sheet's post-submit shape: confirmation, the handles, what happens next.
+  if (reserved) {
+    return (
+      <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50">
+        <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
+          <h2 className="text-base font-medium">
+            {reserved.count} {reserved.count === 1 ? u.one : u.many} reserved
+          </h2>
+          <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+            {/* NO TIMER PROMISED. A cash reservation does not auto-expire —
+                the host releases it at her discretion — so a countdown here
+                would be inventing a deadline that does not exist. */}
+            They&apos;re held for you until the host marks your payment
+            received. Nothing expires on a clock.
+          </p>
+
+          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3">
+            <DirectPaymentHandles
+              amountLabel={money(reserved.count * priceCents)}
+              handles={handles}
+            />
+          </div>
+
+          <div className="mt-4">
+            <p className="text-sm font-medium">What happens next</p>
+            <ol className="mt-2 space-y-1.5 text-sm text-gray-400 list-decimal list-inside">
+              <li>Send the amount above using any of those.</li>
+              <li>Your host marks your payment received.</li>
+              <li>
+                {hasEvent
+                  ? "Your admission passes arrive by email."
+                  : "Your receipt arrives by email."}
+              </li>
+            </ol>
+          </div>
+
+          {wantsToHelp && (
+            <p className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3 text-sm text-gray-300">
+              {/* NO REDIRECT PROMISED HERE. There is no ticket yet: the
+                  supporter does not go active until the host confirms, so
+                  there is no sign-up link to send them to. Say where it will
+                  come from instead of implying it is one tap away. */}
+              You offered to help — your sign-up link comes with your
+              confirmation email.
+            </p>
+          )}
+
+          <p className="mt-4 text-xs text-gray-600 leading-relaxed">
+            Contributions are final. Once your payment is confirmed it cannot
+            be refunded.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              window.location.reload();
+            }}
+            className="mt-4 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -537,30 +621,7 @@ export default function ClaimSheet({
 
         {method === "cash" && (
           <div className="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-4">
-            <p className="text-sm mb-2">Send {money(total)} to:</p>
-            <ul className="space-y-1 text-sm">
-              {handles.zelle && (
-                <li>
-                  <span className="text-gray-500">Zelle</span> {handles.zelle}
-                </li>
-              )}
-              {handles.cashapp && (
-                <li>
-                  <span className="text-gray-500">Cash App</span>{" "}
-                  {handles.cashapp}
-                </li>
-              )}
-              {handles.venmo && (
-                <li>
-                  <span className="text-gray-500">Venmo</span> {handles.venmo}
-                </li>
-              )}
-              {handles.paypal && (
-                <li>
-                  <span className="text-gray-500">PayPal</span> {handles.paypal}
-                </li>
-              )}
-            </ul>
+            <DirectPaymentHandles amountLabel={money(total)} handles={handles} />
             <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
               Your {u.many} are held until the host marks your payment received.
             </p>

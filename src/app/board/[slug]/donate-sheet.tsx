@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import DirectPaymentHandles from "./direct-payment";
 
 // Donation-only entry — donations §6.
 //
@@ -142,28 +143,9 @@ export default function DonateSheet({
             Use any of these. The host marks it received once it arrives, and
             your donation counts toward the total then.
           </p>
-          <ul className="mt-4 space-y-1.5 text-sm">
-            {handles.zelle && (
-              <li>
-                <span className="text-gray-500">Zelle</span> {handles.zelle}
-              </li>
-            )}
-            {handles.cashapp && (
-              <li>
-                <span className="text-gray-500">Cash App</span> {handles.cashapp}
-              </li>
-            )}
-            {handles.venmo && (
-              <li>
-                <span className="text-gray-500">Venmo</span> {handles.venmo}
-              </li>
-            )}
-            {handles.paypal && (
-              <li>
-                <span className="text-gray-500">PayPal</span> {handles.paypal}
-              </li>
-            )}
-          </ul>
+          <div className="mt-4">
+            <DirectPaymentHandles amountLabel={money(declared)} handles={handles} />
+          </div>
           <p className="mt-4 text-xs text-gray-600 leading-relaxed">
             {/* NOTHING IS HELD. The ticket sheet says squares are held because
                 they are inventory taken off the board. A donation takes no
@@ -327,29 +309,7 @@ export default function DonateSheet({
 
         {method === "cash" && anyHandle && (
           <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3">
-            <p className="text-sm mb-2">Send {money(amountCents)} to:</p>
-            <ul className="space-y-1 text-sm">
-              {handles.zelle && (
-                <li>
-                  <span className="text-gray-500">Zelle</span> {handles.zelle}
-                </li>
-              )}
-              {handles.cashapp && (
-                <li>
-                  <span className="text-gray-500">Cash App</span> {handles.cashapp}
-                </li>
-              )}
-              {handles.venmo && (
-                <li>
-                  <span className="text-gray-500">Venmo</span> {handles.venmo}
-                </li>
-              )}
-              {handles.paypal && (
-                <li>
-                  <span className="text-gray-500">PayPal</span> {handles.paypal}
-                </li>
-              )}
-            </ul>
+            <DirectPaymentHandles amountLabel={money(amountCents)} handles={handles} />
             <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
               Your donation counts toward the total once the host marks your
               payment received.
