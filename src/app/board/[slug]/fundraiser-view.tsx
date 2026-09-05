@@ -128,6 +128,10 @@ export default function FundraiserView({
   const [hold, setHold] = useState<{
     holdExpiresAt: string;
     squareIds: string[];
+    /// Absent on holds stored before the switch actions shipped. Without it
+    /// the banner falls back to its countdown-only shape rather than offering
+    /// buttons that would 400.
+    email?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -233,6 +237,46 @@ export default function FundraiserView({
     if (!redirecting || !confirmation?.signupUrl) return;
     router.push(confirmation.signupUrl);
   }, [redirecting, confirmation, router]);
+
+  // The three things someone who backed out of Stripe might want. All go
+  // through /api/checkout/resume, which already owns the identity check and
+  // the Stripe session lookup — a second flow would be a second chance to get
+  // the expire-before-mutate ordering wrong.
+  const [holdBusy, setHoldBusy] = useState<null | "resume" | "cash" | "release">(null);
+  const [holdError, setHoldError] = useState<string | null>(null);
+
+  async function holdAction(action: "resume" | "cash" | "release") {
+    if (!hold?.email || !hold.squareIds[0]) return;
+    setHoldBusy(action);
+    setHoldError(null);
+    try {
+      const res = await fetch("/api/checkout/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ squareId: hold.squareIds[0], email: hold.email, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHoldError(data.error || "Something went wrong.");
+        setHoldBusy(null);
+        return;
+      }
+      if (data.checkoutUrl) {
+        // assign(), not `location.href =`. Same navigation; the assignment
+        // form trips react-hooks/immutability.
+        window.location.assign(data.checkoutUrl);
+        return;
+      }
+      // Switched or released — the hold is over either way, so drop the note
+      // this browser wrote and let the server's state render.
+      clearHold();
+      setHoldBusy(null);
+      router.refresh();
+    } catch {
+      setHoldError("Something went wrong.");
+      setHoldBusy(null);
+    }
+  }
 
   function clearHold() {
     try {
@@ -458,7 +502,24 @@ export default function FundraiserView({
                 setClaiming(true);
               }}
               onDismiss={clearHold}
+              unit={{ one: u.one, many: u.many }}
+              actions={
+                hold.email
+                  ? {
+                      busy: holdBusy,
+                      onResume: () => holdAction("resume"),
+                      onSwitchToCash: () => holdAction("cash"),
+                      onRelease: () => holdAction("release"),
+                      cashAvailable: cashModeEnabled,
+                    }
+                  : undefined
+              }
             />
+            {holdError && (
+              <p className="text-sm text-red-400 mt-2" role="alert">
+                {holdError}
+              </p>
+            )}
           </div>
         )}
 

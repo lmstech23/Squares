@@ -231,6 +231,10 @@ export default function ClaimSheet({
               JSON.stringify({
                 holdExpiresAt: data.holdExpiresAt,
                 squareIds: data.squareIds ?? selected,
+                // The identity proof the resume route already requires. Stored
+                // so someone who backs out of Stripe can switch method or hand
+                // the tickets back without re-typing it.
+                email: email.trim().toLowerCase(),
               })
             );
           } catch {
