@@ -18,13 +18,6 @@ const inputClass =
   "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
 const labelClass = "block text-sm text-gray-400 mb-1.5";
 
-function money(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
-}
-
 interface Props {
   isCashHost: boolean;
   onBack: () => void;
@@ -68,15 +61,14 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   // discount, not a resize: a $5,000 goal at $50 makes 100 tickets even if the
   // first twenty sell at $40.
   //
-  // The old preview showed a RANGE ("if all 100 squares fill you raise
-  // $2,500 – $3,000") because the total depended on when squares sold. That
-  // sentence is gone: the count is no longer something she chose, so the thing
-  // worth telling her is what her numbers produced.
+  // The preview states the count and nothing else. It previously restated the
+  // goal and the price — both of which are in the two fields directly above it
+  // — and explained that early bird does not resize the board, which answers a
+  // question the host has not asked.
   const ticketCount = ticketCountFor(goalCents, priceCents);
   // MVP safety cap. Shown as she types, and enforced again on the server —
   // this one is a courtesy, that one is the guarantee.
   const tooManyTickets = ticketCount != null && ticketCount > MAX_TICKETS;
-  const highTotal = priceCents * (ticketCount ?? 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -524,20 +516,8 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
           <p className="text-sm">
             <span className="font-semibold">{ticketCount}</span>{" "}
-            {ticketCount === 1 ? "ticket" : "tickets"} at {money(priceCents)}
+            {ticketCount === 1 ? "ticket" : "tickets"} will be created
           </p>
-          <p className="text-xs text-gray-600 mt-1.5">
-            Enough to reach {money(goalCents ?? 0)}
-            {highTotal > (goalCents ?? 0)
-              ? ` — selling every ticket raises ${money(highTotal)}.`
-              : "."}
-          </p>
-          {earlyBirdOn && earlyCents && earlyCents < priceCents && (
-            <p className="text-xs text-gray-600 mt-1">
-              Early bird does not change the count — it is a discount, not a
-              smaller board.
-            </p>
-          )}
         </div>
       )}
 
