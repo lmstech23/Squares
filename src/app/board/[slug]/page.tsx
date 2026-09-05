@@ -4,7 +4,7 @@ import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { earlyBirdActive } from "@/lib/claim-price";
-import { getOrCreateSupporterAccessToken, mayClaim } from "@/lib/signups";
+import { issueSupporterAccessLink, mayClaim } from "@/lib/signups";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
@@ -187,14 +187,13 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
             mayClaim(grant.supporter.status) &&
             board.event.signupSheet
           ) {
-            const issued = await getOrCreateSupporterAccessToken(
-              grant.supporter.id
-            );
-            // `token` is null when a live one already exists: only the hash is
-            // stored, so the raw value cannot be recovered and no URL can be
-            // built. That is the design working, not a failure — the fallback
-            // copy covers it.
-            if (issued.token) signupUrl = `/signup/${issued.token}`;
+            // ALWAYS a usable link. The old call returned null once any token
+            // existed, so whichever of the page and the email got there second
+            // had nothing to render — which is exactly how a contributor ended
+            // up reading "open your link from the board page" with no link
+            // anywhere. See issueSupporterAccessLink for the trade-off.
+            const issued = await issueSupporterAccessLink(grant.supporter.id);
+            signupUrl = `/signup/${issued.token}`;
           }
         }
 

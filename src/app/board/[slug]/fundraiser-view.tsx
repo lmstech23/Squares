@@ -230,13 +230,17 @@ export default function FundraiserView({
   // DERIVED, not state. Whether we are navigating is entirely a function of
   // what the server sent — a token means go — so holding it in state would be
   // a second copy of a fact that already exists, kept in sync by an effect.
-  const redirecting = Boolean(
-    confirmation?.wantsToHelp && confirmation.signupUrl
-  );
+  const signupUrl = confirmation?.wantsToHelp ? confirmation.signupUrl : null;
   useEffect(() => {
-    if (!redirecting || !confirmation?.signupUrl) return;
-    router.push(confirmation.signupUrl);
-  }, [redirecting, confirmation, router]);
+    if (!signupUrl) return;
+    // A BEAT, NOT AN INSTANT JUMP. Navigating on the same frame as the
+    // confirmation renders means the contributor never sees that their payment
+    // worked — they just find themselves on a different page. The button above
+    // is live the whole time, so this is a convenience, never the only way
+    // through.
+    const id = setTimeout(() => router.push(signupUrl), 1800);
+    return () => clearTimeout(id);
+  }, [signupUrl, router]);
 
   // The three things someone who backed out of Stripe might want. All go
   // through /api/checkout/resume, which already owns the identity check and
@@ -425,6 +429,20 @@ export default function FundraiserView({
                 fundraiser contributor bought a ticket, not a grid position; the
                 square number names an internal detail they never chose and
                 cannot use. Game Day keeps its own confirmation copy. */}
+            {/* THE HEADLINE. This block had none: the old "Square #4 is yours"
+                line was removed because it said "square", and nothing replaced
+                it. On a no-prize board with donated admissions that left a
+                green box whose only sentence was a nudge about the total — a
+                contributor came back from paying and was told nothing about
+                their payment. Say it plainly, first. */}
+            <p className="text-sm font-medium text-green-100">
+              Payment received — thank you.
+            </p>
+            <p className="text-sm text-green-200/80 mt-1">
+              {confirmation.positions.length}{" "}
+              {confirmation.positions.length === 1 ? u.one : u.many} confirmed.
+            </p>
+
             {/* Entry lines only on a prize board — "Entry #23" means nothing
                 when there is no drawing. Gated on the prize, not board type. */}
             {hasPrize && (
@@ -455,13 +473,25 @@ export default function FundraiserView({
               {money(currentPrice * confirmation.positions.length)} closer.
             </p>
 
-            {/* Sign-up addendum SS5, the three states this can be in. */}
+            {/* Sign-up addendum SS5. THE LINK IS ALWAYS RENDERED when one
+                exists, and the auto-navigation happens on a short delay so the
+                confirmation above is readable first. Relying on the navigation
+                alone was the bug: if it did not fire the contributor was left
+                on the purchase page with no way through. */}
             {confirmation.wantsToHelp && (
               <div className="mt-3 border-t border-green-800/40 pt-3">
-                {redirecting ? (
-                  <p className="text-sm text-green-200/80">
-                    Taking you to the sign-up sheet…
-                  </p>
+                {confirmation.signupUrl ? (
+                  <>
+                    <p className="text-sm text-green-200/80">
+                      You offered to help — taking you to the sign-up sheet…
+                    </p>
+                    <a
+                      href={confirmation.signupUrl}
+                      className="inline-block mt-2 rounded-lg bg-green-200 px-3 py-2 text-sm font-medium text-gray-950 hover:bg-green-100 transition-colors"
+                    >
+                      Go to the sign-up sheet
+                    </a>
+                  </>
                 ) : pollExhausted ? (
                   /* Confirmation has not landed inside the twenty-second
                      budget. Do NOT offer a link: there is no token yet,
@@ -471,16 +501,6 @@ export default function FundraiserView({
                     We&apos;ll email your sign-up link as soon as your payment
                     finishes processing.
                   </p>
-                ) : confirmation.signupUrl ? (
-                  /* THE MANUAL CTA, and the only case it is offered in: a
-                     confirmed supporter holding a real token whose automatic
-                     redirect did not fire. SS5 reserves it for exactly this. */
-                  <a
-                    href={confirmation.signupUrl}
-                    className="text-sm underline underline-offset-4 text-green-200 hover:text-green-100"
-                  >
-                    Go to the volunteer sign-up sheet
-                  </a>
                 ) : (
                   <p className="text-sm text-green-200/80">
                     Setting up your sign-up link…

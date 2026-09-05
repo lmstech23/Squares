@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
-import { getOrCreateSupporterAccessToken } from "@/lib/signups";
+import { issueSupporterAccessLink } from "@/lib/signups";
 import { mayClaim, wantsToHelp } from "@/lib/signup-rules";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 
@@ -307,15 +307,16 @@ export async function sendPendingConfirmations(where: {
           mayClaim(grant.supporter.status) &&
           grant.event.signupSheet
         ) {
-          const issued = await getOrCreateSupporterAccessToken(grant.supporter.id);
           const sheetClosed = grant.event.signupSheet.isOpen === false;
-          const body = sheetClosed
-            ? `Sign-ups for this event are closed for now. The host will be in touch if that changes.`
-            : issued.token
-              ? `<a href="${base}/signup/${encodeURIComponent(issued.token)}"
-                    style="color:#166534;">Choose what you'll bring or a shift you'll work</a>
-                 — this link is yours, don't forward it.`
-              : `Open your sign-up link from the board page — we already sent you one.`;
+          // No "we already sent you one" branch any more. That copy could only
+          // fire when a token existed whose raw value was unrecoverable, so it
+          // pointed at a link that did not exist and never could.
+          const issued = sheetClosed ? null : await issueSupporterAccessLink(grant.supporter.id);
+          const body = issued
+            ? `<a href="${base}/signup/${encodeURIComponent(issued.token)}"
+                  style="color:#166534;">Choose what you'll bring or a shift you'll work</a>
+               — this link is yours, don't forward it.`
+            : `Sign-ups for this event are closed for now. The host will be in touch if that changes.`;
           signupHtml = `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
               <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
                 <p style="margin:0;font:600 14px system-ui,sans-serif;">You offered to help</p>

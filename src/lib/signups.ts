@@ -97,6 +97,60 @@ export async function getOrCreateSupporterAccessToken(
   return { id: created.id, token: raw, expiresAt: created.expiresAt };
 }
 
+/**
+ * Issue a link the recipient can actually follow — ALWAYS.
+ *
+ * WHY THIS EXISTS ALONGSIDE getOrCreateSupporterAccessToken. That function
+ * returns `token: null` when a live row already exists, because only the HASH
+ * is stored and the raw value cannot be re-derived. Every caller after the
+ * first therefore had nothing to render. In production that produced an email
+ * reading "open your sign-up link from the board page — we already sent you
+ * one" when no such link had ever been sent: a message pointing at something
+ * that does not exist, and a dead end by construction rather than by accident.
+ *
+ * THE DECISION: mint a fresh token and LEAVE THE EXISTING ONES VALID.
+ *
+ * Considered and rejected:
+ *   - Store the raw token. Defeats the point of hashing: a database read would
+ *     hand over live links for every supporter.
+ *   - Rotate — mint new, revoke old. Always yields a working link, but breaks
+ *     a link already sitting in someone's inbox the moment they buy again.
+ *     Password-reset semantics applied to a thing people are expected to keep.
+ *   - Resolve /signup by supporter id. That is not a token, it is an
+ *     enumerable identifier, and the sheet grants the ability to claim slots.
+ *
+ * What this costs: a supporter can hold more than one live token. That is
+ * acceptable and bounded — each is supporter-scoped, expires with the event,
+ * and is revocable. It does not weaken the addendum's idempotency intent:
+ * §5b's dedupe key is about not NOTIFYING someone twice, which the
+ * NotificationDelivery keys still govern. Reusing the row was an
+ * optimisation, never a security boundary.
+ *
+ * Callers that only need to know a token exists should keep using
+ * getOrCreateSupporterAccessToken. This one is for callers that must render a
+ * URL.
+ */
+export async function issueSupporterAccessLink(
+  supporterId: string,
+  now: Date = new Date()
+): Promise<{ id: string; token: string; expiresAt: Date }> {
+  const supporter = await prisma.eventSupporter.findUniqueOrThrow({
+    where: { id: supporterId },
+    select: { event: { select: { startsAt: true, endsAt: true } } },
+  });
+
+  const raw = newSupporterToken();
+  const created = await prisma.supporterAccessToken.create({
+    data: {
+      eventSupporterId: supporterId,
+      tokenHash: hashSupporterToken(raw),
+      expiresAt: tokenExpiryFor(supporter.event, now),
+    },
+    select: { id: true, expiresAt: true },
+  });
+  return { id: created.id, token: raw, expiresAt: created.expiresAt };
+}
+
 export type TargetOutcome =
   | { ok: true; changed: false; quantity: number }
   | { ok: true; changed: true; quantity: number; action: "CLAIMED" | "CANCELLED" }
