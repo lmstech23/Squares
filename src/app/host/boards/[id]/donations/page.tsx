@@ -1,0 +1,215 @@
+// src/app/host/boards/[id]/donations/page.tsx
+//
+// Host contribution ledger — donations §11.
+//
+// THE FOUR NUMBERS, and the rows behind them. Every one is derivable from
+// `Contribution` with a single grouped query; that is the payoff for making it
+// the money primitive.
+//
+// NAMING RULE, §2: this reads "Square sales" on EVERY board type. There is no
+// board on which "ticket sales" is the correct label for that number — the
+// drawing ticket is derived from a square rather than sold separately, and a
+// no-prize board has no ticket at all.
+//
+// A ROUTE, NOT A PANEL. It gates itself: a host can type this URL, so the
+// product gate and host authorization are both enforced here.
+
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect, notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getHost } from "@/lib/auth";
+import { boardTotals } from "@/lib/contributions";
+import CashDonationForm from "./cash-donation-form";
+
+export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+  title: "Contributions — Daali",
+};
+
+function money(cents: number): string {
+  return `$${(cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+export default async function DonationsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const host = await getHost();
+  if (!host) redirect("/login");
+
+  const board = await prisma.board.findUnique({
+    where: { boardId: id },
+    select: {
+      boardId: true,
+      hostId: true,
+      slug: true,
+      gameName: true,
+      boardType: true,
+      status: true,
+      prizePoolPercent: true,
+    },
+  });
+
+  if (!board || board.hostId !== host.id) notFound();
+  // Game Day never accumulates donation money — donations §5.
+  if (board.boardType !== "fundraiser") notFound();
+
+  const totals = await boardTotals(board.boardId);
+
+  const contributions = await prisma.contribution.findMany({
+    where: { boardId: board.boardId },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    select: {
+      id: true,
+      status: true,
+      paymentMethod: true,
+      squareAmountCents: true,
+      donationAmountCents: true,
+      totalPaidCents: true,
+      contributorName: true,
+      contributorEmail: true,
+      confirmedAt: true,
+      voidedAt: true,
+      createdAt: true,
+      _count: { select: { squares: true } },
+    },
+  });
+
+  const hasPrize = board.prizePoolPercent > 0;
+
+  return (
+    <main className="min-h-screen bg-gray-950 text-white">
+      <div className="mx-auto max-w-3xl px-4 py-6">
+        <Link
+          href={`/host/boards/${board.boardId}`}
+          className="text-sm text-gray-500 hover:text-gray-300"
+        >
+          ← Back to board
+        </Link>
+
+        <h1 className="mt-3 text-lg font-medium">{board.gameName}</h1>
+        <p className="text-sm text-gray-500">Contributions</p>
+
+        {/* The four numbers — donations §11. */}
+        <div className="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4">
+          <dl className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <dt className="text-gray-400">Square sales</dt>
+              <dd className="tabular-nums">{money(totals.squareCents)}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-gray-400">Donations</dt>
+              <dd className="tabular-nums">{money(totals.donationCents)}</dd>
+            </div>
+            <div className="flex justify-between border-t border-gray-800 pt-2 font-medium">
+              <dt>Raised</dt>
+              <dd className="tabular-nums">{money(totals.raisedCents)}</dd>
+            </div>
+            {hasPrize && (
+              <div className="flex justify-between pt-2 text-gray-400">
+                {/* Invariant 57: prize math reads the basis, never raised. */}
+                <dt>Prize basis</dt>
+                <dd className="tabular-nums">{money(totals.prizeBasisCents)}</dd>
+              </div>
+            )}
+          </dl>
+          <p className="mt-3 text-[11px] text-gray-600">
+            {totals.contributionCount} confirmed contribution
+            {totals.contributionCount === 1 ? "" : "s"}. Donations never reach the
+            prize basis.
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <CashDonationForm boardId={board.boardId} />
+        </div>
+
+        <h2 className="mt-6 text-sm font-medium">Ledger</h2>
+        <p className="mt-1 text-xs text-gray-500">
+          Every row, including released and voided. The totals above count only
+          confirmed, unvoided contributions.
+        </p>
+
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-gray-500">
+              <tr className="border-b border-gray-800">
+                <th className="py-2 pr-3 font-normal">Contributor</th>
+                <th className="py-2 pr-3 font-normal">Method</th>
+                <th className="py-2 pr-3 font-normal">Status</th>
+                <th className="py-2 pr-3 font-normal text-right">Squares</th>
+                <th className="py-2 pr-3 font-normal text-right">Square $</th>
+                <th className="py-2 pr-3 font-normal text-right">Donation $</th>
+                <th className="py-2 font-normal text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {contributions.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-4 text-gray-600">
+                    No contributions yet.
+                  </td>
+                </tr>
+              )}
+              {contributions.map((c) => (
+                <tr key={c.id} className="border-b border-gray-900">
+                  <td className="py-2 pr-3">
+                    <span className="text-gray-200">{c.contributorName}</span>
+                    {c.contributorEmail && (
+                      <span className="block text-gray-600">
+                        {c.contributorEmail}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-gray-400">
+                    {c.paymentMethod === "cash" ? "cash" : "card"}
+                  </td>
+                  <td className="py-2 pr-3">
+                    <span
+                      className={
+                        c.voidedAt
+                          ? "text-amber-400"
+                          : c.status === "confirmed"
+                            ? "text-emerald-400"
+                            : c.status === "pending"
+                              ? "text-gray-400"
+                              : "text-gray-600"
+                      }
+                    >
+                      {c.voidedAt ? "voided" : c.status}
+                    </span>
+                  </td>
+                  <td className="py-2 pr-3 text-right text-gray-400">
+                    {c._count.squares}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    {money(c.squareAmountCents)}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    {money(c.donationAmountCents)}
+                  </td>
+                  <td className="py-2 text-right font-medium">
+                    {money(c.totalPaidCents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mt-6 text-[11px] text-gray-600 leading-relaxed">
+          Daali does not provide tax advice. The host running this fundraiser is
+          the contributor&apos;s counterparty.
+        </p>
+      </div>
+    </main>
+  );
+}

@@ -6,6 +6,10 @@ import { releaseAdmissionForBatch } from "@/lib/admission";
 import { currentPriceCents } from "@/lib/claim-price";
 import { MAX_PER_CLAIM } from "@/lib/claim-limits";
 import { prepareAdmission } from "@/lib/admission";
+import {
+  createPendingCardContribution,
+  MIN_CARD_DONATION_CENTS,
+} from "@/lib/contributions";
 import { baseUrlFromRequest } from "@/lib/base-url";
 
 interface CheckoutBody {
@@ -19,6 +23,10 @@ interface CheckoutBody {
   smsOptIn?: boolean;
   /// Fundraiser only — "I'm not attending, donate my admissions" (v2 §6).
   donateAdmissions?: boolean;
+  /// Fundraiser only — an extra donation riding on this checkout, donations §6.
+  /// One session, two line items, one Contribution. Zero or absent means a
+  /// plain square purchase and nothing about this route changes.
+  donationAmountCents?: number;
 }
 
 // 30-minute checkout TTL (Stripe minimum for checkout sessions)
@@ -116,6 +124,32 @@ export async function POST(request: Request) {
     if (!isFundraiser && squareIds.length > MAX_PER_CLAIM) {
       return NextResponse.json(
         { error: `You can purchase up to ${MAX_PER_CLAIM} squares at a time.` },
+        { status: 400 }
+      );
+    }
+
+    // 2b. Mixed checkout — donations §6. One session, two line items, one
+    //     Contribution, confirming together or not at all (invariant 59).
+    //     Game Day never carries donation money: nothing downstream of it
+    //     knows what to do with the number (donations §5).
+    const donationCents = Math.trunc(body.donationAmountCents ?? 0);
+    if (donationCents < 0) {
+      return NextResponse.json(
+        { error: "Donation amount is not valid." },
+        { status: 400 }
+      );
+    }
+    if (donationCents > 0 && !isFundraiser) {
+      return NextResponse.json(
+        { error: "Donations are not available on this board." },
+        { status: 400 }
+      );
+    }
+    if (donationCents > 0 && donationCents < MIN_CARD_DONATION_CENTS) {
+      return NextResponse.json(
+        {
+          error: `The minimum card donation is $${MIN_CARD_DONATION_CENTS / 100}.`,
+        },
         { status: 400 }
       );
     }
@@ -313,7 +347,7 @@ export async function POST(request: Request) {
     // which is what makes preparation idempotent under retry.
     const batchId = isFundraiser ? randomUUID() : null;
 
-    const { count: totalLocked } = await prisma.$transaction(async (tx) => {
+    const { contributionId } = await prisma.$transaction(async (tx) => {
       const result = await tx.square.updateMany({
         where: {
           squareId: { in: squareIds },
@@ -374,7 +408,31 @@ export async function POST(request: Request) {
         }
       }
 
-      return result;
+      // The money ledger — donations §5, invariant 51. One Contribution per
+      // checkout, carrying the square portion and the donation portion as two
+      // separate integers that the CHECK constraint sums.
+      //
+      // Fundraiser only. Game Day squares stay outside the ledger entirely in
+      // this phase, exactly as A1 left them.
+      let contributionId: string | null = null;
+      if (isFundraiser) {
+        const contribution = await createPendingCardContribution(tx, {
+          boardId: board.boardId,
+          squareAmountCents: claimPriceCents * squareIds.length,
+          donationAmountCents: donationCents,
+          contributorName: name,
+          contributorEmail: email,
+          contributorPhone: phone ?? null,
+          holdExpiresAt: expiresAt,
+        });
+        contributionId = contribution.id;
+        await tx.square.updateMany({
+          where: { squareId: { in: squareIds } },
+          data: { contributionId },
+        });
+      }
+
+      return { count: result.count, contributionId };
     });
 
     // 6b. Post-lock re-check: max_squares_per_player race condition
@@ -448,6 +506,23 @@ export async function POST(request: Request) {
               },
               quantity: squareIds.length,
             },
+            // The donation rides on the same session as a second line item —
+            // donations §6. One payment, one Contribution, confirming together
+            // or not at all (invariant 59). There is deliberately no second
+            // payment intent: a partial-success state is forbidden by
+            // invariant 61.
+            ...(donationCents > 0
+              ? [
+                  {
+                    price_data: {
+                      currency: board.currency.toLowerCase(),
+                      product_data: { name: "Extra donation" },
+                      unit_amount: donationCents,
+                    },
+                    quantity: 1,
+                  },
+                ]
+              : []),
           ],
           customer_email: email,
           // COMPACT BY NECESSITY. `squareIds: squareIds.join(",")` used to
@@ -509,10 +584,23 @@ export async function POST(request: Request) {
                   checkoutSessionId: null,
                   pricePaidCents: null,
                   claimedAt: null,
+                  // An `open` square must never carry a contribution link —
+                  // the same rule A1's gate 3 asserts at migration time.
+                  contributionId: null,
                 }
               : {}),
           },
         });
+
+        // The Contribution was created by THIS request inside the lock
+        // transaction, before Stripe was called, and has no session behind it.
+        // Release it for the same reason the grant is cleaned up here.
+        if (contributionId) {
+          await prisma.contribution.updateMany({
+            where: { id: contributionId, status: "pending" },
+            data: { status: "released", releasedAt: new Date() },
+          });
+        }
 
         // The grant and supporter were created by THIS request, inside the
         // lock transaction, before Stripe was called. They are orphaned only
@@ -559,6 +647,15 @@ export async function POST(request: Request) {
         ...(isFundraiser ? { checkoutSessionId: session.id } : {}),
       },
     });
+
+    // ...and on the contribution, which is what the webhook looks up
+    // (donations §6, "Lookup key: Contribution.checkoutSessionId").
+    if (contributionId) {
+      await prisma.contribution.update({
+        where: { id: contributionId },
+        data: { checkoutSessionId: session.id },
+      });
+    }
 
     return NextResponse.json({
       checkoutUrl: session.url,

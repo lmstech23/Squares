@@ -401,6 +401,24 @@ export default async function HostBoardPage({ params }: Props) {
           pendingBatches={pendingBatches}
         />
 
+        {/* Contributions - donations SS11. The ledger and the cash-donation
+            entry live on their own route for the same reason volunteer
+            management does: this page is already dense, and the four numbers
+            are read standing at a table. */}
+        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
+          <p className="text-sm font-medium text-white">Contributions</p>
+          <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+            Square sales and donations, and where you record cash a supporter
+            hands you.
+          </p>
+          <Link
+            href={`/host/boards/${board.boardId}/donations`}
+            className="inline-block rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 mt-3 transition-colors"
+          >
+            View contributions
+          </Link>
+        </div>
+
         {board.event && (
           <div className="mt-6">
             <EventPanel

@@ -95,6 +95,10 @@ export default function ClaimSheet({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [donateAdmissions, setDonateAdmissions] = useState(false);
+  // Extra donation riding on this checkout - donations SS6. One session,
+  // two line items, one Contribution (invariant 59). Held as text for the
+  // same reason the quantity is: the field has to be clearable.
+  const [donationText, setDonationText] = useState("");
 
   const [method, setMethod] = useState<"card" | "cash">(
     stripeConnected ? "card" : "cash"
@@ -137,7 +141,16 @@ export default function ClaimSheet({
     .sort((a, b) => a - b);
 
   const count = selected.length;
-  const total = count * priceCents;
+  const squareTotal = count * priceCents;
+
+  // Empty or unparsable reads as 0, which flows through to "no donation" with
+  // no second validation path. The $5 floor is enforced server-side too.
+  const parsedDonation = Math.round(parseFloat(donationText) * 100);
+  const donationCents =
+    method === "card" && Number.isFinite(parsedDonation) && parsedDonation > 0
+      ? parsedDonation
+      : 0;
+  const total = squareTotal + donationCents;
 
   // Per TRANSACTION, and never more than are actually open.
   // INVENTORY IS THE ONLY CEILING on a fundraiser board. No MAX_PER_CLAIM
@@ -164,6 +177,12 @@ export default function ClaimSheet({
       setError("A phone number is required.");
       return;
     }
+    // Donations SS6: minimum card donation is $5. Below that Stripe's
+    // per-transaction cost consumes most of the gift.
+    if (donationCents > 0 && donationCents < 500) {
+      setError("The minimum donation is $5.");
+      return;
+    }
     setError(null);
     setLoading(true);
 
@@ -180,6 +199,7 @@ export default function ClaimSheet({
           playerEmail: email.trim(),
           playerPhone: phone.trim(),
           donateAdmissions,
+          ...(donationCents > 0 ? { donationAmountCents: donationCents } : {}),
         }),
       });
 
@@ -288,13 +308,48 @@ export default function ClaimSheet({
           </p>
         </div>
 
+        {/* Add a donation on top - donations SS6. Card only: a cash donation
+            is a host action with no reserve step (SS7), so there is nothing for
+            this field to do on the direct-payment path. */}
+        {method === "card" && (
+          <div className="mb-4">
+            <label className={labelClass} htmlFor="claim-donation">
+              Add a donation{" "}
+              <span className="text-gray-600">(optional, $5 minimum)</span>
+            </label>
+            <input
+              id="claim-donation"
+              inputMode="decimal"
+              value={donationText}
+              onChange={(e) => setDonationText(e.target.value)}
+              placeholder="0"
+              className={inputClass}
+            />
+            <p className="text-xs text-gray-600 mt-1.5">
+              This is one payment. If your hold expires, nothing is charged —
+              including the extra donation.
+            </p>
+          </div>
+        )}
+
         {/* What you are getting, by number. Shown before checkout so the
             assignment is never a surprise on the receipt. */}
         <div className="rounded-lg bg-gray-900 border border-gray-800 px-3 py-3 mb-4">
           <p className="text-sm">
             {count} {count === 1 ? u.one : u.many} —{" "}
-            <span className="font-semibold">{money(total)}</span>
+            <span className="font-semibold">{money(squareTotal)}</span>
           </p>
+          {donationCents > 0 && (
+            <p className="text-sm mt-1">
+              Donation —{" "}
+              <span className="font-semibold">{money(donationCents)}</span>
+            </p>
+          )}
+          {donationCents > 0 && (
+            <p className="text-sm mt-1 border-t border-gray-800 pt-1">
+              Total — <span className="font-semibold">{money(total)}</span>
+            </p>
+          )}
           {selectedPositions.length > 0 && (
             <p className="text-xs text-gray-500 mt-1 tabular-nums">
               {/* Summarised past a dozen. Ninety-seven numbers is not

@@ -16,6 +16,10 @@ import { prisma } from "@/lib/prisma";
 import { confirmSquares } from "@/lib/confirm-square";
 import Stripe from "stripe";
 import { sendPendingConfirmations } from "@/lib/confirmation-email";
+import {
+  activateDonorSupporter,
+  releaseContributionBySession,
+} from "@/lib/contributions";
 
 // Disable body parsing — we need the raw body for signature verification
 export const runtime = "nodejs";
@@ -120,6 +124,69 @@ async function handleAccountUpdated(account: Stripe.Account) {
 
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  // THE LEDGER COMES FIRST — donations §6, "Lookup key:
+  // Contribution.checkoutSessionId, not batch id".
+  //
+  // A donation-only session has ZERO squares to flip, so it must be resolved
+  // before the square lookup below, whose `squareIds.length === 0` early
+  // return would otherwise drop it silently and leave the contribution pending
+  // forever — stalling CLOSING under amended invariant 21.
+  const contribution = await prisma.contribution.findUnique({
+    where: { checkoutSessionId: session.id },
+    select: {
+      id: true,
+      boardId: true,
+      squareAmountCents: true,
+      donationAmountCents: true,
+      totalPaidCents: true,
+      contributorName: true,
+      contributorEmail: true,
+      contributorPhone: true,
+      status: true,
+    },
+  });
+
+  if (contribution && contribution.squareAmountCents === 0) {
+    // Donation-only. Nothing to flip, nothing to mint, no PaymentReference —
+    // that table hangs off a square and a donation has none. The ledger row
+    // IS the record of this money.
+    if (session.amount_total != null && session.amount_total !== contribution.totalPaidCents) {
+      // Invariant 62: a mismatch does not confirm and does not release.
+      console.error(
+        `checkout.session.completed: amount mismatch on contribution ${contribution.id} — ` +
+          `session ${session.amount_total} vs ledger ${contribution.totalPaidCents}. Not confirmed.`
+      );
+      throw new Error("CONTRIBUTION_AMOUNT_MISMATCH");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // Idempotent by conditional update on status = 'pending' (invariant 63).
+      // A replayed webhook matches zero rows, acknowledges, changes nothing.
+      const { count } = await tx.contribution.updateMany({
+        where: { id: contribution.id, status: "pending" },
+        data: { status: "confirmed", confirmedAt: new Date() },
+      });
+      if (count === 0) return;
+
+      // Supporter activation must also fire here — donations §9, amending
+      // admission §5. Without it a donation-only contributor stays `pending`
+      // forever and is silently ineligible for helper signups. Zero grants,
+      // zero passes: existence never implies entitlement (invariant 69).
+      const board = await tx.board.findUnique({
+        where: { boardId: contribution.boardId },
+        select: { event: { select: { id: true } } },
+      });
+      if (board?.event && contribution.contributorEmail) {
+        await activateDonorSupporter(tx, board.event.id, {
+          name: contribution.contributorName,
+          email: contribution.contributorEmail,
+          phone: contribution.contributorPhone,
+        });
+      }
+    });
+    return;
+  }
+
   // WHICH SQUARES DID THIS SESSION BUY?
   //
   // Two sources, in this order:
@@ -178,6 +245,23 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         throw new Error("STATE_MISMATCH");
       }
 
+      // The ledger row confirms in the SAME transaction as the squares —
+      // invariant 59: a mixed checkout's square portion and donation portion
+      // confirm together or not at all. Conditional on `pending`, so a
+      // replayed webhook changes nothing (invariant 63).
+      if (contribution) {
+        if (
+          session.amount_total != null &&
+          session.amount_total !== contribution.totalPaidCents
+        ) {
+          throw new Error("CONTRIBUTION_AMOUNT_MISMATCH");
+        }
+        await tx.contribution.updateMany({
+          where: { id: contribution.id, status: "pending" },
+          data: { status: "confirmed", confirmedAt: new Date() },
+        });
+      }
+
       // Create payment reference (one per session)
       await tx.paymentReference.create({
         data: {
@@ -222,6 +306,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 }
 
 async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
+  // New traffic — donations §6: `checkout.session.expired` now arrives for
+  // donation-only sessions with no squares attached. Conditional on `pending`,
+  // so a session that completed and one that expired cannot both win.
+  await releaseContributionBySession(session.id);
+
   const squareId = session.metadata?.squareId;
   if (!squareId) return;
 

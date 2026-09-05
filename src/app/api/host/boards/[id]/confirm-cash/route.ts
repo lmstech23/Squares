@@ -45,7 +45,7 @@ export async function POST(
 
     const board = await prisma.board.findUnique({
       where: { boardId },
-      select: { hostId: true, squarePrice: true, gameName: true },
+      select: { hostId: true, squarePrice: true, gameName: true, boardType: true },
     });
 
     if (!board || board.hostId !== host.id) {
@@ -84,6 +84,53 @@ export async function POST(
         method: "cash",
       },
     });
+
+    // Ledger row — invariant 51: every dollar the system counts belongs to
+    // exactly one Contribution. Without this, cash square money would be
+    // invisible to `raisedCents` while card money was not.
+    //
+    // ONE CONTRIBUTION PER CONFIRMED SQUARE on this path, not one per batch.
+    // Cash batches are deliberately NOT atomic (money doc §4) — a parent who
+    // reserves 3 and arrives with $100 resolves to 2 confirmed and 1 released
+    // — so a batch-level contribution would have to model partial
+    // confirmation, which invariant 61 forbids. Per-square keeps invariant 53
+    // literally true: squareAmountCents equals the sum of pricePaidCents on
+    // its confirmed squares.
+    if (board.boardType === "fundraiser") {
+      const sq = await prisma.square.findUnique({
+        where: { squareId },
+        select: {
+          pricePaidCents: true,
+          playerName: true,
+          playerEmail: true,
+          playerPhone: true,
+          contributionId: true,
+        },
+      });
+      if (sq && !sq.contributionId) {
+        const cents = sq.pricePaidCents ?? board.squarePrice;
+        const contribution = await prisma.contribution.create({
+          data: {
+            boardId,
+            status: "confirmed",
+            paymentMethod: "cash",
+            squareAmountCents: cents,
+            donationAmountCents: 0,
+            totalPaidCents: cents,
+            contributorName: sq.playerName ?? "Unknown",
+            contributorEmail: sq.playerEmail,
+            contributorPhone: sq.playerPhone,
+            confirmedAt: new Date(),
+            recordedByHostId: host.id,
+            confirmedByHostId: host.id,
+          },
+        });
+        await prisma.square.update({
+          where: { squareId },
+          data: { contributionId: contribution.id },
+        });
+      }
+    }
 
     // --- Confirmation email: deliberately NOT sent here ---
     //

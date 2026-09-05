@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import FundraiserGrid from "./fundraiser-grid";
 import ClaimSheet from "./claim-sheet";
+import DonateSheet from "./donate-sheet";
 import HoldTimer from "./hold-timer";
 import HowItWorks from "./how-it-works";
 
@@ -110,6 +111,7 @@ export default function FundraiserView({
   confirmation,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
+  const [donating, setDonating] = useState(false);
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
   // Selection lives on the board, so the checkout button can say how many
   // tickets are being bought before the sheet opens.
@@ -419,6 +421,22 @@ export default function FundraiserView({
           >
             {openCount === 0 ? `Every ${u.one} is claimed` : ctaLabel}
           </button>
+
+          {/* Donate — donations SS12. Subordinate while squares are open, and
+              PRIMARY the moment open squares reach zero: a full board that
+              can still take money is the difference between a finished
+              fundraiser and one that keeps going. */}
+          <button
+            type="button"
+            onClick={() => setDonating(true)}
+            className={
+              openCount === 0
+                ? "mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+                : "mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
+            }
+          >
+            Donate instead
+          </button>
         </div>
         )}
 
@@ -443,6 +461,8 @@ export default function FundraiserView({
             onCheckout={() => setClaiming(true)}
           />
         </div>
+
+        {donating && <DonateSheet slug={slug} onClose={() => setDonating(false)} />}
 
         {claiming && (
           <ClaimSheet
