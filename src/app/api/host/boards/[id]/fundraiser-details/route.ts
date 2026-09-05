@@ -23,11 +23,18 @@
 //   startsAt             until the first CONFIRMED contribution
 //   endsAt               until the first CONFIRMED contribution
 //   timezone             until the first CONFIRMED contribution
+//   squarePrice          until the first confirmed REGULAR-price square
+//   earlyBirdPriceCents  until the first confirmed EARLY-BIRD square
+//   earlyBirdEndsAt      until the first confirmed EARLY-BIRD square
 //
-// The lock predicate lives in lib/board-lock.ts and is shared. Contribution
-// price, early-bird terms and prize terms are NOT editable here at all — they
-// have no edit surface anywhere, and when they get one it must call the same
-// predicate.
+// The lock predicates live in lib/board-lock.ts and are shared WITH THE EDIT
+// SURFACE, so the form disables exactly what this route would refuse. A host
+// should learn a field is locked by looking at it, not by saving and getting
+// a 409.
+//
+// The three price locks are INDEPENDENT of the event lock and of each other
+// — launch-readiness v2.1 invariant 76. Prize terms are still not editable
+// here; when they get a surface they must call the same predicates.
 //
 // NO CONTRIBUTOR NOTIFICATION. For the pilot, a mistaken date discovered after
 // contributions is a manual-support exception. Controlled material changes with
@@ -37,7 +44,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { parseZoned } from "@/lib/zoned-time";
+import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { ticketCountFor, validateTicketCount } from "@/lib/board-inventory";
 import {
   hasConfirmedContribution,
@@ -55,6 +62,9 @@ interface Props {
 const MAX_NAME = 120;
 const MAX_VENUE = 200;
 const MAX_GOAL_CENTS = 100_000_000; // $1,000,000
+// Only reached if Board.timezone is null, which no board created by
+// api/boards has been - it hardcodes the same zone.
+const DEFAULT_TIMEZONE = "America/New_York";
 
 type Body = {
   name?: string | null;
@@ -168,9 +178,27 @@ export async function PATCH(request: Request, { params }: Props) {
       }
     }
     if ("earlyBirdEndsAt" in body) {
-      boardData.earlyBirdEndsAt = body.earlyBirdEndsAt
-        ? new Date(body.earlyBirdEndsAt)
-        : null;
+      // DATE-ONLY, END OF DAY, IN THE BOARD'S ZONE — the same rule creation
+      // uses (api/boards/route.ts) and the same rule campaign close uses.
+      //
+      // This was `new Date(body.earlyBirdEndsAt)`, written when no UI reached
+      // it. A wall-clock string with no offset is parsed as LOCAL time, and on
+      // Vercel local is UTC — so "ends March 3" saved from a form would have
+      // become 00:00 UTC, i.e. 7pm Eastern on March 2, ending the early price
+      // a day early. That is exactly the failure zoned-time.ts exists to
+      // prevent, and CLAUDE.md forbids the construct by name.
+      const raw = body.earlyBirdEndsAt;
+      if (!raw) boardData.earlyBirdEndsAt = null;
+      else {
+        const d = endOfDayZoned(raw, board.timezone ?? DEFAULT_TIMEZONE);
+        if (!d) {
+          return NextResponse.json(
+            { error: "Set a date for the early bird price to end." },
+            { status: 400 }
+          );
+        }
+        boardData.earlyBirdEndsAt = d;
+      }
     }
 
     // A REAL MESSAGE, not a generic 400 — launch-readiness §1.4 is explicit:

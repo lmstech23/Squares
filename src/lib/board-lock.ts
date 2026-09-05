@@ -16,7 +16,13 @@
 // own check — a second implementation is a second thing to drift.
 
 import type { Prisma } from "@prisma/client";
-import { prisma as defaultClient } from "@/lib/prisma";
+// RELATIVE, WITH THE EXTENSION, and not the "@/" alias. The alias is a
+// tsconfig path that node --experimental-strip-types does not resolve, and
+// board-lock.integration.test.ts runs under that runner - the same runner
+// confirm-square.integration.test.ts uses. An untestable predicate is worse
+// than a slightly less idiomatic import: invariant 76 is derived by price
+// comparison and has to be proven against real rows.
+import { prisma as defaultClient } from "./prisma.ts";
 
 /**
  * Has this board received a confirmed contribution?

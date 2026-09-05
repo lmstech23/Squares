@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { validateTicketCount, TOO_MANY_TICKETS } from "@/lib/board-inventory";
 
 interface Props {
   boardId: string;
@@ -28,6 +29,22 @@ interface Props {
   initialTimezone: string;
   /** Dollars, as typed. Empty string means no goal. */
   initialGoal: string;
+  /** Dollars, as typed. */
+  initialPrice: string;
+  /** Dollars, as typed. Empty string means no early bird. */
+  initialEarlyBirdPrice: string;
+  /** `YYYY-MM-DD`, already rendered in the board's zone. */
+  initialEarlyBirdEndsAt: string;
+  currentTicketCount: number;
+  // THE THREE PRICE LOCKS, computed by lib/board-lock.ts on the server. Passed
+  // in rather than re-derived here: the form must disable exactly what the
+  // route refuses, and two implementations of invariant 76 is one too many.
+  inventoryLocked: boolean;
+  regularLocked: boolean;
+  earlyBirdLocked: boolean;
+  inventoryLockReason: string;
+  regularLockReason: string;
+  earlyBirdLockReason: string;
 }
 
 const ZONES = [
@@ -44,9 +61,19 @@ const labelClass = "block text-xs font-medium text-gray-400 mb-1";
 const inputClass =
   "w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-gray-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed";
 
+/** Dollars as typed -> integer cents, or null when unusable. */
+function toCents(v: string): number | null {
+  const n = parseFloat(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100);
+}
+
 export default function EditFundraiserButton({
   boardId, hasEvent, locked, lockReason,
   initialName, initialVenue, initialStartsAt, initialEndsAt, initialTimezone, initialGoal,
+  initialPrice, initialEarlyBirdPrice, initialEarlyBirdEndsAt, currentTicketCount,
+  inventoryLocked, regularLocked, earlyBirdLocked,
+  inventoryLockReason, regularLockReason, earlyBirdLockReason,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -56,6 +83,12 @@ export default function EditFundraiserButton({
   const [endsAt, setEndsAt] = useState(initialEndsAt);
   const [timezone, setTimezone] = useState(initialTimezone);
   const [goal, setGoal] = useState(initialGoal);
+  const [price, setPrice] = useState(initialPrice);
+  // Reflects whether the board HAS an early bird price, not a stored flag -
+  // there is no such column. Clearing the price is how a host turns it off.
+  const [earlyBirdOn, setEarlyBirdOn] = useState(initialEarlyBirdPrice !== "");
+  const [earlyPrice, setEarlyPrice] = useState(initialEarlyBirdPrice);
+  const [earlyEndsAt, setEarlyEndsAt] = useState(initialEarlyBirdEndsAt);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Adding an event to a board that never had one. The creation-time checkbox
@@ -65,7 +98,47 @@ export default function EditFundraiserButton({
   const [addingEvent, setAddingEvent] = useState(false);
   const showEventFields = hasEvent || addingEvent;
 
+  // The regular price actually in force after this save. When the field is
+  // locked it is disabled and still holds the stored value, but reading the
+  // prop is what makes the early-bird comparison correct rather than
+  // incidentally correct.
+  const priceCents = regularLocked ? toCents(initialPrice) : toCents(price);
+  const earlyCents = earlyBirdOn ? toCents(earlyPrice) : null;
+  const goalCents = goal.trim() === "" ? null : toCents(goal);
+
+  // INVENTORY PREVIEW. Only meaningful while the count can still move: after
+  // the first confirmed contribution the board keeps the tickets it has and
+  // the goal stops driving size.
+  const preview = inventoryLocked ? null : validateTicketCount(goalCents, priceCents);
+  const nextCount = preview && preview.ok ? preview.count : null;
+
   async function save() {
+    // Same rules as the creation form, and the same rules the route enforces.
+    // Checked here so the host is told before a round trip, NOT instead of the
+    // server checking - the route re-validates every one of these.
+    if (!regularLocked && (!priceCents || priceCents < 100)) {
+      setError("Ticket price must be at least $1.");
+      return;
+    }
+    if (!earlyBirdLocked && earlyBirdOn) {
+      if (!earlyCents || earlyCents < 100) {
+        setError("Early bird price must be at least $1.");
+        return;
+      }
+      if (!earlyEndsAt) {
+        setError("Choose the date early bird pricing ends, or turn Early Bird off.");
+        return;
+      }
+      if (priceCents != null && earlyCents >= priceCents) {
+        setError("Early bird price must be below the ticket price.");
+        return;
+      }
+    }
+    if (preview && !preview.ok && goalCents != null) {
+      setError(preview.error === TOO_MANY_TICKETS ? TOO_MANY_TICKETS : preview.error);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -73,8 +146,18 @@ export default function EditFundraiserButton({
       // means a stale tab cannot trip the server's 409 by echoing back values
       // it merely displayed.
       const body: Record<string, unknown> = {
-        fundraisingGoalCents: goal.trim() === "" ? null : Math.round(parseFloat(goal) * 100),
+        fundraisingGoalCents: goalCents,
       };
+      // A LOCKED PRICE FIELD IS NOT SENT AT ALL. It is disabled and merely
+      // displaying its stored value; echoing that value back would be a write
+      // the route answers with 409 even though nothing changed.
+      if (!regularLocked) body.squarePrice = priceCents;
+      if (!earlyBirdLocked) {
+        body.earlyBirdPriceCents = earlyBirdOn ? earlyCents : null;
+        // Sent as `YYYY-MM-DD`; the route resolves it to 11:59:59 PM in the
+        // board's zone, the same rule creation and campaign close use.
+        body.earlyBirdEndsAt = earlyBirdOn ? earlyEndsAt : null;
+      }
       if (showEventFields) {
         body.name = name;
         body.venue = venue;
@@ -137,9 +220,102 @@ export default function EditFundraiserButton({
             is in a position to act on it. The line above is about the GOAL
             staying editable; this one is about the ticket count no longer
             following it. They are different facts and both are true. */}
-        <p className="text-xs text-gray-600 mt-1">
-          Ticket count locks after the first confirmed contribution.
-        </p>
+        {inventoryLocked ? (
+          <p className="text-xs text-gray-600 mt-1">
+            {currentTicketCount} tickets. {inventoryLockReason}
+          </p>
+        ) : (
+          <p className="text-xs text-gray-600 mt-1">
+            Ticket count locks after the first confirmed contribution.
+          </p>
+        )}
+      </div>
+
+      {/* --- Tickets and pricing ---------------------------------------------
+          Invariant 76: the early bird fields and the regular price lock
+          INDEPENDENTLY, at the first confirmed square bought under each. A
+          board running early bird can still have its regular price corrected,
+          because nobody has paid it yet.
+
+          A LOCKED FIELD STAYS ON SCREEN, disabled, holding its real value,
+          with the reason beside it - same rule as the event fields above. The
+          host learns she cannot change it by looking, not by saving. -------- */}
+      <div className="space-y-4 rounded-lg border border-gray-800 p-3">
+        <p className="text-xs font-semibold text-gray-300">Tickets and pricing</p>
+
+        <div>
+          <label htmlFor="price" className={labelClass}>Ticket price</label>
+          <input
+            id="price" type="number" min="1" step="1" inputMode="decimal"
+            className={inputClass} value={price} disabled={regularLocked}
+            onChange={(e) => setPrice(e.target.value)}
+          />
+          {regularLocked ? (
+            <p className="text-xs text-amber-200/80 mt-1">{regularLockReason}</p>
+          ) : (
+            nextCount != null && (
+              <p className="text-xs text-gray-600 mt-1">
+                {nextCount === currentTicketCount
+                  ? nextCount + " tickets."
+                  : "Saving changes this board from " + currentTicketCount +
+                    " tickets to " + nextCount + "."}
+              </p>
+            )
+          )}
+        </div>
+
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox" checked={earlyBirdOn} disabled={earlyBirdLocked}
+            className="mt-0.5 accent-green-500 disabled:opacity-50"
+            onChange={(e) => {
+              setEarlyBirdOn(e.target.checked);
+              if (!e.target.checked) {
+                setEarlyPrice("");
+                setEarlyEndsAt("");
+              }
+            }}
+          />
+          <span className="text-sm">Offer Early Bird pricing</span>
+        </label>
+
+        {earlyBirdLocked && (
+          <p className="text-xs text-amber-200/80">{earlyBirdLockReason}</p>
+        )}
+
+        {earlyBirdOn && (
+          <>
+            <div>
+              <label htmlFor="earlyPrice" className={labelClass}>
+                Early bird ticket price
+              </label>
+              <input
+                id="earlyPrice" type="number" min="1" step="1" inputMode="decimal"
+                className={inputClass} value={earlyPrice} disabled={earlyBirdLocked}
+                onChange={(e) => setEarlyPrice(e.target.value)}
+              />
+              {!earlyBirdLocked && (
+                <p className="text-xs text-gray-600 mt-1">
+                  Must be lower than the ticket price.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="earlyEndsAt" className={labelClass}>Early bird ends</label>
+              <input
+                id="earlyEndsAt" type="date"
+                className={inputClass} value={earlyEndsAt} disabled={earlyBirdLocked}
+                onChange={(e) => setEarlyEndsAt(e.target.value)}
+              />
+              {!earlyBirdLocked && (
+                <p className="text-xs text-gray-600 mt-1">
+                  The early price applies through 11:59 PM Eastern on this date.
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {!hasEvent && !addingEvent && (

@@ -11,7 +11,14 @@ import CashModeToggle from "./cash-mode-toggle";
 import CashReservePanel from "./cash-reserve-panel";
 import SquareList from "./square-list";
 import { priceScheduleLabel } from "@/lib/claim-price";
-import { hasConfirmedContribution, LOCK_REASON } from "@/lib/board-lock";
+import {
+  hasConfirmedContribution,
+  LOCK_REASON,
+  pricingLocks,
+  EARLY_BIRD_LOCK_REASON,
+  REGULAR_LOCK_REASON,
+  INVENTORY_LOCK_REASON,
+} from "@/lib/board-lock";
 import EditFundraiserButton from "./edit-fundraiser-button";
 import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
@@ -132,6 +139,11 @@ export default async function HostBoardPage({ params }: Props) {
     // surfaces rather than each growing their own.
     const contributionsLocked = await hasConfirmedContribution(board.boardId);
 
+    // THE THREE PRICE LOCKS, computed server-side so the form can disable what
+    // the route would refuse. Same function the route calls - one predicate,
+    // not a UI copy of it that drifts.
+    const priceLocks = await pricingLocks(board.boardId);
+
     // One resolver, host and contributor — src/lib/board-vocabulary.ts.
     const hostUnit = purchaseUnit({
       boardType: board.boardType,
@@ -157,6 +169,16 @@ export default async function HostBoardPage({ params }: Props) {
       }).formatToParts(d);
       const g = (t: string) => parts.find((x) => x.type === t)?.value ?? "";
       return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+    };
+
+    // Date-only prefill for the early-bird end box, read back in the BOARD's
+    // zone. The stored instant is 23:59:59 local on the chosen day; formatting
+    // it in any other zone can roll it to the next date.
+    const dateForInput = (d: Date | null, tz: string): string => {
+      if (!d) return "";
+      return new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(d);
     };
 
     const byStatus = (status: string) =>
@@ -370,6 +392,21 @@ export default async function HostBoardPage({ params }: Props) {
             initialEndsAt={forInput(eventDetail?.endsAt ?? null, eventDetail?.timezone ?? "America/New_York")}
             initialTimezone={eventDetail?.timezone ?? "America/New_York"}
             initialGoal={board.fundraisingGoalCents != null ? String(board.fundraisingGoalCents / 100) : ""}
+            initialPrice={String(board.squarePrice / 100)}
+            initialEarlyBirdPrice={
+              board.earlyBirdPriceCents != null ? String(board.earlyBirdPriceCents / 100) : ""
+            }
+            initialEarlyBirdEndsAt={dateForInput(
+              board.earlyBirdEndsAt,
+              board.timezone ?? "America/New_York"
+            )}
+            currentTicketCount={board.totalSquares}
+            inventoryLocked={priceLocks.inventoryLocked}
+            regularLocked={priceLocks.regularLocked}
+            earlyBirdLocked={priceLocks.earlyBirdLocked}
+            inventoryLockReason={INVENTORY_LOCK_REASON}
+            regularLockReason={REGULAR_LOCK_REASON}
+            earlyBirdLockReason={EARLY_BIRD_LOCK_REASON}
           />
         </div>
 
