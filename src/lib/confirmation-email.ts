@@ -48,24 +48,16 @@ function emailBaseUrl(): string {
  * usable passes in sequence order and never shows the raw sequenceNumber,
  * which is monotonic and leaves gaps once anything is voided.
  */
-function ticketBlocks(
-  tokens: string[],
-  base: string,
-  /// Index of the first token within the FULL set. The pass list is split
-  /// either side of the volunteer block, and "Pass 2 of 5" has to keep saying
-  /// 2 of 5 after the split.
-  offset = 0,
-  total = tokens.length
-): string {
+function ticketBlocks(tokens: string[], base: string): string {
   return tokens
     .map(
       (token, i) => `
       <tr><td style="padding:16px 0;border-top:1px solid #e5e5e5;">
         <p style="margin:0 0 8px;font:600 14px system-ui,sans-serif;">
-          Pass ${offset + i + 1} of ${total}
+          Pass ${i + 1} of ${tokens.length}
         </p>
         <img src="${base}/api/tickets/${encodeURIComponent(token)}/qr"
-             alt="Admission pass ${offset + i + 1} QR code"
+             alt="Admission pass ${i + 1} QR code"
              width="160" height="160"
              style="display:block;border:0;" />
       </td></tr>`
@@ -237,15 +229,21 @@ export async function sendPendingConfirmations(where: {
       });
 
       const base = emailBaseUrl();
-      // THE PASS LIST IS SPLIT, and the volunteer block goes in the gap.
+      // THE VOLUNTEER BLOCK GOES ABOVE EVERY PASS.
       //
-      // Passes are not time-sensitive: they are needed at a gate weeks out and
-      // the email persists. The sign-up link is — slots are
-      // first-come-first-served, and sign-up addendum §4 is explicit that
-      // someone who takes forty minutes may find the shift gone. Twenty QR
-      // images ahead of the one thing that needs acting on gets that backwards.
+      // An earlier revision kept one pass on top so the email opened as a
+      // receipt. Verified by hand that this was wrong: with a single pass there
+      // was no remainder, so the sign-up link still sat under a full-width QR
+      // and below the fold on a phone. The thank-you line, the ticket count and
+      // the amount already establish the receipt — a QR above the fold was not
+      // doing that work.
       //
-      // ONE PASS STAYS ON TOP so the email still opens as a receipt.
+      // Passes are not time-sensitive: needed at a gate weeks out, in an email
+      // that persists. Slots are first-come-first-served and sign-up addendum
+      // §4 is explicit that forty minutes can cost someone the shift.
+      //
+      // The summary line and "View your passes" stay above, so the passes are
+      // still announced before the reader scrolls past the volunteer block.
       const tokens = passes.map((pp) => pp.token);
       const passesHead =
         passes.length > 0
@@ -268,21 +266,18 @@ export async function sendPendingConfirmations(where: {
                      : ""
                  }
                </td></tr>
-               ${ticketBlocks(tokens.slice(0, 1), base, 0, passes.length)}
              </table>`
           : "";
 
-      // Everything after the volunteer block. The heading exists so the reader
-      // does not take the volunteer block for the end of the email.
-      const passesRest =
-        passes.length > 1
-          ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
-               <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
-                 <p style="margin:0;font:600 14px system-ui,sans-serif;">
-                   Remaining passes
-                 </p>
-               </td></tr>
-               ${ticketBlocks(tokens.slice(1), base, 1, passes.length)}
+      // Every pass, one continuous run, below the volunteer block. No heading
+      // and no border-top on the wrapper: those made this table byte-identical
+      // to the volunteer block's opening markup, and two identical sibling
+      // tables in a row is what Gmail's quoted-content heuristic latches onto —
+      // see the note on signupHtml.
+      const passesBody =
+        passes.length > 0
+          ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:4px;">
+               ${ticketBlocks(tokens, base)}
              </table>`
           : "";
 
@@ -303,6 +298,18 @@ export async function sendPendingConfirmations(where: {
       // token ONLY on first mint, because only the hash is stored. If the
       // redirect already minted one, this email cannot render a link and says
       // so rather than printing a dead URL.
+      // GMAIL'S "•••" TRIMMED-CONTENT MARKER appeared directly under this
+      // heading on desktop. Investigated on the real composed body: there is no
+      // empty cell, no stray element, no zero-height content — checked for
+      // <td></td>, <p></p>, &nbsp; and empty-td by regex, all absent. What was
+      // there was a REPEATED IDENTICAL STRUCTURE: this block and the
+      // "Remaining passes" block that followed it opened with byte-identical
+      // markup — same table attributes, same td border-top/padding, same
+      // heading <p> style — and Gmail reads consecutive identical structures as
+      // a quote chain. The marker sat exactly where the repetition began.
+      //
+      // The reorder above removes that block entirely, and the pass wrapper is
+      // deliberately given different attributes so the twin is not recreated.
       let signupHtml = "";
       if (batchId) {
         const grant = await prisma.admissionGrant.findUnique({
@@ -359,7 +366,7 @@ export async function sendPendingConfirmations(where: {
       }
 
       try {
-        await sendEmail(email, subject, html + passesHead + signupHtml + passesRest);
+        await sendEmail(email, subject, html + passesHead + signupHtml + passesBody);
       } catch (err) {
         // RELEASE THE CLAIM. These rows were stamped before the send, so
         // leaving them stamped would silently drop the receipt forever -- the
