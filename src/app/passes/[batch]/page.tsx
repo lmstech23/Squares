@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import PassRow from "./pass-row";
+import PassViewer from "./pass-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -99,18 +99,15 @@ export default async function PassesPage({ params }: Props) {
               {passes.length} {passes.length === 1 ? ADMISSION.one : ADMISSION.many}. Each
               admits one person — share one on its own and keep the rest.
             </p>
-            <div className="mt-4 space-y-3">
-              {passes.map((p, i) => (
-                <PassRow
-                  key={p.token}
-                  token={p.token}
-                  ordinal={i + 1}
-                  total={passes.length}
-                  used={p.status === "used"}
-                  label={p.label}
-                />
-              ))}
-            </div>
+            {/* ONE AT A TIME. The stacked list let a gate scanner catch a
+                neighbouring code — admission addendum §7. */}
+            <PassViewer
+              passes={passes.map((p) => ({
+                token: p.token,
+                used: p.status === "used",
+                label: p.label,
+              }))}
+            />
           </>
         )}
 
