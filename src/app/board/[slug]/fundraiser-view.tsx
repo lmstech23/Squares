@@ -230,17 +230,26 @@ export default function FundraiserView({
   // DERIVED, not state. Whether we are navigating is entirely a function of
   // what the server sent — a token means go — so holding it in state would be
   // a second copy of a fact that already exists, kept in sync by an effect.
-  const signupUrl = confirmation?.wantsToHelp ? confirmation.signupUrl : null;
-  useEffect(() => {
-    if (!signupUrl) return;
-    // A BEAT, NOT AN INSTANT JUMP. Navigating on the same frame as the
-    // confirmation renders means the contributor never sees that their payment
-    // worked — they just find themselves on a different page. The button above
-    // is live the whole time, so this is a convenience, never the only way
-    // through.
-    const id = setTimeout(() => router.push(signupUrl), 1800);
-    return () => clearTimeout(id);
-  }, [signupUrl, router]);
+  // NO AUTOMATIC NAVIGATION. Approved amendment to sign-up addendum §5: the
+  // supporter reaches the sheet by choosing to.
+  //
+  // Two things the redirect broke, both observed on beta:
+  //
+  //   1. The confirmation was never read. Passes, amount and next steps were
+  //      on screen for well under two seconds before the page changed under
+  //      the person reading it.
+  //   2. A BACK-BUTTON TRAP. router.push left the confirmation in history, so
+  //      Back returned here, this effect re-armed on the restored page, and
+  //      the supporter was thrown at the sheet again. No way back to the board
+  //      except closing the tab.
+  //
+  // THE SAFETY PROPERTY §5 CARES ABOUT IS UNCHANGED, because the button
+  // inherits the identical condition the redirect fired on: `signupUrl` is
+  // non-null only when the SERVER minted a token, and it only mints one for a
+  // supporter who is already `active`. So the button cannot appear before the
+  // poll tick that sees the payment confirmed — the same instant the redirect
+  // used to fire — and nobody reaches a sheet they are not yet eligible for.
+  // Same destination, same token, same minting path. There is no second one.
 
   // The three things someone who backed out of Stripe might want. All go
   // through /api/checkout/resume, which already owns the identity check and
@@ -473,25 +482,19 @@ export default function FundraiserView({
               {money(currentPrice * confirmation.positions.length)} closer.
             </p>
 
-            {/* Sign-up addendum SS5. THE LINK IS ALWAYS RENDERED when one
-                exists, and the auto-navigation happens on a short delay so the
-                confirmation above is readable first. Relying on the navigation
-                alone was the bug: if it did not fire the contributor was left
-                on the purchase page with no way through. */}
+            {/* Sign-up addendum SS5, as amended: the supporter chooses to go.
+                The button carries the same gate the redirect did — see the
+                comment on the removed effect above. Only a supporter who
+                ticked the help box sees any of this. */}
             {confirmation.wantsToHelp && (
               <div className="mt-3 border-t border-green-800/40 pt-3">
                 {confirmation.signupUrl ? (
-                  <>
-                    <p className="text-sm text-green-200/80">
-                      You offered to help — taking you to the sign-up sheet…
-                    </p>
-                    <a
-                      href={confirmation.signupUrl}
-                      className="inline-block mt-2 rounded-lg bg-green-200 px-3 py-2 text-sm font-medium text-gray-950 hover:bg-green-100 transition-colors"
-                    >
-                      Go to the sign-up sheet
-                    </a>
-                  </>
+                  <a
+                    href={confirmation.signupUrl}
+                    className="inline-block rounded-lg bg-green-200 px-3 py-2 text-sm font-medium text-gray-950 hover:bg-green-100 transition-colors"
+                  >
+                    Sign up to volunteer
+                  </a>
                 ) : pollExhausted ? (
                   /* Confirmation has not landed inside the twenty-second
                      budget. Do NOT offer a link: there is no token yet,
@@ -508,6 +511,18 @@ export default function FundraiserView({
                 )}
               </div>
             )}
+
+            {/* THE ONLY EXIT. Until now the browser back button was the only
+                way off this page, and while the redirect existed that did not
+                work either. A plain link, always present, whether or not the
+                supporter volunteered. Href drops the success query params, so
+                the confirmation does not rebuild on arrival. */}
+            <a
+              href={`/board/${slug}`}
+              className="inline-block mt-3 text-sm underline underline-offset-4 text-green-200/70 hover:text-green-100"
+            >
+              Back to the fundraiser
+            </a>
           </div>
         )}
 
