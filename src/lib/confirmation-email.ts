@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { getOrCreateSupporterAccessToken } from "@/lib/signups";
+import { mayClaim } from "@/lib/signup-rules";
 
 // One email per confirmation event — fundraiser-admission-addendum.md §5.
 //
@@ -227,8 +229,62 @@ export async function sendPendingConfirmations(where: {
              </table>`
           : "";
 
+      // VOLUNTEER SIGN-UP LINK — sign-up addendum §5.
+      //
+      // THIS IS THE ONLY PATH A CASH CONTRIBUTOR HAS. A direct payment never
+      // returns from Stripe, so the post-checkout redirect cannot fire for
+      // them: they read "send $X to" and leave. Their supporter does not go
+      // active until the host marks payment received, minutes or hours later,
+      // and this email is what that produces. For card it is the backstop
+      // behind the redirect.
+      //
+      // ONE MINTER. The token comes from getOrCreateSupporterAccessToken, the
+      // same call the board page makes, so the two paths cannot mint competing
+      // tokens for one supporter — the second caller gets the existing row.
+      //
+      // The consequence, and it is deliberate: that helper returns the raw
+      // token ONLY on first mint, because only the hash is stored. If the
+      // redirect already minted one, this email cannot render a link and says
+      // so rather than printing a dead URL.
+      let signupHtml = "";
+      if (batchId) {
+        const grant = await prisma.admissionGrant.findUnique({
+          where: { squareBatchId: batchId },
+          select: {
+            wantsToHelp: true,
+            event: { select: { signupSheet: { select: { isOpen: true } } } },
+            supporter: { select: { id: true, status: true } },
+          },
+        });
+
+        // Eligibility is DERIVED, never stored: `active` is the gate, and it
+        // is set inside the confirmation transaction this sweep follows.
+        if (
+          grant?.wantsToHelp &&
+          grant.supporter &&
+          mayClaim(grant.supporter.status) &&
+          grant.event.signupSheet
+        ) {
+          const issued = await getOrCreateSupporterAccessToken(grant.supporter.id);
+          const sheetClosed = grant.event.signupSheet.isOpen === false;
+          const body = sheetClosed
+            ? `Sign-ups for this event are closed for now. The host will be in touch if that changes.`
+            : issued.token
+              ? `<a href="${base}/signup/${encodeURIComponent(issued.token)}"
+                    style="color:#166534;">Choose what you'll bring or a shift you'll work</a>
+                 — this link is yours, don't forward it.`
+              : `Open your sign-up link from the board page — we already sent you one.`;
+          signupHtml = `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
+              <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
+                <p style="margin:0;font:600 14px system-ui,sans-serif;">You offered to help</p>
+                <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#444;">${body}</p>
+              </td></tr>
+            </table>`;
+        }
+      }
+
       try {
-        await sendEmail(email, subject, html + ticketHtml);
+        await sendEmail(email, subject, html + ticketHtml + signupHtml);
       } catch (err) {
         // RELEASE THE CLAIM. These rows were stamped before the send, so
         // leaving them stamped would silently drop the receipt forever -- the
