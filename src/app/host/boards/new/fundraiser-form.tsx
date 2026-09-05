@@ -61,10 +61,13 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   // discount, not a resize: a $5,000 goal at $50 makes 100 tickets even if the
   // first twenty sell at $40.
   //
-  // The preview states the count and nothing else. It previously restated the
-  // goal and the price — both of which are in the two fields directly above it
-  // — and explained that early bird does not resize the board, which answers a
-  // question the host has not asked.
+  // The preview states the count and nothing else.
+  //
+  // NO LOCK SEMANTICS ANYWHERE ON THIS FORM. When the ticket count locks, when
+  // a price freezes, what "aspirational" means for a goal — none of it helps
+  // someone filling in a field for the first time, and all of it was here. It
+  // lives on the EDIT surface instead, which is where a host is in a position
+  // to act on it.
   const ticketCount = ticketCountFor(goalCents, priceCents);
   // MVP safety cap. Shown as she types, and enforced again on the server —
   // this one is a courtesy, that one is the guarantee.
@@ -259,9 +262,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           className={inputClass}
         />
         <p className="text-xs text-gray-600 mt-1.5">
-          Sets how many tickets the board has, and shows a progress bar. You
-          can change the goal later; the ticket count is fixed once the first
-          contribution is confirmed.
+          Sets the ticket count and progress goal.
         </p>
       </div>
 
@@ -308,8 +309,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
             className={inputClass}
           />
           <p className="text-xs text-gray-600 mt-1.5">
-            Must be below the ticket price. The price is fixed when a ticket is
-            claimed, not when payment lands.
+            Must be lower than the ticket price.
           </p>
         </div>
         )}
@@ -366,8 +366,7 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
             className={inputClass}
           />
           <p className="text-xs text-gray-600 mt-1.5">
-            Days a reservation is held before you confirm it. Capped at
-            campaign close.
+            How long a direct-payment reservation is held.
           </p>
         </div>
       )}

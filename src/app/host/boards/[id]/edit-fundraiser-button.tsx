@@ -133,6 +133,13 @@ export default function EditFundraiserButton({
           Editable at any time — a goal is aspirational, not a term of the deal.
           Leave blank to hide the progress bar.
         </p>
+        {/* The lock lives HERE, not on the creation form: this is where a host
+            is in a position to act on it. The line above is about the GOAL
+            staying editable; this one is about the ticket count no longer
+            following it. They are different facts and both are true. */}
+        <p className="text-xs text-gray-600 mt-1">
+          Ticket count locks after the first confirmed contribution.
+        </p>
       </div>
 
       {!hasEvent && !addingEvent && (
