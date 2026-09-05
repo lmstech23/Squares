@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { getOrCreateSupporterAccessToken } from "@/lib/signups";
-import { mayClaim } from "@/lib/signup-rules";
+import { mayClaim, wantsToHelp } from "@/lib/signup-rules";
+import { purchaseUnit } from "@/lib/board-vocabulary";
 
 // One email per confirmation event — fundraiser-admission-addendum.md §5.
 //
@@ -90,12 +91,17 @@ function byRecipient(squares: SquareRow[]): Map<string, SquareRow[]> {
 function subjectAndBody(
   positions: number[],
   boardName: string,
-  isFundraiser: boolean
+  isFundraiser: boolean,
+  opts: { hasEvent: boolean; hasPrize: boolean }
 ): { subject: string; html: string } {
   const list = positions.map((p) => `#${p}`).join(" · ");
   const n = positions.length;
 
   if (isFundraiser) {
+    // A fundraiser contributor bought TICKETS. "Squares" named an internal
+    // detail they never chose and cannot act on — the same word the board page
+    // and the claim sheet already stopped using. One shared resolver.
+    const u = purchaseUnit({ boardType: "fundraiser", hasEvent: opts.hasEvent, hasPrize: opts.hasPrize });
     return {
       subject:
         n === 1
@@ -103,7 +109,14 @@ function subjectAndBody(
           : `Your ${n} contributions are confirmed — ${boardName}`,
       html:
         `<p>Thank you — your contribution to <strong>${boardName}</strong> is confirmed.</p>` +
-        `<p>${n === 1 ? "Square" : "Squares"}: <strong>${list}</strong></p>`,
+        // NUMBERS ONLY ON A PRIZE BOARD, the rule the claim sheet and the
+        // post-purchase confirmation already follow. On a prize board these
+        // are drawing ENTRY numbers the contributor verifies against the
+        // public audit, so they are the point. On a no-prize board they are
+        // grid positions nobody chose and can do nothing with.
+        (opts.hasPrize
+          ? `<p>${n === 1 ? u.One : u.Many}: <strong>${list}</strong></p>`
+          : `<p><strong>${n}</strong> ${n === 1 ? u.one : u.many}.</p>`),
     };
   }
 
@@ -169,7 +182,14 @@ export async function sendPendingConfirmations(where: {
         position: true,
         playerEmail: true,
         batchId: true,
-        board: { select: { gameName: true, boardType: true } },
+        board: {
+          select: {
+            gameName: true,
+            boardType: true,
+            prizePoolPercent: true,
+            event: { select: { id: true } },
+          },
+        },
       },
     });
 
@@ -181,10 +201,15 @@ export async function sendPendingConfirmations(where: {
 
     const boardName = squares[0].board.gameName;
     const isFundraiser = squares[0].board.boardType === "fundraiser";
+    const hasEvent = squares[0].board.event != null;
+    const hasPrize = squares[0].board.prizePoolPercent > 0;
 
     for (const [email, rows] of byRecipient(squares)) {
       const positions = rows.map((r) => r.position + 1);
-      const { subject, html } = subjectAndBody(positions, boardName, isFundraiser);
+      const { subject, html } = subjectAndBody(positions, boardName, isFundraiser, {
+        hasEvent,
+        hasPrize,
+      });
 
       // Tickets — only on a board with an event, and never for a purchase that
       // donated its admissions: minting skipped it, so there are no passes to
@@ -251,17 +276,34 @@ export async function sendPendingConfirmations(where: {
         const grant = await prisma.admissionGrant.findUnique({
           where: { squareBatchId: batchId },
           select: {
-            wantsToHelp: true,
-            event: { select: { signupSheet: { select: { isOpen: true } } } },
+            event: { select: { id: true, signupSheet: { select: { isOpen: true } } } },
             supporter: { select: { id: true, status: true } },
           },
         });
 
+        // INTEREST IS A ONE-WAY OR ACROSS GRANTS, NEVER A SINGLE BATCH —
+        // sign-up addendum §4, and signup-rules.ts says so in the helper this
+        // now uses. Someone who ticks the box on their second purchase is
+        // interested; the receipt for their FIRST purchase must still carry
+        // the link. Keying on `grant.wantsToHelp` was the bug: a supporter on
+        // 67ri0sk7 who had asked twice, was active, and had an open sheet with
+        // two slots received a confirmation with no link at all, because the
+        // batch being mailed happened to predate the checkbox.
+        const grants = grant?.supporter
+          ? await prisma.admissionGrant.findMany({
+              where: {
+                eventSupporterId: grant.supporter.id,
+                eventId: grant.event.id,
+              },
+              select: { wantsToHelp: true },
+            })
+          : [];
+
         // Eligibility is DERIVED, never stored: `active` is the gate, and it
         // is set inside the confirmation transaction this sweep follows.
         if (
-          grant?.wantsToHelp &&
-          grant.supporter &&
+          wantsToHelp(grants) &&
+          grant?.supporter &&
           mayClaim(grant.supporter.status) &&
           grant.event.signupSheet
         ) {
