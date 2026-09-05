@@ -48,16 +48,24 @@ function emailBaseUrl(): string {
  * usable passes in sequence order and never shows the raw sequenceNumber,
  * which is monotonic and leaves gaps once anything is voided.
  */
-function ticketBlocks(tokens: string[], base: string): string {
+function ticketBlocks(
+  tokens: string[],
+  base: string,
+  /// Index of the first token within the FULL set. The pass list is split
+  /// either side of the volunteer block, and "Pass 2 of 5" has to keep saying
+  /// 2 of 5 after the split.
+  offset = 0,
+  total = tokens.length
+): string {
   return tokens
     .map(
       (token, i) => `
       <tr><td style="padding:16px 0;border-top:1px solid #e5e5e5;">
         <p style="margin:0 0 8px;font:600 14px system-ui,sans-serif;">
-          Pass ${i + 1} of ${tokens.length}
+          Pass ${offset + i + 1} of ${total}
         </p>
         <img src="${base}/api/tickets/${encodeURIComponent(token)}/qr"
-             alt="Admission pass ${i + 1} QR code"
+             alt="Admission pass ${offset + i + 1} QR code"
              width="160" height="160"
              style="display:block;border:0;" />
       </td></tr>`
@@ -229,7 +237,17 @@ export async function sendPendingConfirmations(where: {
       });
 
       const base = emailBaseUrl();
-      const ticketHtml =
+      // THE PASS LIST IS SPLIT, and the volunteer block goes in the gap.
+      //
+      // Passes are not time-sensitive: they are needed at a gate weeks out and
+      // the email persists. The sign-up link is — slots are
+      // first-come-first-served, and sign-up addendum §4 is explicit that
+      // someone who takes forty minutes may find the shift gone. Twenty QR
+      // images ahead of the one thing that needs acting on gets that backwards.
+      //
+      // ONE PASS STAYS ON TOP so the email still opens as a receipt.
+      const tokens = passes.map((pp) => pp.token);
+      const passesHead =
         passes.length > 0
           ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:8px;">
                <tr><td style="padding-bottom:4px;">
@@ -250,7 +268,21 @@ export async function sendPendingConfirmations(where: {
                      : ""
                  }
                </td></tr>
-               ${ticketBlocks(passes.map((p) => p.token), base)}
+               ${ticketBlocks(tokens.slice(0, 1), base, 0, passes.length)}
+             </table>`
+          : "";
+
+      // Everything after the volunteer block. The heading exists so the reader
+      // does not take the volunteer block for the end of the email.
+      const passesRest =
+        passes.length > 1
+          ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
+               <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
+                 <p style="margin:0;font:600 14px system-ui,sans-serif;">
+                   Remaining passes
+                 </p>
+               </td></tr>
+               ${ticketBlocks(tokens.slice(1), base, 1, passes.length)}
              </table>`
           : "";
 
@@ -319,7 +351,7 @@ export async function sendPendingConfirmations(where: {
             : `Sign-ups for this event are closed for now. The host will be in touch if that changes.`;
           signupHtml = `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
               <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
-                <p style="margin:0;font:600 14px system-ui,sans-serif;">You offered to help</p>
+                <p style="margin:0;font:600 14px system-ui,sans-serif;">Volunteer sign-up</p>
                 <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#444;">${body}</p>
               </td></tr>
             </table>`;
@@ -327,7 +359,7 @@ export async function sendPendingConfirmations(where: {
       }
 
       try {
-        await sendEmail(email, subject, html + ticketHtml + signupHtml);
+        await sendEmail(email, subject, html + passesHead + signupHtml + passesRest);
       } catch (err) {
         // RELEASE THE CLAIM. These rows were stamped before the send, so
         // leaving them stamped would silently drop the receipt forever -- the
