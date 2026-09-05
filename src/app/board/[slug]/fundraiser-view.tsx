@@ -1,6 +1,6 @@
 "use client";
 
-import { priceScheduleLabel } from "@/lib/claim-price";
+import type { PublicPrice } from "@/lib/fundraiser-pricing";
 import { purchaseUnit, ADMISSION } from "@/lib/board-vocabulary";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,12 +33,11 @@ interface Props {
   causeDescription: string | null;
   hostName: string | null;
   squares: GridSquare[];
-  squarePrice: number;
-  earlyBirdPriceCents: number | null;
-  earlyBirdEndsAt: Date | null;
+  /** The one price a contributor sees, from publicPriceDisplay() on the
+      server. Never two prices - see src/lib/fundraiser-pricing.ts. */
+  price: PublicPrice;
   /// Decided by the caller, not here: "is the changeover still ahead" depends
   /// on the current time, which makes it impure inside render.
-  earlyBirdActive: boolean;
   timezone: string | null;
   raisedCents: number;
   /// Null = no goal set. No bar, no denominator — v2 §7.
@@ -98,10 +97,7 @@ export default function FundraiserView({
   causeDescription,
   hostName,
   squares,
-  squarePrice,
-  earlyBirdPriceCents,
-  earlyBirdEndsAt,
-  earlyBirdActive,
+  price,
   timezone,
   raisedCents,
   goalCents,
@@ -306,23 +302,12 @@ export default function FundraiserView({
     }
     setHold(null);
   }
-  // The schedule line renders only while the early bird price is still in
-  // effect. Once the changeover has passed there is one price again, and
-  // saying "through Sept 15, then $30" about a date in the past is noise.
-  const showSchedule =
-    earlyBirdActive && earlyBirdPriceCents != null && earlyBirdEndsAt != null;
-
-  const currentPrice = showSchedule ? earlyBirdPriceCents : squarePrice;
-
-  // Early-bird promotion, from the SAME predicate that decides what is charged
-  // (claim-price.ts). Keying a badge on `earlyBirdPriceCents != null` alone
-  // would keep advertising the discount after the window closed.
-  // `earlyBirdActive` is the PROP, decided by the caller from
-  // earlyBirdActive() in claim-price.ts — the same predicate
-  // currentPriceCents() charges on. The view stays pure and does not re-derive
-  // "is the window still open" from a timestamp.
-  const showEarlyBird =
-    earlyBirdActive && earlyBirdPriceCents != null && earlyBirdEndsAt != null;
+  // The price in force right now, and whether it is the early one. Both come
+  // from publicPriceDisplay() on the server, which calls the SAME predicate
+  // currentPriceCents() charges on. THE VIEW STAYS PURE and does not re-derive
+  // "is the window still open" from a timestamp - a badge that decided that for
+  // itself could advertise a discount the checkout no longer applies.
+  const currentPrice = price.amountCents;
 
   // CTA language follows what the buyer actually receives.
   //
@@ -368,37 +353,37 @@ export default function FundraiserView({
           </p>
         )}
 
-        {/* Price. When an early-bird window is OPEN this is a promotion: the
-            price you pay now is the headline, the deadline and the regular
-            price are the fine print underneath.
+        {/* Price. ONE PRICE, NEVER TWO.
 
-            `showEarlyBird` comes from earlyBirdActive() in claim-price.ts — the
-            same predicate currentPriceCents() charges on. A badge keyed only on
-            earlyBirdPriceCents being set would keep advertising a discount
-            after the window closed. */}
-        {showEarlyBird ? (
+            While early bird is live this is a promotion: what you pay now, and
+            the date it ends. THE REGULAR PRICE IS NOT SHOWN. It used to read
+            "Through Sep 27 · then $50", which asks someone deciding whether to
+            buy today to do arithmetic about a price that is not on offer, and
+            puts the larger number on the screen beside the one they would pay.
+            The host still sees both, through priceScheduleLabel() — she is the
+            one who has to plan around the changeover.
+
+            After the changeover there is one price again and no early-bird
+            framing at all. `price` comes from publicPriceDisplay() on the
+            server, which calls the same predicate the checkout charges on. */}
+        {price.earlyBird ? (
           <div className="mt-3 rounded-lg border border-green-800/60 bg-green-950/30 px-3.5 py-3">
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-300">
                 Early bird
               </span>
               <span className="text-xl font-bold text-white tabular-nums">
-                {money(earlyBirdPriceCents!)}
+                {money(price.amountCents)}
               </span>
               <span className="text-sm text-gray-400">per {u.one}</span>
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              Through {shortDate(earlyBirdEndsAt!, timezone)} · then{" "}
-              {money(squarePrice)}
+              Through {shortDate(price.deadline, timezone)}
             </p>
           </div>
         ) : (
           <p className="text-sm text-gray-500 mt-2">
-            {priceScheduleLabel(
-              { squarePrice, earlyBirdPriceCents, earlyBirdEndsAt, timezone },
-              new Date(),
-              u.one
-            )}
+            {money(price.amountCents)} per {u.one}
           </p>
         )}
         {hostName && (

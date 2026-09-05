@@ -377,6 +377,7 @@ export default async function HostBoardPage({ params }: Props) {
         <div className="mt-2 mb-6 space-y-3">
           <EditDetailsButton
             boardId={board.boardId}
+            boardType="fundraiser"
             gameName={board.gameName}
             teamCol=""
             teamRow=""
@@ -586,6 +587,7 @@ export default async function HostBoardPage({ params }: Props) {
           <div className="mt-2">
             <EditDetailsButton
               boardId={board.boardId}
+              boardType="game"
               gameName={board.gameName}
               teamCol={board.teamCol ?? ""}
               teamRow={board.teamRow ?? ""}

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
-import { earlyBirdActive } from "@/lib/claim-price";
+import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
 import { issueSupporterAccessLink, mayClaim } from "@/lib/signups";
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
@@ -18,17 +18,25 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const board = await prisma.board.findUnique({
     where: { slug },
-    select: { gameName: true, squarePrice: true, boardType: true, causeDescription: true },
+    select: {
+      gameName: true, squarePrice: true, boardType: true, causeDescription: true,
+      earlyBirdPriceCents: true, earlyBirdEndsAt: true,
+    },
   });
 
   if (!board) return { title: "Board Not Found" };
 
   if (board.boardType === "fundraiser") {
+    // THE LINK PREVIEW IS A CONTRIBUTOR-FACING PRICE LINE. These boards spread
+    // by group text, and the card that renders there quoted `squarePrice`
+    // unconditionally - so during an early-bird window the preview advertised
+    // $50 while the board itself said $40. Same helper as the header.
+    const price = publicPriceDisplay(board);
     return {
       title: `${board.gameName} — Daali Boards`,
       description:
         board.causeDescription ??
-        `$${board.squarePrice / 100} per square. Claim a square and support the cause.`,
+        `$${price.amountCents / 100} per square. Claim a square and support the cause.`,
     };
   }
 
@@ -210,13 +218,12 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       }
     }
 
-    // Whether the early bird price is still in effect. Decided here rather
-    // than in the view, which stays pure.
-    // The SAME predicate claim-price.ts charges on. This was an inline copy of
-    // the comparison, which is exactly the drift the shared helper exists to
-    // prevent: a promotion keyed on its own arithmetic can advertise a discount
-    // the checkout no longer applies.
-    const earlyBirdIsActive = earlyBirdActive({
+    // The ONE price a contributor sees, and its deadline while early bird is
+    // live. Decided here rather than in the view, which stays pure.
+    // publicPriceDisplay() calls the same predicate claim-price.ts charges on -
+    // a promotion keyed on its own arithmetic can advertise a discount the
+    // checkout no longer applies.
+    const price = publicPriceDisplay({
       squarePrice: board.squarePrice,
       earlyBirdPriceCents: board.earlyBirdPriceCents,
       earlyBirdEndsAt: board.earlyBirdEndsAt,
@@ -232,10 +239,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           position: sq.position,
           paymentStatus: sq.paymentStatus,
         }))}
-        squarePrice={board.squarePrice}
-        earlyBirdPriceCents={board.earlyBirdPriceCents}
-        earlyBirdEndsAt={board.earlyBirdEndsAt}
-        earlyBirdActive={earlyBirdIsActive}
+        price={price}
         timezone={board.timezone}
         raisedCents={board.finalRaisedCents ?? raised._sum.pricePaidCents ?? 0}
         goalCents={board.fundraisingGoalCents}

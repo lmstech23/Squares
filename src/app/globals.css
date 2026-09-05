@@ -12,3 +12,32 @@
 .animate-slide-up {
   animation: slide-up 0.25s ease-out;
 }
+
+/* Native date controls on a dark form.
+ *
+ * color-scheme is the load-bearing line: without it the dropdown calendar panel
+ * renders as a white rectangle over a dark page. It also makes the browser draw
+ * the built-in icon and spinners for a dark surface, which is why it comes
+ * first - the filter below is on top of an already-corrected icon.
+ *
+ * The padding is a TAP TARGET, not spacing. The native indicator is roughly
+ * 16px square, which is under every accessibility minimum and unmissable on a
+ * phone; 6px of padding puts it in thumb range without changing the field's
+ * layout. Hosts create boards on their phones.
+ */
+input[type="date"],
+input[type="datetime-local"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.8);
+  opacity: 0.95;
+  cursor: pointer;
+  padding: 6px;
+  margin-right: -2px;
+}
+
+input[type="date"]:hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}

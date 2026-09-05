@@ -3,8 +3,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
+// Board title editing, for both board types.
+//
+// THE BUG THIS FIXES. `valid` required all three of gameName, teamCol and
+// teamRow to be non-empty. A fundraiser has no teams - both columns are null by
+// design - so the page passed "" for each, `valid` was permanently false, and
+// Save never enabled. No error appeared; the button simply did nothing. The
+// modal also offered "Team across top" and "Team down side" on a board with no
+// axes.
+//
+// GAME DAY IS UNTOUCHED: `isFundraiser` is false and every branch below falls
+// through to exactly the previous behaviour.
+
 interface EditDetailsButtonProps {
   boardId: string;
+  boardType: "game" | "fundraiser";
   gameName: string;
   teamCol: string;
   teamRow: string;
@@ -12,10 +25,12 @@ interface EditDetailsButtonProps {
 
 export default function EditDetailsButton({
   boardId,
+  boardType,
   gameName: initialGameName,
   teamCol: initialTeamCol,
   teamRow: initialTeamRow,
 }: EditDetailsButtonProps) {
+  const isFundraiser = boardType === "fundraiser";
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [gameName, setGameName] = useState(initialGameName);
@@ -25,15 +40,17 @@ export default function EditDetailsButton({
   const [error, setError] = useState<string | null>(null);
   const firstInputRef = useRef<HTMLInputElement>(null);
 
-  const hasChanges =
-    gameName.trim() !== initialGameName ||
-    teamCol.trim() !== initialTeamCol ||
-    teamRow.trim() !== initialTeamRow;
+  const hasChanges = isFundraiser
+    ? gameName.trim() !== initialGameName
+    : gameName.trim() !== initialGameName ||
+      teamCol.trim() !== initialTeamCol ||
+      teamRow.trim() !== initialTeamRow;
 
-  const valid =
-    gameName.trim().length > 0 &&
-    teamCol.trim().length > 0 &&
-    teamRow.trim().length > 0;
+  const valid = isFundraiser
+    ? gameName.trim().length > 0
+    : gameName.trim().length > 0 &&
+      teamCol.trim().length > 0 &&
+      teamRow.trim().length > 0;
 
   // Esc-to-close + focus first input on open
   useEffect(() => {
@@ -62,11 +79,17 @@ export default function EditDetailsButton({
       const res = await fetch(`/api/host/boards/${boardId}/details`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameName: gameName.trim(),
-          teamCol: teamCol.trim(),
-          teamRow: teamRow.trim(),
-        }),
+        // A fundraiser sends the title alone. Sending "" for the team fields
+        // would ask the server to overwrite two meaningful nulls.
+        body: JSON.stringify(
+          isFundraiser
+            ? { gameName: gameName.trim() }
+            : {
+                gameName: gameName.trim(),
+                teamCol: teamCol.trim(),
+                teamRow: teamRow.trim(),
+              }
+        ),
       });
 
       const data = await res.json();
@@ -123,11 +146,12 @@ export default function EditDetailsButton({
           id="edit-details-title"
           className="text-base font-medium mb-1"
         >
-          Edit board details
+          {isFundraiser ? "Edit campaign details" : "Edit board details"}
         </h2>
         <p className="text-xs text-gray-500 mb-4">
-          Update the game and team names. Players will see the new names on
-          their next page load.
+          {isFundraiser
+            ? "Update your campaign title. Supporters see the new title on their next page load."
+            : "Update the game and team names. Players will see the new names on their next page load."}
         </p>
 
         <div className="space-y-4">
@@ -136,7 +160,7 @@ export default function EditDetailsButton({
               htmlFor="edit-gameName"
               className="block text-xs text-gray-400 mb-1.5"
             >
-              Game
+              {isFundraiser ? "What are you raising money for?" : "Game"}
             </label>
             <input
               id="edit-gameName"
@@ -149,6 +173,7 @@ export default function EditDetailsButton({
             />
           </div>
 
+          {!isFundraiser && (
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label
@@ -183,6 +208,7 @@ export default function EditDetailsButton({
               />
             </div>
           </div>
+          )}
         </div>
 
         {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
