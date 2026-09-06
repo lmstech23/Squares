@@ -1703,3 +1703,60 @@ Not urgent while A1 is the migration in flight: A1 is additive and
 reconstruction-complete, which is the whole basis of the ruling that let it
 proceed. It stops being deferrable the moment a migration mutates or drops
 something.
+
+---
+
+## Follow-ups from the cash-ledger fix (2026-09-05)
+
+Three items logged rather than built, so a money fix did not carry unrelated
+risk. Classification is the ruling from the proposal, not a guess.
+
+### 1. `releaseFundraiserSquare` helper — deliberately NOT extracted
+
+Six places return a fundraiser square to `open`, and the four launch-blocking
+ones were fixed **literally, with repeated code**, on an explicit ruling:
+consolidating shared release logic touches Game Day, which was out of scope,
+and a Game Day regression must not land inside a money fix.
+
+The repetition is real and should be collapsed later — but only in a change
+whose blast radius is release semantics, with Game Day coverage of its own.
+
+### 2. "Back to open" means six different things
+
+Found while auditing the release paths. What each one clears:
+
+```
+resume, action=release   playerName/Email/Phone, stripePaymentId,
+                         checkoutSessionId, checkoutExpiresAt, holdExpiresAt,
+                         batchId, pricePaidCents, claimedAt, contributionId
+webhook expired          playerName/Email, stripePaymentId, checkoutExpiresAt,
+                         contributionId
+release-expired cron     same as webhook expired
+cleanup cron             same, plus paymentMethod -> stripe
+host manual release      same as cleanup cron
+close-board step 2       playerName/Email/Phone, batchId, pricePaidCents,
+                         claimedAt
+```
+
+Only the `resume` release branch clears `batchId`, `pricePaidCents` and
+`claimedAt`. So on five of six paths a released square keeps a stale
+`batchId` and the price it was claimed at. `contributionId` is now cleared on
+five of six — `close-board` step 2 is the exception, and is safe because it
+runs at close, after which no new claim is possible.
+
+Nothing depends on the difference today. It is the same class of defect the
+`contributionId` bug was: a field nobody cleared, inherited by whoever claimed
+the square next.
+
+**Classified: follow-up.** Fix alongside item 1.
+
+### 3. `PaymentReference.amount` ignores the price actually paid
+
+`confirm-cash` writes `amount: board.squarePrice` rather than the square's own
+`pricePaidCents`, so an early-bird cash square records the regular price.
+
+Cosmetic today: nothing reads `PaymentReference.amount` for any total — raised,
+the prize basis and the final total all come from `Contribution` or `Square`.
+It becomes real the moment anything reconciles against it.
+
+**Classified: follow-up.**

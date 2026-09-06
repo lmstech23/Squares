@@ -71,6 +71,9 @@ export async function GET(request: Request) {
         playerEmail: null,
         stripePaymentId: null,
         checkoutExpiresAt: null,
+        // Cleared so the next claimant cannot inherit this row - see the
+        // note in confirm-cash. Audit survives on the contribution itself.
+        contributionId: null,
         releaseReason: "expired",
       },
     });

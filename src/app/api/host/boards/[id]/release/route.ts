@@ -64,6 +64,9 @@ export async function POST(
         playerEmail: null,
         stripePaymentId: null,
         checkoutExpiresAt: null,
+        // Cleared so the next claimant cannot inherit this row - see the
+        // note in confirm-cash. Audit survives on the contribution itself.
+        contributionId: null,
         releaseReason: "manual",
       },
     });
@@ -88,6 +91,9 @@ export async function POST(
         playerEmail: null,
         stripePaymentId: null,
         checkoutExpiresAt: null,
+        // Cleared so the next claimant cannot inherit this row - see the
+        // note in confirm-cash. Audit survives on the contribution itself.
+        contributionId: null,
         releaseReason: "manual",
       },
     });

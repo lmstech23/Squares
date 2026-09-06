@@ -324,6 +324,11 @@ async function handleCheckoutExpired(session: Stripe.Checkout.Session) {
       playerEmail: null,
       stripePaymentId: null,
       checkoutExpiresAt: null,
+      // Cleared so the next claimant cannot inherit this row. A released
+      // square has no ledger row covering it, and a stale pointer makes
+      // confirm-cash treat the NEXT contributor's money as already recorded.
+      // Audit survives on the contribution itself.
+      contributionId: null,
       releaseReason: "expired",
     },
   });

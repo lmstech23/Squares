@@ -290,11 +290,28 @@ export async function POST(request: Request) {
       // action === "cash". The SAME tickets, a different way to pay for them.
       // Price is NOT recomputed — invariant 42 fixes it at claim, and a
       // contributor who claimed at the early-bird price still owes that.
+      //
+      // THE POINTER GOES, AND THE OLD ROW IS RELEASED. This branch used to
+      // leave contributionId attached to the abandoned Stripe contribution
+      // while the `release` branch above cleared it - and that difference was
+      // the live path that produced a paid square with no ledger row. The
+      // square then reached confirm-cash carrying a pointer, which the old
+      // guard read as "already recorded", so the cash was never written down.
+      //
+      // Mirrors the release branch for both, and for the same reason it does:
+      // the session was expired above, so the row is dead either way, and
+      // `status: "pending"` makes the release idempotent against the webhook
+      // that will also fire.
+      //
+      // NOT cleared: batchId, pricePaidCents, claimedAt. These are the same
+      // tickets at the same price - only the way they will be paid changed.
+      const abandonedContributionId = square.contributionId;
       const { count } = await prisma.square.updateMany({
         where: batchWhere,
         data: {
           paymentStatus: "reserved_cash",
           paymentMethod: "cash",
+          contributionId: null,
           stripePaymentId: null,
           checkoutSessionId: null,
           checkoutExpiresAt: null,
@@ -311,6 +328,16 @@ export async function POST(request: Request) {
           { error: "These tickets are no longer held. Please claim again." },
           { status: 409 }
         );
+      }
+
+      // The card attempt is over. Conditional on `pending`, so a session that
+      // completed in the meantime is never touched, and a second call - or the
+      // expired webhook - matches zero rows and changes nothing.
+      if (abandonedContributionId) {
+        await prisma.contribution.updateMany({
+          where: { id: abandonedContributionId, status: "pending" },
+          data: { status: "released", releasedAt: new Date() },
+        });
       }
 
       return NextResponse.json({
