@@ -41,7 +41,6 @@ export default function DonateSheet({
   stripeConnected,
   handles,
   onClose,
-  canVolunteer,
 }: {
   slug: string;
   cashModeEnabled: boolean;
@@ -54,22 +53,9 @@ export default function DonateSheet({
     paypal: string | null;
   };
   onClose: () => void;
-  /**
-   * The board has an event AND a sign-up sheet exists on it.
-   *
-   * BOTH are required before the box is offered. Without an event there is no
-   * supporter to activate and no sheet to claim from; with an event but no
-   * sheet the box would collect an intention nothing can act on, and the email
-   * would promise a link to a page with nothing behind it.
-   */
-  canVolunteer: boolean;
 }) {
   // `Other` is a peer option, not a smaller link — the person giving $250
   // should not have to hunt for it (§6).
-  // Sign-up interest. CARRIES NO ENTITLEMENT: ticking it mints no grant, no
-  // pass, and no admission of any kind - it records that this person offered
-  // to help. Sign-up addendum §4.
-  const [wantsToHelp, setWantsToHelp] = useState(false);
   const [preset, setPreset] = useState<number | "other">(2500);
   const [otherText, setOtherText] = useState("");
   const [name, setName] = useState("");
@@ -85,9 +71,6 @@ export default function DonateSheet({
   // Set once a direct payment is declared: the sheet stops being a form and
   // becomes the instructions, because the money moves outside Daali.
   const [declared, setDeclared] = useState<number | null>(null);
-  // Snapshotted at submit. Reading the live checkbox on the post-submit screen
-  // would let a stray tap change what the screen claims was sent.
-  const [declaredWantsToHelp, setDeclaredWantsToHelp] = useState(false);
 
   const otherCents = Math.round(parseFloat(otherText) * 100);
   const amountCents =
@@ -134,7 +117,6 @@ export default function DonateSheet({
           donorEmail: email.trim(),
           donorPhone: phone.trim() || null,
           method,
-          wantsToHelp: canVolunteer && wantsToHelp,
         }),
       });
       const data = await res.json();
@@ -151,7 +133,6 @@ export default function DonateSheet({
         // Nothing redirects: the money moves outside Daali and the host marks
         // it received. Swap the form for the instructions.
         setDeclared(data.amountCents ?? amountCents);
-        setDeclaredWantsToHelp(canVolunteer && wantsToHelp);
         setLoading(false);
         return;
       }
@@ -182,18 +163,6 @@ export default function DonateSheet({
           </div>
           <p className="mt-4 text-sm text-gray-400">{AWAITING_HOST_CONFIRMATION}</p>
 
-          {/* THE TIMING IS THE MESSAGE. No link can exist yet: the supporter is
-              not active until the host marks the payment received, and
-              issueSupporterAccessLink mints against an active supporter. A
-              button here would 404, and "check your email" without saying WHEN
-              reads as "it is already there" to someone who then goes looking
-              for it. Say what has to happen first. */}
-          {declaredWantsToHelp && (
-            <p className="mt-2 text-sm text-gray-400">
-              Your volunteer sign-up link is emailed once the host confirms your
-              payment.
-            </p>
-          )}
           <button
             type="button"
             onClick={onClose}
@@ -360,25 +329,6 @@ export default function DonateSheet({
           <p className="mt-3 text-sm text-red-400" role="alert">
             {error}
           </p>
-        )}
-
-        {/* SIGN-UP INTEREST, NOT ADMISSION. Ticking this mints no grant, no
-            pass and no entitlement of any kind - it records that this person
-            offered to help. Offered only where there is an event AND a sheet
-            to claim from; otherwise it would collect an intention nothing can
-            act on. */}
-        {canVolunteer && (
-          <label className="mt-4 flex items-start gap-2.5">
-            <input
-              type="checkbox"
-              checked={wantsToHelp}
-              onChange={(e) => setWantsToHelp(e.target.checked)}
-              className="mt-0.5 accent-green-500"
-            />
-            <span className="text-sm text-gray-300">
-              I&apos;d like to help at the event
-            </span>
-          </label>
         )}
 
         <div className="mt-5 flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5">

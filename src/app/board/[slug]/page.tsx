@@ -5,7 +5,6 @@ import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
 import { donationReturnState } from "@/lib/donation-return";
-import { donorSignup } from "@/lib/donor-signup";
 import { boardTotals } from "@/lib/contributions";
 import { issueSupporterAccessLink, mayClaim } from "@/lib/signups";
 import type { Metadata } from "next";
@@ -242,7 +241,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
     // own status decides what renders, so a fabricated or replayed session_id
     // cannot produce a confirmation. Contribution.checkoutSessionId is the
     // same key the webhook uses, so this is one lookup, not a parallel one.
-    let donation: { settled: boolean; signupUrl: string | null } | null = null;
+    let donation: { settled: boolean } | null = null;
     if (sp.donated === "true" && sp.session_id) {
       const row = await prisma.contribution.findUnique({
         where: { checkoutSessionId: sp.session_id },
@@ -251,26 +250,17 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           status: true,
           squareAmountCents: true,
           voidedAt: true,
-          wantsToHelp: true,
-          contributorEmail: true,
         },
       });
       // The guards live in donationReturnState so they can be tested against
       // real rows in every state. Null means render NOTHING.
-      const state = donationReturnState(row, board.boardId);
-      if (state) {
-        // VOLUNTEER LINK, only once the money has actually confirmed. A
-        // pending row activates nobody, so donorSignup returns `none` for it
-        // and the screen offers no control rather than a dead one. Same
-        // decision the confirmation email uses - one function, two channels.
-        const signup = state.settled
-          ? await donorSignup(board.event?.id, row!.contributorEmail, row!.wantsToHelp)
-          : ({ kind: "none" } as const);
-        donation = {
-          settled: state.settled,
-          signupUrl: signup.kind === "link" ? signup.path : null,
-        };
-      }
+      //
+      // NO VOLUNTEER PROMPT HERE. A donate-only contributor is not asked to
+      // volunteer on any surface - product ruling. Their ELIGIBILITY is
+      // unchanged: activation still makes them `active` and mayClaim still
+      // returns true, so a link handed to them another way still works.
+      // Invariant 47 is untouched.
+      donation = donationReturnState(row, board.boardId);
     }
 
     // The ONE price a contributor sees, and its deadline while early bird is

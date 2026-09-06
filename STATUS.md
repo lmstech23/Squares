@@ -661,3 +661,34 @@ evidence that the corrupt state is absent — not that the filter works.
 construct a slot whose signups include one holding zero positions, and assert it
 is excluded from the rendered list. That is the cheapest of the six gaps and the
 only one not blocked on a fixture. Reclassified 2026-09-03.
+
+---
+
+## `Contribution.wantsToHelp` is unused, on purpose
+
+Added 2026-09-06 for donate-only volunteer prompting, and made unused hours
+later by the ruling that removed that prompting entirely. **It is not orphaned
+schema. It is a column with no current reader, kept deliberately.**
+
+```
+written by   nothing
+read by      nothing
+default      false
+production   0 rows true
+```
+
+**Why it was not dropped.** No behaviour depends on it either way, and it is
+the exact column the rule would use if donor prompting ever returns — dropping
+and re-adding a column shipped the same day is churn against a live database
+for no gain. `signup-rules.ts` `wantsToHelp()` reads AdmissionGrant ONLY and
+its comment says so; nothing silently ORs this in.
+
+**What the ruling did and did not do.** It removed the PROMPT, not the right.
+A donate-only supporter is still activated, still `active`, and `mayClaim()`
+still returns true for them — a sign-up link handed to them by any other route
+still works. **Invariant 47 is untouched and no donor-specific rule exists.**
+
+Removed with the prompt: the donation-form checkbox, the donation confirmation
+volunteer action, the donation email volunteer block, the donate route input,
+and `src/lib/donor-signup.ts` with its tests. Ticket volunteer signup,
+`AdmissionGrant.wantsToHelp`, admission and passes are untouched.

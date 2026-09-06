@@ -112,13 +112,13 @@ export function mayClaim(supporterStatus: string): boolean {
  * status latch. Read as EXISTS, NEVER STORED ON THE SUPPORTER - a column there
  * would be a latch a later write could clear.
  *
- * TWO SOURCES, ONE OR. Grants carry it for ticket purchases; Contribution
- * carries it for donations, which mint no grant. The signature is unchanged
- * because both rows are just `{ wantsToHelp: boolean }` - callers pass a
- * combined array rather than this function learning about either table.
+ * GRANTS ONLY. Ticket purchases mint an AdmissionGrant and that is where the
+ * flag lives. A donate-only contributor is never prompted to volunteer, so
+ * there is no second source to OR in - Contribution.wantsToHelp exists, is
+ * unused, and is deliberately NOT read here. See STATUS.md.
  */
-export function wantsToHelp(sources: { wantsToHelp: boolean }[]): boolean {
-  return sources.some((s) => s.wantsToHelp);
+export function wantsToHelp(grants: { wantsToHelp: boolean }[]): boolean {
+  return grants.some((g) => g.wantsToHelp);
 }
 
 /** The dedupe keys from §5b. The key names the thing being communicated. */

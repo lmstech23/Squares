@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { issueSupporterAccessLink } from "@/lib/signups";
 import { mayClaim, wantsToHelp } from "@/lib/signup-rules";
-import { donorSignup } from "@/lib/donor-signup";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 
 // One email per confirmation event — fundraiser-admission-addendum.md §5.
@@ -229,8 +228,7 @@ async function sendDonationConfirmations(where: {
       id: true,
       donationAmountCents: true,
       contributorEmail: true,
-      wantsToHelp: true,
-      board: { select: { gameName: true, event: { select: { id: true } } } },
+      board: { select: { gameName: true } },
     },
   });
 
@@ -238,52 +236,18 @@ async function sendDonationConfirmations(where: {
   for (const c of claimed) {
     const boardName = c.board.gameName;
     const subject = `Your donation is confirmed — ${boardName}`;
-    // VOLUNTEER SIGN-UP -- sign-up addendum §5.
-    //
-    // THIS IS THE ONLY CHANNEL A DIRECT-PAYMENT DONOR HAS. Their declaration
-    // screen cannot carry a link: nobody is active until the host marks the
-    // payment received, and issueSupporterAccessLink mints against an active
-    // supporter. The screen says the link is emailed after confirmation; this
-    // is what has to make that true.
-    //
-    // Same decision function the card confirmation screen uses, so the two
-    // channels cannot disagree about who is eligible. No grant, no pass.
-    const signup = await donorSignup(
-      c.board.event?.id,
-      c.contributorEmail,
-      c.wantsToHelp
-    );
-    const base = emailBaseUrl();
-    const signupHtml =
-      signup.kind === "link"
-        ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
-             <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
-               <p style="margin:0;font:600 14px system-ui,sans-serif;">Volunteer sign-up</p>
-               <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#444;">
-                 <a href="${base}${signup.path}" style="color:#166534;">Choose what you'll bring or a shift you'll work</a>
-                 -- this link is yours, don't forward it.
-               </p>
-             </td></tr>
-           </table>`
-        : signup.kind === "closed"
-          ? `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
-               <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
-                 <p style="margin:0;font:600 14px system-ui,sans-serif;">Volunteer sign-up</p>
-                 <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#444;">
-                   Sign-ups for this event are closed for now. The host will be
-                   in touch if that changes.
-                 </p>
-               </td></tr>
-             </table>`
-          : "";
-
+    // NO VOLUNTEER BLOCK. A donate-only contributor is not prompted to
+    // volunteer on any surface - product ruling. Nothing here promises a link,
+    // so nothing has to arrive. Their eligibility is unchanged: activation
+    // still makes them `active`, mayClaim still returns true, and invariant 47
+    // is untouched. The TICKET confirmation above keeps its volunteer block.
     const html = `
       <p style="margin:0;font:600 16px system-ui,sans-serif;">
         Thank you for your contribution.
       </p>
       <p style="margin:8px 0 0;font:14px system-ui,sans-serif;">
         ${money(c.donationAmountCents)} received for <strong>${esc(boardName)}</strong>.
-      </p>${signupHtml}`;
+      </p>`;
     try {
       await sendEmail(c.contributorEmail!, subject, html);
     } catch (err) {
