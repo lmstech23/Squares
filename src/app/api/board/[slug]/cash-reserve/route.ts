@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizePhone } from "@/lib/roster-identity";
 import { randomUUID } from "crypto";
 import { currentPriceCents } from "@/lib/claim-price";
 import { prepareAdmission } from "@/lib/admission";
@@ -116,14 +117,31 @@ export async function POST(
       );
     }
 
-    // A board with an event needs a name and an email to resolve the
-    // supporter — both are NOT NULL with no default. An email-only sheet
-    // fails here, at the first claim, not at confirmation. See v2 §6.
-    if (isFundraiser && board.event && !email) {
-      return NextResponse.json(
-        { error: "An email address is required to reserve on this board." },
-        { status: 400 }
-      );
+    // FUNDRAISER: EMAIL AND PHONE ARE BOTH MANDATORY, on every board, with or
+    // without an event. They are the two roster identity keys, and a
+    // contribution that carries only one cannot be resolved to a person.
+    // Previously email was required only when an event existed - the supporter
+    // row needed it - which left an event-less fundraiser collecting
+    // contributions nobody could be identified from.
+    //
+    // GAME DAY IS UNTOUCHED: neither branch below runs for it. Its phone check
+    // above has always been unconditional; its email has never been required
+    // and still is not.
+    if (isFundraiser) {
+      if (!email) {
+        return NextResponse.json(
+          { error: "An email address is required." },
+          { status: 400 }
+        );
+      }
+      // The same function identity uses, so nothing reaches resolveSupporter
+      // that it would refuse.
+      if (!normalizePhone(body.playerPhone)) {
+        return NextResponse.json(
+          { error: "A valid phone number is required." },
+          { status: 400 }
+        );
+      }
     }
 
     // Price is fixed now, at reservation, and never recomputed — invariant 42.

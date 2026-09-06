@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { identityKeys, normalizeEmail } from "./roster-identity.ts";
 // Relative, with the extension - see the note in contributions.ts.
 import { prisma } from "./prisma.ts";
 
@@ -15,45 +16,118 @@ import { prisma } from "./prisma.ts";
 // is A8 — nothing here creates an AdmissionPass.
 
 /** Purchaser email, lowercased and trimmed. The supporter identity. */
+/**
+ * @deprecated Superseded by normalizeEmail in roster-identity.ts, which is the
+ * single owner of normalization. Kept as a thin alias so nothing has two
+ * implementations to choose between while call sites migrate.
+ */
 export function normalizeIdentityKey(email: string): string {
-  return email.trim().toLowerCase();
+  return normalizeEmail(email) ?? "";
 }
 
 /**
- * Find the supporter for this email on this event, or create one as `pending`.
+ * Find the supporter for this contact on this event, or create one.
  *
- * One family, one row, across every purchase they make — the unique index on
- * (eventId, identityKey) is what enforces it. Two different emails are two
- * supporters, which is a known and accepted weakness: this is a headcount
- * control for a school tailgate, not a security boundary.
+ * ORDERED LOOKUP, EMAIL THEN PHONE, NEVER OR. Two point reads against two
+ * unique indexes, in that order. `email OR phone` would chain transitively:
+ * A shares an email with B, B shares a phone with C, and C is silently merged
+ * into A. This binds to AT MOST ONE existing supporter and never merges two
+ * that already exist.
  *
- * `name` and `email` are NOT NULL with no default, so both are required here.
- * `phone` is nullable, matching how Square.playerPhone already behaves.
+ * NO TIE-BREAK, and none is possible: both keys are uniquely indexed within an
+ * event, so each lookup returns one row or none. There is no set to order. If
+ * this ever appears to need an ordering rule, the lookup is wrong.
+ *
+ * THE PHONE BRANCH IS NOT A FALLBACK FOR MISSING DATA - email and phone are
+ * both mandatory now. It is how ONE PERSON WITH TWO EMAIL ADDRESSES STAYS ONE
+ * SUPPORTER: a contribution with a new email and a known phone binds to the
+ * existing supporter, creates no second row, and is not rejected. That is the
+ * only path phone identity takes.
+ *
+ * On that branch `emailKey` is NOT overwritten. It is uniquely indexed and
+ * rewriting it could collide with a third supporter; the new address is on the
+ * Contribution, which is where the ledger keeps what was typed.
+ *
+ * A returning supporter keeps their status and their passes. Never downgrade
+ * an active supporter back to pending on a later purchase.
  */
 export async function resolveSupporter(
   tx: Prisma.TransactionClient,
   eventId: string,
-  contact: { name: string; email: string; phone?: string | null }
+  contact: { name: string; email: string; phone: string }
 ) {
-  const identityKey = normalizeIdentityKey(contact.email);
+  const keys = identityKeys(contact);
+  if ("error" in keys) {
+    // The routes validate first and give a human message; this is the
+    // backstop that keeps a partial identity from ever reaching the table.
+    throw new Error(`resolveSupporter: ${keys.error} is required`);
+  }
 
-  const existing = await tx.eventSupporter.findUnique({
-    where: { eventId_identityKey: { eventId, identityKey } },
+  const found = await lookupSupporter(tx, eventId, keys);
+  if (found) return found;
+
+  // CREATE, GUARDED BY A SAVEPOINT.
+  //
+  // Two concurrent claims for the same new contact both miss the lookup and
+  // both insert; one gets a unique violation. Catching it is not enough on
+  // its own: in Postgres a failed statement ABORTS the surrounding
+  // transaction, and every later statement fails with "current transaction is
+  // aborted". Verified against a real database - the naive catch-and-requery
+  // fails, the savepoint version commits.
+  //
+  // So: savepoint, insert, and on violation roll back to the savepoint and
+  // re-run THE SAME ORDERED LOOKUP, binding to whichever row won. Once, then
+  // throw. Not a loop, not a single-key upsert, and no new identity behaviour.
+  await tx.$executeRawUnsafe("SAVEPOINT resolve_supporter");
+  try {
+    const created = await tx.eventSupporter.create({
+      data: {
+        eventId,
+        emailKey: keys.emailKey,
+        phoneKey: keys.phoneKey,
+        name: contact.name.trim(),
+        // WHAT THEY TYPED, not the normalized value. emailKey carries the
+        // normalization now, so this no longer has to.
+        email: contact.email.trim(),
+        phone: contact.phone.trim(),
+      },
+    });
+    await tx.$executeRawUnsafe("RELEASE SAVEPOINT resolve_supporter");
+    return created;
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT resolve_supporter");
+    const won = await lookupSupporter(tx, eventId, keys);
+    if (won) return won;
+    // A unique violation with nothing to find afterwards is not a race; it is
+    // a constraint we do not understand. Do not retry into it.
+    throw err;
+  }
+}
+
+/** The ordered lookup, used by both the first attempt and the retry. */
+async function lookupSupporter(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  keys: { emailKey: string; phoneKey: string }
+) {
+  const byEmail = await tx.eventSupporter.findUnique({
+    where: { eventId_emailKey: { eventId, emailKey: keys.emailKey } },
   });
+  if (byEmail) return byEmail;
 
-  // A returning supporter keeps their status and their passes. Never
-  // downgrade an active supporter back to pending on a later purchase.
-  if (existing) return existing;
-
-  return tx.eventSupporter.create({
-    data: {
-      eventId,
-      identityKey,
-      name: contact.name.trim(),
-      email: identityKey,
-      phone: contact.phone?.trim() || null,
-    },
+  return tx.eventSupporter.findUnique({
+    where: { eventId_phoneKey: { eventId, phoneKey: keys.phoneKey } },
   });
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "P2002"
+  );
 }
 
 /**
@@ -107,7 +181,7 @@ export async function prepareAdmission(
   tx: Prisma.TransactionClient,
   eventId: string,
   squareBatchId: string,
-  contact: { name: string; email: string; phone?: string | null },
+  contact: { name: string; email: string; phone: string },
   donateAdmissions: boolean,
   wantsToHelp = false
 ) {

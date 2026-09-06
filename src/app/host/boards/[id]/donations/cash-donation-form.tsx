@@ -35,6 +35,16 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
       setError("A contributor name is required.");
       return;
     }
+    // BOTH ARE REQUIRED NOW, host-recorded or not. A contribution with no
+    // email used to create no supporter at all - not a bad identity, none.
+    if (!email.trim()) {
+      setError("An email address is required.");
+      return;
+    }
+    if (!phone.trim()) {
+      setError("A phone number is required.");
+      return;
+    }
     setError(null);
     setOk(null);
     setLoading(true);
@@ -45,7 +55,7 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
         body: JSON.stringify({
           amountCents: cents,
           donorName: name.trim(),
-          donorEmail: email.trim() || null,
+          donorEmail: email.trim(),
           donorPhone: phone.trim() || null,
         }),
       });
@@ -103,7 +113,7 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
         </div>
         <div>
           <label className={labelClass} htmlFor="cd-email">
-            Email <span className="text-gray-600">(optional)</span>
+            Email
           </label>
           <input
             id="cd-email"
@@ -115,7 +125,7 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
         </div>
         <div>
           <label className={labelClass} htmlFor="cd-phone">
-            Phone <span className="text-gray-600">(optional)</span>
+            Phone
           </label>
           <input
             id="cd-phone"

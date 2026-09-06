@@ -142,7 +142,9 @@ export async function createPendingCardContribution(
 export async function activateDonorSupporter(
   tx: Prisma.TransactionClient,
   eventId: string,
-  contact: { name: string; email: string; phone?: string | null }
+  /// phone is REQUIRED, like email. Both are mandatory on every contribution
+  /// now, and the type is what stops a partial identity reaching the roster.
+  contact: { name: string; email: string; phone: string }
 ) {
   const supporter = await resolveSupporter(tx, eventId, contact);
   await tx.eventSupporter.updateMany({
@@ -273,7 +275,9 @@ export async function recordCashDonation(input: {
       },
     });
 
-    if (input.eventId && input.contributorEmail) {
+    // Both are required by the routes above; the guard is a backstop, not a
+    // branch that a legitimate contribution can fall down.
+    if (input.eventId && input.contributorEmail && input.contributorPhone) {
       await activateDonorSupporter(tx, input.eventId, {
         name: input.contributorName,
         email: input.contributorEmail,

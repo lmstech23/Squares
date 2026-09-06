@@ -249,7 +249,22 @@ model Event {
 model EventSupporter {
   id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   eventId            String          @map("event_id") @db.Uuid
-  identityKey        String          @map("identity_key")
+  /// Normalized email: trim + lowercase, nothing else. Renamed from
+  /// `identityKey` - same meaning, same values - now that phoneKey exists and
+  /// "the identity key" is ambiguous. PRIMARY identity: looked up first.
+  emailKey           String          @map("email_key")
+  /// Normalized phone, E.164 with a US default.
+  ///
+  /// NOT DEAD WEIGHT AND NOT A FALLBACK. Email and phone are both mandatory on
+  /// every write, so this is never the only key a supporter has. It is
+  /// primarily a ROSTER SEARCH FIELD - a host looks people up by the number
+  /// they were texted from - and secondarily the second step of identity
+  /// lookup, which is how one person with two email addresses stays one
+  /// supporter.
+  ///
+  /// Nullable ONLY to accommodate one legacy supporter created before the
+  /// requirement, who has no phone to backfill from. Never null on a new row.
+  phoneKey           String?         @map("phone_key")
   name               String
   email              String
   /// Nullable — the claim flow does not require a phone (Square.playerPhone is
@@ -270,7 +285,10 @@ model EventSupporter {
   signupLogs SignupLog[]
   notifications NotificationDelivery[]
 
-  @@unique([eventId, identityKey], map: "event_supporters_event_identity_key")
+  @@unique([eventId, emailKey], map: "event_supporters_event_email_key")
+  /// UNIQUE: one normalized phone per supporter within an event. The rule is
+  /// the product invariant, not an artifact of the data.
+  @@unique([eventId, phoneKey], map: "event_supporters_event_phone_key")
   @@map("event_supporters")
 }
 

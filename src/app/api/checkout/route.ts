@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizePhone } from "@/lib/roster-identity";
 import { stripe } from "@/lib/stripe";
 import { randomUUID } from "crypto";
 import { releaseAdmissionForBatch } from "@/lib/admission";
@@ -109,6 +110,17 @@ export async function POST(request: Request) {
 
     const board = squares[0].board;
     const isFundraiser = board.boardType === "fundraiser";
+
+    // FUNDRAISER ONLY: the phone must also NORMALIZE, because it becomes a
+    // roster identity key. A value this refuses would reach resolveSupporter
+    // and throw there instead of being a 400 here. Game Day keeps the
+    // presence-only check above and is otherwise untouched.
+    if (isFundraiser && !normalizePhone(phone)) {
+      return NextResponse.json(
+        { error: "A valid phone number is required." },
+        { status: 400 }
+      );
+    }
     const donateAdmissions = body.donateAdmissions ?? false;
 
     // PER TRANSACTION, GAME DAY ONLY — src/lib/claim-limits.ts.

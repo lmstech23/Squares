@@ -176,7 +176,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         where: { boardId: contribution.boardId },
         select: { event: { select: { id: true } } },
       });
-      if (board?.event && contribution.contributorEmail) {
+      if (board?.event && contribution.contributorEmail && contribution.contributorPhone) {
         await activateDonorSupporter(tx, board.event.id, {
           name: contribution.contributorName,
           email: contribution.contributorEmail,

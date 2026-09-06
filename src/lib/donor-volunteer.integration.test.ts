@@ -76,7 +76,7 @@ describe(
       return db.eventSupporter.create({
         data: {
           eventId,
-          identityKey: email.toLowerCase(),
+          emailKey: email.toLowerCase(),
           name: "Donor",
           email: email.toLowerCase(),
           status,
@@ -256,7 +256,7 @@ describe(
       // Two links, both usable, neither invalidating the other - the same
       // property issueSupporterAccessLink already guarantees for tickets.
       const sup = await db.eventSupporter.findFirstOrThrow({
-        where: { eventId, identityKey: "same@example.com" },
+        where: { eventId, emailKey: "same@example.com" },
       });
       assert.equal(
         await db.supporterAccessToken.count({ where: { eventSupporterId: sup.id } }),

@@ -100,6 +100,12 @@ export default function DonateSheet({
     // The $5 floor is a CARD rule - it exists because Stripe's per-transaction
     // cost consumes a small gift. A direct payment has no processor and no
     // floor, so it is not applied here.
+    // Both identity keys are required on every contribution now. The server
+    // is the enforcement; this is the courtesy that saves a round trip.
+    if (!phone.trim()) {
+      setError("A phone number is required.");
+      return;
+    }
     if (method === "card" && amountCents < MIN_CENTS) {
       setError(`The minimum donation is ${money(MIN_CENTS)}.`);
       return;
@@ -292,7 +298,7 @@ export default function DonateSheet({
           </div>
           <div>
             <label className={labelClass} htmlFor="donate-phone">
-              Phone <span className="text-gray-600">(optional)</span>
+              Phone
             </label>
             <input
               id="donate-phone"

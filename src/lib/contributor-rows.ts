@@ -1,3 +1,5 @@
+import { normalizeEmail, normalizePhone } from "./roster-identity.ts";
+
 // One row per contributor for the host board page — v2 §9.
 //
 // TWO SOURCES, ONE PERSON. Squares answer "who holds tickets"; contributions
@@ -5,9 +7,16 @@
 // "Contributors" and answered the first question, so a host who had just taken
 // a donation read "Nobody has claimed a ticket yet" as nothing having happened.
 //
-// Keyed on the lowercased email, which is the same aggregation the square-only
-// version used: someone who bought twice is one row, and someone who bought
-// tickets and also donated is one person who did both.
+// FOLDED ON THE SHARED IDENTITY RULE, derived per render - email first, then
+// phone, never OR. Same precedence admission.ts applies against the database,
+// from the same module, so a host cannot see one person in her roster and two
+// in this list.
+//
+// NO STORED KEY AND NO NEW ENTITY, deliberately. This is presentation. It must
+// keep working on an event-less fundraiser board, where EventSupporter cannot
+// exist at all - it is keyed on eventId with a non-null FK. Storing identity
+// here would mean inventing a second identity table for boards that have no
+// supporters.
 //
 // Separated from the page so the merge can be tested against real rows.
 // The queries stay in the page; only the folding lives here.
@@ -26,6 +35,7 @@ export interface ContributorRow {
 export interface SquareInput {
   playerName: string | null;
   playerEmail: string | null;
+  playerPhone: string | null;
   paymentStatus: string;
   claimedAt: Date | null;
 }
@@ -33,6 +43,7 @@ export interface SquareInput {
 export interface DonationInput {
   contributorName: string;
   contributorEmail: string | null;
+  contributorPhone: string | null;
   status: string;
   createdAt: Date;
 }
@@ -45,34 +56,57 @@ export interface DonationInput {
  * green row with an unpaid item behind it.
  */
 function fold(
-  rows: Map<string, ContributorRow>,
-  email: string,
+  index: RowIndex,
+  emailKey: string,
+  phoneKey: string | null,
   name: string,
   settled: boolean,
   iso: string | null,
   kind: "ticket" | "donation"
 ) {
-  const existing = rows.get(email);
+  // Email first, then phone - the shared precedence. A row with no phone
+  // simply has no second key to match on; it is NEVER dropped and never
+  // guessed at.
+  const existing =
+    index.byEmail.get(emailKey) ??
+    (phoneKey ? index.byPhone.get(phoneKey) : undefined) ??
+    null;
   if (!existing) {
-    rows.set(email, {
+    const row: ContributorRow = {
       name,
-      email,
+      email: emailKey,
       // A DONATION TAKES NO INVENTORY (invariant 64), so it contributes no
       // tickets. The list renders a marker rather than a zero.
       tickets: kind === "ticket" ? 1 : 0,
       donated: kind === "donation",
       claimedAt: iso,
       status: settled ? "CONFIRMED" : "AWAITING",
-    });
+    };
+    index.rows.push(row);
+    // BOTH keys registered, so the next item can match on either. Registering
+    // only the email is what would let one person become two rows the moment
+    // they used a second address.
+    index.byEmail.set(emailKey, row);
+    if (phoneKey) index.byPhone.set(phoneKey, row);
     return;
   }
   if (kind === "ticket") existing.tickets++;
   else existing.donated = true;
+  // A NEW ADDRESS ON A KNOWN PHONE now points at this row too, so a third
+  // contribution on either key finds the same person.
+  index.byEmail.set(emailKey, existing);
+  if (phoneKey) index.byPhone.set(phoneKey, existing);
   if (iso && (!existing.claimedAt || iso < existing.claimedAt)) {
     existing.claimedAt = iso;
   }
   const wanted = settled ? "CONFIRMED" : "AWAITING";
   if (existing.status !== wanted) existing.status = "MIXED";
+}
+
+interface RowIndex {
+  rows: ContributorRow[];
+  byEmail: Map<string, ContributorRow>;
+  byPhone: Map<string, ContributorRow>;
 }
 
 /**
@@ -86,13 +120,25 @@ export function contributorRows(
   squares: SquareInput[],
   donations: DonationInput[]
 ): ContributorRow[] {
-  const rows = new Map<string, ContributorRow>();
+  const index: RowIndex = { rows: [], byEmail: new Map(), byPhone: new Map() };
 
+  // ORDER IS NOT ARBITRARY. Both lists are folded in the order the caller
+  // supplies, and the caller orders by creation time, so the row a later
+  // contribution merges into is the one that existed first - the same thing
+  // the database lookup does.
   for (const sq of squares) {
-    if (!sq.playerEmail) continue;
+    const emailKey = normalizeEmail(sq.playerEmail);
+    // No email is not a contributor row this list can key at all - and the
+    // page query already filters those out. Phone MAY be absent on a row that
+    // predates the mandatory-both rule: that row is still SHOWN, it simply has
+    // no second key, so nothing merges into it by phone. Skipping it would
+    // silently drop a contributor from the roster, which is the failure this
+    // whole list exists to prevent.
+    if (!emailKey) continue;
     fold(
-      rows,
-      sq.playerEmail.toLowerCase(),
+      index,
+      emailKey,
+      normalizePhone(sq.playerPhone),
       sq.playerName ?? "—",
       sq.paymentStatus === "paid",
       sq.claimedAt ? sq.claimedAt.toISOString() : null,
@@ -101,10 +147,12 @@ export function contributorRows(
   }
 
   for (const d of donations) {
-    if (!d.contributorEmail) continue;
+    const emailKey = normalizeEmail(d.contributorEmail);
+    if (!emailKey) continue;
     fold(
-      rows,
-      d.contributorEmail.toLowerCase(),
+      index,
+      emailKey,
+      normalizePhone(d.contributorPhone),
       d.contributorName,
       d.status === "confirmed",
       d.createdAt.toISOString(),
@@ -112,5 +160,5 @@ export function contributorRows(
     );
   }
 
-  return Array.from(rows.values());
+  return index.rows;
 }

@@ -17,7 +17,7 @@
 // activation already created and mints a sign-up token against it.
 
 import { prisma } from "./prisma.ts";
-import { normalizeIdentityKey } from "./admission.ts";
+import { normalizeEmail } from "./roster-identity.ts";
 import { issueSupporterAccessLink, mayClaim } from "./signups.ts";
 
 export type DonorSignup =
@@ -52,7 +52,7 @@ export async function donorSignup(
 
   const supporter = await prisma.eventSupporter.findUnique({
     where: {
-      eventId_identityKey: { eventId, identityKey: normalizeIdentityKey(email) },
+      eventId_emailKey: { eventId, emailKey: normalizeEmail(email) ?? "" },
     },
     select: { id: true, status: true },
   });

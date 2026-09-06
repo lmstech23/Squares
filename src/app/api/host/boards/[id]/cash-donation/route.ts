@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizePhone } from "@/lib/roster-identity";
 import { getHost } from "@/lib/auth";
 import {
   boardTotals,
@@ -100,9 +101,29 @@ export async function POST(
       return NextResponse.json({ error: "This campaign has closed." }, { status: 409 });
     }
 
+    // BOTH MANDATORY, host-recorded or not. This form used to accept a name
+    // alone, and a contribution with no email created NO supporter at all -
+    // not a bad identity, none. There is no anonymous contribution any more:
+    // an in-person contributor completes the flow themselves from the public
+    // link, and a host recording one has the same two fields to hand.
     const email = body.donorEmail?.trim().toLowerCase() || null;
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email) {
+      return NextResponse.json(
+        { error: "An email address is required." },
+        { status: 400 }
+      );
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "That email is not valid." }, { status: 400 });
+    }
+    // The same function identity uses, so nothing reaches resolveSupporter
+    // that it would refuse.
+    const donorPhone = normalizePhone(body.donorPhone);
+    if (!donorPhone) {
+      return NextResponse.json(
+        { error: "A valid phone number is required." },
+        { status: 400 }
+      );
     }
 
     const contribution = await recordCashDonation({
@@ -111,7 +132,7 @@ export async function POST(
       amountCents,
       contributorName: name,
       contributorEmail: email,
-      contributorPhone: body.donorPhone?.trim() || null,
+      contributorPhone: donorPhone,
       recordedByHostId: host.id,
       isHostEntry: body.isHostEntry ?? false,
     });
@@ -193,12 +214,12 @@ export async function PATCH(
       where: { id: body.contributionId },
       select: { contributorName: true, contributorEmail: true, contributorPhone: true },
     });
-    if (board.event && row?.contributorEmail) {
+    if (board.event && row?.contributorEmail && row.contributorPhone) {
       await prisma.$transaction((tx) =>
         activateDonorSupporter(tx, board.event!.id, {
           name: row.contributorName,
           email: row.contributorEmail!,
-          phone: row.contributorPhone,
+          phone: row.contributorPhone!,
         })
       );
     }

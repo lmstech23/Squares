@@ -89,7 +89,7 @@ async function main() {
   });
   const supporterA = await prisma.eventSupporter.create({
     data: {
-      eventId: eventA.id, identityKey: p1.email, name: p1.name,
+      eventId: eventA.id, emailKey: p1.email, name: p1.name,
       email: p1.email, status: "active",
     },
   });

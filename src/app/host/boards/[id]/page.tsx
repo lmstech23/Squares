@@ -237,9 +237,13 @@ export default async function HostBoardPage({ params }: Props) {
         paymentStatus: { in: ["paid", "reserved_cash"] },
         playerEmail: { not: null },
       },
+      // Oldest first: the fold merges a later contribution into the row that
+      // already existed, matching what the database lookup does.
+      orderBy: { claimedAt: "asc" },
       select: {
         playerName: true,
         playerEmail: true,
+        playerPhone: true,
         paymentStatus: true,
         claimedAt: true,
       },
@@ -262,9 +266,11 @@ export default async function HostBoardPage({ params }: Props) {
         donationAmountCents: { gt: 0 },
         contributorEmail: { not: null },
       },
+      orderBy: { createdAt: "asc" },
       select: {
         contributorName: true,
         contributorEmail: true,
+        contributorPhone: true,
         status: true,
         createdAt: true,
       },

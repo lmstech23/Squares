@@ -42,6 +42,7 @@ describe(
         select: {
           playerName: true,
           playerEmail: true,
+          playerPhone: true,
           paymentStatus: true,
           claimedAt: true,
         },
@@ -57,6 +58,7 @@ describe(
         select: {
           contributorName: true,
           contributorEmail: true,
+          contributorPhone: true,
           status: true,
           createdAt: true,
         },
@@ -64,7 +66,18 @@ describe(
       return contributorRows(claimed, donations);
     }
 
-    async function ticket(email: string, name: string, paid: boolean) {
+    // A DISTINCT PHONE PER EMAIL BY DEFAULT. Sharing one across fixtures would
+    // merge every person in the file under phone identity and quietly hide
+    // what these tests are checking. Tests that WANT a shared phone pass one.
+    let phoneSeq = 1000;
+    const phoneFor = new Map<string, string>();
+    function defaultPhone(email: string): string {
+      const k = email.toLowerCase();
+      if (!phoneFor.has(k)) phoneFor.set(k, `678-555-${phoneSeq++}`);
+      return phoneFor.get(k)!;
+    }
+
+    async function ticket(email: string, name: string, paid: boolean, phone?: string) {
       const sq = await db.square.findFirstOrThrow({
         where: { boardId, paymentStatus: "open" },
         orderBy: { position: "asc" },
@@ -76,6 +89,7 @@ describe(
           paymentMethod: "cash",
           playerName: name,
           playerEmail: email,
+          playerPhone: phone ?? defaultPhone(email),
           pricePaidCents: PRICE,
           batchId: randomUUID(),
           claimedAt: new Date(),
@@ -86,7 +100,7 @@ describe(
     async function donation(
       email: string,
       name: string,
-      opts: { status?: string; voided?: boolean; squareCents?: number } = {}
+      opts: { status?: string; voided?: boolean; squareCents?: number; phone?: string } = {}
     ) {
       const sqc = opts.squareCents ?? 0;
       await db.contribution.create({
@@ -99,6 +113,7 @@ describe(
           totalPaidCents: 2500 + sqc,
           contributorName: name,
           contributorEmail: email,
+          contributorPhone: opts.phone ?? defaultPhone(email),
           confirmedAt: new Date(),
           voidedAt: opts.voided ? new Date() : null,
         },
@@ -229,6 +244,45 @@ describe(
       const r = await rows();
       assert.equal(r[0].donated, false);
       assert.equal(r[0].tickets, 1);
+    });
+
+    // ---- the shared identity rule, applied to presentation -----------------
+    //
+    // Same precedence admission.ts applies to supporters, derived per render.
+
+    test("a new email on a KNOWN PHONE is the same person", async () => {
+      await ticket("first@example.com", "Chris", true, "(678) 555-9999");
+      await donation("second@example.com", "Chris R", { phone: "1-678-555-9999" });
+
+      const r = await rows();
+      assert.equal(r.length, 1, "one person, two addresses, one phone");
+      assert.equal(r[0].tickets, 1);
+      assert.equal(r[0].donated, true);
+    });
+
+    test("phone formatting differences still merge", async () => {
+      await ticket("a@example.com", "A", true, "6785551111");
+      await donation("b@example.com", "A", { phone: "+1 (678) 555-1111" });
+      assert.equal((await rows()).length, 1);
+    });
+
+    // EMAIL WINS. Two people on a shared household phone with their own
+    // addresses stay two contributors - accepted for MVP, and the reason the
+    // lookup is ordered rather than an OR.
+    test("different emails on a shared phone are still merged - documented", async () => {
+      await ticket("mum@example.com", "Mum", true, "6785552222");
+      await ticket("dad@example.com", "Dad", true, "6785552222");
+      const r = await rows();
+      assert.equal(r.length, 1, "shared household phone merges - accepted for MVP");
+    });
+
+    // A row predating the mandatory-both rule is SHOWN, never dropped and
+    // never guessed into someone else.
+    test("a contribution with no phone still appears, and merges only on email", async () => {
+      await donation("legacy@example.com", "Legacy", { phone: "" });
+      const r = await rows();
+      assert.equal(r.length, 1, "shown, not silently dropped");
+      assert.equal(r[0].email, "legacy@example.com");
     });
 
     test("no contributions at all yields an empty list", async () => {

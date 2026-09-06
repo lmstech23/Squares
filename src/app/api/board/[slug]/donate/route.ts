@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { baseUrlFromRequest } from "@/lib/base-url";
+import { normalizePhone } from "@/lib/roster-identity";
 import {
   createPendingCardContribution,
   MIN_CARD_DONATION_CENTS,
@@ -66,6 +67,18 @@ export async function POST(
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
     }
+    // PHONE IS MANDATORY, like email. Both keys exist on every contribution,
+    // so the roster never has to guess who somebody is. normalizePhone is the
+    // same function identity uses - validating with anything else would let a
+    // value through here that resolveSupporter then refuses.
+    const phone = normalizePhone(body.donorPhone);
+    if (!phone) {
+      return NextResponse.json(
+        { error: "A valid phone number is required." },
+        { status: 400 }
+      );
+    }
+
     if (!Number.isFinite(amountCents) || amountCents <= 0) {
       return NextResponse.json(
         { error: "Enter an amount greater than zero." },
@@ -156,7 +169,7 @@ export async function POST(
           totalPaidCents: amountCents,
           contributorName: name,
           contributorEmail: email,
-          contributorPhone: body.donorPhone?.trim() || null,
+          contributorPhone: phone,
           wantsToHelp,
           // No holdExpiresAt. Nothing is held, so there is nothing to expire
           // and no sweep will ever touch this row - invariants 64 and 65.
@@ -194,7 +207,7 @@ export async function POST(
         donationAmountCents: amountCents,
         contributorName: name,
         contributorEmail: email,
-        contributorPhone: body.donorPhone?.trim() || null,
+        contributorPhone: phone,
         wantsToHelp,
         holdExpiresAt: null,
       })

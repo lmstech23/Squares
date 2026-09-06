@@ -93,7 +93,7 @@ describe("confirmSquares (integration)", { skip: !url && "TEST_DATABASE_URL not 
     const supporter = await db.eventSupporter.create({
       data: {
         eventId,
-        identityKey: "contributor@example.com",
+        emailKey: "contributor@example.com",
         name: "Test Contributor",
         email: "contributor@example.com",
       },
