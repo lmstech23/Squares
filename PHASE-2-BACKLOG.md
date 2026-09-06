@@ -1828,3 +1828,63 @@ places: squares from the cash panel on the board page, donations from
 One number, two places to go and clear it. Ruled not to justify splitting the
 counter now. Recorded so the next person to notice it finds a decision rather
 than a surprise.
+
+### 8. Host-facing Delete Board — does not exist, and is not a one-liner
+
+Logged 2026-09-06, pre-launch. **There is no board-delete path anywhere in this
+codebase**, host-facing or otherwise, and `DELETE FROM boards` fails
+immediately.
+
+**THE DATABASE DOES NOT CASCADE FROM `Board`.** Read from `pg_constraint`, not
+the schema file:
+
+```
+boards            -> contributions            RESTRICT
+boards            -> squares                  RESTRICT
+boards            -> events                   NO ACTION
+boards            -> free_entries             NO ACTION
+boards            -> credit_transactions      SET NULL
+events            -> event_supporters         NO ACTION
+events            -> admission_grants         NO ACTION
+events            -> signup_sheets            RESTRICT
+events            -> check_in_logs            NO ACTION
+events            -> volunteer_access         NO ACTION
+event_supporters  -> admission_grants         NO ACTION
+event_supporters  -> admission_passes         NO ACTION
+event_supporters  -> supporter_access_tokens  NO ACTION
+event_supporters  -> helper_signups           RESTRICT
+event_supporters  -> signup_logs              RESTRICT
+event_supporters  -> notification_deliveries  RESTRICT
+squares           -> admission_passes         NO ACTION
+squares           -> payment_references       RESTRICT
+contributions     -> squares                  RESTRICT
+contributions     -> admission_grants         RESTRICT
+signup_sheets     -> signup_slots             RESTRICT
+signup_slots      -> helper_signups           RESTRICT
+helper_signups    -> helper_signup_positions  CASCADE   <- the ONLY cascade
+```
+
+**Deleting a board therefore means an ORDERED deletion across up to 17 tables**,
+children first, with `RESTRICT` guarding six of the joins and nothing to catch
+an ordering mistake. Measured on Fundraiser Test1 (2026-09-06): **594 rows
+across 15 populated tables**, including 66 admission passes, 48 contributions
+and 262 access tokens.
+
+**Related, and already known:** `delete-expired` calls
+`prisma.board.deleteMany(...)` and has been silently unable to delete any board
+holding squares since `0_init` — item 5 in this file.
+
+**Whoever builds this should decide first:**
+
+1. **Hard delete vs. archive.** A board carries confirmed contributions and
+   issued passes. Deleting is destroying money history; a `deletedAt` that
+   hides it may be the honest answer, and it is one nullable column instead of
+   seventeen ordered statements.
+2. **Whether cascade belongs in the schema at all.** `ON DELETE CASCADE` from
+   `Board` would make this trivial and would also make an accidental delete
+   unrecoverable. The current restrictions are not an oversight - they are what
+   has stopped a cron from destroying a live board for months.
+3. **Who may call it.** No board-level destructive host action exists today.
+
+**Until then, teardown is manual SQL**, prepared per board, reviewed row-by-row
+before execution. That is how the pre-launch cleanup is being done.
