@@ -551,6 +551,13 @@ model Contribution {
 
   createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  /// The confirmation-email ATOMIC CLAIM, mirroring `Square`. Stamped by the
+  /// same statement that selects the row, so the five-minute cron and the
+  /// Stripe webhook cannot both send. Backfilled to COALESCE(confirmedAt,
+  /// createdAt) for every row confirmed before it existed, so shipping the
+  /// sender could not email historical donors.
+  confirmationEmailedAt DateTime?        @map("confirmation_emailed_at") @db.Timestamptz(6)
+
   board          Board           @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
   squares        Square[]
   admissionGrant AdmissionGrant?

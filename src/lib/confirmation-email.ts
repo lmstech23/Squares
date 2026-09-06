@@ -29,6 +29,7 @@ interface SquareRow {
   position: number;
   playerEmail: string | null;
   batchId: string | null;
+  contributionId: string | null;
 }
 
 /**
@@ -142,6 +143,99 @@ function subjectAndBody(
  * Never throws. Payment state is already committed by the time this runs and
  * must not be affected by an email provider having a bad minute.
  */
+function money(cents: number): string {
+  return `$${(cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * Donation-only confirmations — donations section 6.
+ *
+ * NOT A SECOND EMAIL PATH. Same module, same exported entry point, same claim
+ * discipline, same trigger. It is a second SOURCE, folded into the one sender,
+ * because CLAUDE.md is explicit that two email paths drift and the one that
+ * drifts is whichever gets tested less. A donation simply has no square, so it
+ * cannot be claimed by a statement over `squares`.
+ *
+ * ONE EMAIL PER CONTRIBUTION, and a Contribution is a purchase. Two donations
+ * from the same person at different times are two purchases and get two
+ * receipts; they are never merged on the strength of a matching address.
+ *
+ * MIXED PURCHASES ARE EXCLUDED HERE by `squareAmountCents: 0`. Those already
+ * get one email through the square path, which now names the donation in it.
+ *
+ * THE ATOMIC CLAIM. `updateManyAndReturn` with `confirmationEmailedAt: null` in
+ * the WHERE stamps and returns exactly the rows THIS statement changed. The
+ * five-minute cron sweeps globally while the Stripe webhook fires on
+ * confirmation; whichever runs second matches zero rows and sends nothing. The
+ * stamp is written BEFORE the network call, so a send failure leaves a stamped
+ * row with no email rather than an unstamped row that might be mailed twice —
+ * and the catch below releases the claim so the next sweep retries it.
+ */
+async function sendDonationConfirmations(where: {
+  batchId?: string;
+  boardId?: string;
+}): Promise<number> {
+  // A batchId call is about one square purchase. Donations carry no batch, so
+  // scoping by one would be meaningless; they are swept by the board-scoped
+  // and global calls instead.
+  if (where.batchId) return 0;
+
+  const claimed = await prisma.contribution.updateManyAndReturn({
+    where: {
+      status: "confirmed",
+      // A void never changes `status`, so both halves are required. Without
+      // this, reversing a donation would still send a receipt for it.
+      voidedAt: null,
+      confirmationEmailedAt: null,
+      squareAmountCents: 0,
+      donationAmountCents: { gt: 0 },
+      contributorEmail: { not: null },
+      ...(where.boardId ? { boardId: where.boardId } : {}),
+    },
+    data: { confirmationEmailedAt: new Date() },
+    select: {
+      id: true,
+      donationAmountCents: true,
+      contributorEmail: true,
+      board: { select: { gameName: true } },
+    },
+  });
+
+  let sent = 0;
+  for (const c of claimed) {
+    const boardName = c.board.gameName;
+    const subject = `Your donation is confirmed — ${boardName}`;
+    const html = `
+      <p style="margin:0;font:600 16px system-ui,sans-serif;">
+        Thank you for your contribution.
+      </p>
+      <p style="margin:8px 0 0;font:14px system-ui,sans-serif;">
+        ${money(c.donationAmountCents)} received for <strong>${boardName}</strong>.
+      </p>`;
+    try {
+      await sendEmail(c.contributorEmail!, subject, html);
+    } catch (err) {
+      console.warn(`Donation confirmation failed for contribution ${c.id}:`, err);
+      try {
+        // Guarded on the value this call wrote: a row re-stamped since is not
+        // ours to clear.
+        await prisma.contribution.updateMany({
+          where: { id: c.id, confirmationEmailedAt: { not: null } },
+          data: { confirmationEmailedAt: null },
+        });
+      } catch (releaseErr) {
+        console.warn(`Failed to release donation email claim ${c.id}:`, releaseErr);
+      }
+      continue;
+    }
+    sent++;
+  }
+  return sent;
+}
+
 export async function sendPendingConfirmations(where: {
   batchId?: string;
   boardId?: string;
@@ -149,6 +243,11 @@ export async function sendPendingConfirmations(where: {
   const result = { emailsSent: 0, squaresCovered: 0 };
 
   try {
+    // Donations first, and independently: they must be swept even on a board
+    // where no square was claimed this cycle. Putting them after the early
+    // return below is how a donation-only board would never be mailed at all.
+    result.emailsSent += await sendDonationConfirmations(where);
+
     // ATOMIC CLAIM, BEFORE THE NETWORK CALL.
     //
     // This was select -> sendEmail -> stamp. The window between selecting a row
@@ -182,6 +281,10 @@ export async function sendPendingConfirmations(where: {
         position: true,
         playerEmail: true,
         batchId: true,
+        // For the COMBINED case: a purchase that bought tickets and added a
+        // donation is one purchase and gets one email, so the square path has
+        // to know about the gift rather than a second email announcing it.
+        contributionId: true,
         board: {
           select: {
             gameName: true,
@@ -227,6 +330,29 @@ export async function sendPendingConfirmations(where: {
         select: { token: true },
         orderBy: { sequenceNumber: "asc" },
       });
+
+      // DONATED ON TOP? One purchase, one email. A mixed contribution is never
+      // claimed by the donation sweep below - that claim requires
+      // squareAmountCents = 0 - so this is the only place it can be said, and
+      // saying it here is what keeps it to one email rather than two.
+      const contributionIds = [
+        ...new Set(rows.map((r) => r.contributionId).filter((id): id is string => !!id)),
+      ];
+      const donatedCents =
+        contributionIds.length > 0
+          ? (
+              await prisma.contribution.aggregate({
+                where: { id: { in: contributionIds }, voidedAt: null },
+                _sum: { donationAmountCents: true },
+              })
+            )._sum.donationAmountCents ?? 0
+          : 0;
+      const donationLine =
+        donatedCents > 0
+          ? `<p style="margin:8px 0 0;font:14px system-ui,sans-serif;">
+               Plus a donation of ${money(donatedCents)}. Thank you.
+             </p>`
+          : "";
 
       const base = emailBaseUrl();
       // THE VOLUNTEER BLOCK GOES ABOVE EVERY PASS.
@@ -366,7 +492,11 @@ export async function sendPendingConfirmations(where: {
       }
 
       try {
-        await sendEmail(email, subject, html + passesHead + signupHtml + passesBody);
+        await sendEmail(
+          email,
+          subject,
+          html + donationLine + passesHead + signupHtml + passesBody
+        );
       } catch (err) {
         // RELEASE THE CLAIM. These rows were stamped before the send, so
         // leaving them stamped would silently drop the receipt forever -- the
