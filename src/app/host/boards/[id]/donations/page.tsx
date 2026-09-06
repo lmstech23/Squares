@@ -209,10 +209,25 @@ export default async function DonationsPage({
             simply someone who changed their mind. */}
         {awaitingCash.length > 0 && (
           <div className="mt-5 rounded-lg border border-amber-900/60 bg-amber-950/10 p-4">
-            <p className="text-sm font-medium">Awaiting payment</p>
+            {/* DONATIONS ONLY, and the name now says so. Reserved tickets are
+                unpaid too, and this card holding one kind while being called
+                "Awaiting payment" read as a claim to hold both.
+
+                They are NOT absorbed here. They already have a per-square
+                Confirm / Release queue on the board page, and it is per square
+                because invariant 7 requires that someone who reserves 3 and
+                sends $100 resolves to 2 confirmed and 1 released. Grouping
+                them into a second confirmation surface for the same squares
+                would duplicate that worklist and fight the invariant. */}
+            <p className="text-sm font-medium">Donations awaiting payment</p>
             <p className="mt-1 text-xs text-gray-500 leading-relaxed">
               Declared on the board. Not counted in the totals above until you
               mark it received.
+            </p>
+            {/* Pointing rather than leaving a host to conclude they are
+                missing - the ledger below shows both, the queues are separate. */}
+            <p className="mt-1 text-xs text-gray-600">
+              Reserved tickets are confirmed on the board page.
             </p>
             <ul className="mt-3 space-y-2">
               {awaitingCash.map((c) => (
