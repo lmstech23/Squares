@@ -1760,3 +1760,32 @@ the prize basis and the final total all come from `Contribution` or `Square`.
 It becomes real the moment anything reconciles against it.
 
 **Classified: follow-up.**
+
+### 4. Confirmation grouping is inconsistent between the two sources
+
+Logged 2026-09-06, not fixed in that batch by ruling.
+
+```
+donation confirmations   one email per Contribution. Two donations from one
+                         address at different times are two purchases and get
+                         two receipts.
+ticket confirmations     byRecipient() groups by lowercased email WITHIN one
+                         sweep, so a contributor whose squares span two
+                         batches gets one email covering both.
+```
+
+The donation rule is the stricter of the two and matches "one email per
+purchase" literally. The ticket rule predates it, is load-bearing for the cash
+path - a host confirming three squares one at a time produces three events that
+the sweep deliberately coalesces - and changing it is a behaviour change to a
+working money path.
+
+Not a defect on either side today. Recorded so the divergence is a decision
+rather than a discovery.
+
+### 5. `notify-winner` interpolates into email HTML
+
+Found while fixing the confirmation-email escaping. `notify-winner/route.ts`
+also calls `sendEmail` with a hand-built HTML string. Not audited - it is Game
+Day, which has been out of scope, and the escaping fix was scoped to
+`confirmation-email.ts`. Worth the same pass.

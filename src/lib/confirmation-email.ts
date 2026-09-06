@@ -42,6 +42,34 @@ function emailBaseUrl(): string {
 }
 
 /**
+ * Escape a value being interpolated into email HTML.
+ *
+ * `Board.gameName` is HOST-CONTROLLED and editable at any time through
+ * /details, and it was interpolated raw into three places in this file. A host
+ * naming a board `<img src=x onerror=...>` would have had that markup rendered
+ * inside every contributor confirmation - stored HTML injection into other
+ * people's inboxes, with the board name being exactly the field a host is
+ * invited to type freely.
+ *
+ * APPLIED AT THE BOUNDARY, not at the source. The name is legitimately raw
+ * everywhere else - the page renders it through React, which escapes; the
+ * subject line goes to Resend as JSON, where markup is inert and escaping it
+ * would put a literal `&amp;` in front of the reader. This file builds an HTML
+ * string by hand, which is the only place the value is dangerous, so it is the
+ * only place it is escaped.
+ *
+ * The five that matter: `&` first, or it would double-escape the others.
+ */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * One ticket block per admission pass, each carrying its own QR.
  *
  * The QR payload is the opaque token; the image is fetched from an endpoint
@@ -109,7 +137,7 @@ function subjectAndBody(
           ? `Your contribution is confirmed — ${boardName}`
           : `Your ${n} contributions are confirmed — ${boardName}`,
       html:
-        `<p>Thank you — your contribution to <strong>${boardName}</strong> is confirmed.</p>` +
+        `<p>Thank you — your contribution to <strong>${esc(boardName)}</strong> is confirmed.</p>` +
         // NUMBERS ONLY ON A PRIZE BOARD, the rule the claim sheet and the
         // post-purchase confirmation already follow. On a prize board these
         // are drawing ENTRY numbers the contributor verifies against the
@@ -128,7 +156,7 @@ function subjectAndBody(
         : `Your ${n} squares are confirmed — ${boardName}`,
     html:
       `<p>You're in! ${n === 1 ? "Square" : "Squares"} <strong>${list}</strong> ` +
-      `on <strong>${boardName}</strong> locked in. Good luck!</p>`,
+      `on <strong>${esc(boardName)}</strong> locked in. Good luck!</p>`,
   };
 }
 
@@ -213,7 +241,7 @@ async function sendDonationConfirmations(where: {
         Thank you for your contribution.
       </p>
       <p style="margin:8px 0 0;font:14px system-ui,sans-serif;">
-        ${money(c.donationAmountCents)} received for <strong>${boardName}</strong>.
+        ${money(c.donationAmountCents)} received for <strong>${esc(boardName)}</strong>.
       </p>`;
     try {
       await sendEmail(c.contributorEmail!, subject, html);
