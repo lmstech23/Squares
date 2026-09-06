@@ -25,7 +25,8 @@ import { calculateWinners } from "@/lib/winners";
 import NotifyWinnerButton from "./notify-winner-button";
 import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
-import ContributorList, { type ContributorRow } from "./contributor-list";
+import ContributorList from "./contributor-list";
+import { contributorRows } from "@/lib/contributor-rows";
 import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
@@ -243,36 +244,32 @@ export default async function HostBoardPage({ params }: Props) {
       },
     });
 
-    const byContributor = new Map<string, ContributorRow>();
-    for (const sq of claimed) {
-      const email = sq.playerEmail!.toLowerCase();
-      const existing = byContributor.get(email);
-      const isPaid = sq.paymentStatus === "paid";
-      const iso = sq.claimedAt ? sq.claimedAt.toISOString() : null;
+    // DONATIONS JOIN THE SAME LIST, keyed on the same lowercased email.
+    //
+    // Confirmed and pending only. A released or voided contribution is not a
+    // contributor - and voidedAt never changes `status`, so BOTH halves are
+    // filtered here; the schema comment warns that checking status alone
+    // "silently resurrects voided money".
+    //
+    // Mixed purchases are included too: someone who bought tickets AND added a
+    // donation is one person who did both, and their row should say so.
+    const donations = await prisma.contribution.findMany({
+      where: {
+        boardId: board.boardId,
+        status: { in: ["confirmed", "pending"] },
+        voidedAt: null,
+        donationAmountCents: { gt: 0 },
+        contributorEmail: { not: null },
+      },
+      select: {
+        contributorName: true,
+        contributorEmail: true,
+        status: true,
+        createdAt: true,
+      },
+    });
 
-      if (!existing) {
-        byContributor.set(email, {
-          name: sq.playerName ?? "—",
-          email,
-          tickets: 1,
-          claimedAt: iso,
-          status: isPaid ? "CONFIRMED" : "AWAITING",
-        });
-        continue;
-      }
-
-      existing.tickets++;
-      // Earliest claim across their squares — how long they have been waiting.
-      if (iso && (!existing.claimedAt || iso < existing.claimedAt)) {
-        existing.claimedAt = iso;
-      }
-      // Anything outstanding keeps the row off CONFIRMED. A host chasing
-      // money must not see a green row with an unpaid square behind it.
-      const wanted = isPaid ? "CONFIRMED" : "AWAITING";
-      if (existing.status !== wanted) existing.status = "MIXED";
-    }
-
-    const contributors = Array.from(byContributor.values());
+    const contributors = contributorRows(claimed, donations);
 
     // Event panel — only on a board with an event.
     let expected = 0;

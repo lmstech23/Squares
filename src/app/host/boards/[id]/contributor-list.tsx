@@ -16,15 +16,10 @@ import { purchaseUnit } from "@/lib/board-vocabulary";
 // the raised total, square numbers are on the grid, and if a specific dispute
 // needs that detail it belongs behind a row tap rather than on every row.
 
-export interface ContributorRow {
-  name: string;
-  email: string;
-  tickets: number;
-  /// Earliest claim date across their squares, ISO. Null on old rows that
-  /// predate claimed_at.
-  claimedAt: string | null;
-  status: "CONFIRMED" | "AWAITING" | "MIXED";
-}
+// The row shape and the merge live in lib/contributor-rows.ts, so the fold of
+// squares and donations into one person can be tested against real rows.
+export type { ContributorRow } from "@/lib/contributor-rows";
+import type { ContributorRow } from "@/lib/contributor-rows";
 
 interface Props {
   rows: ContributorRow[];
@@ -82,12 +77,14 @@ export default function ContributorList({ rows, boardName, hasEvent, hasPrize }:
   // rows. Built in the browser — no endpoint, nothing to secure.
   function exportCsv() {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const header = ["Name", "Email", u.Many, "Date", "Status"];
+    // One column added, matching what the row shows. Still no amounts.
+    const header = ["Name", "Email", u.Many, "Donated", "Date", "Status"];
     const body = visible.map((r) =>
       [
         esc(r.name),
         esc(r.email),
         String(r.tickets),
+        r.donated ? "yes" : "no",
         esc(shortDate(r.claimedAt)),
         r.status,
       ].join(",")
@@ -108,9 +105,11 @@ export default function ContributorList({ rows, boardName, hasEvent, hasPrize }:
     return (
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
         <p className="text-sm font-medium">Contributors</p>
-        <p className="text-xs text-gray-500 mt-1">
-          Nobody has claimed a {u.one} yet.
-        </p>
+        {/* "Nobody has claimed a ticket yet" was accurate and misleading: a
+            host who had just taken a donation read it as nothing having
+            happened. Donations are contributions and now appear in this list,
+            so the empty state has to mean empty. */}
+        <p className="text-xs text-gray-500 mt-1">No contributions yet.</p>
       </div>
     );
   }
@@ -163,9 +162,22 @@ export default function ContributorList({ rows, boardName, hasEvent, hasPrize }:
                 <p className="text-xs text-gray-500 truncate">{r.email}</p>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
+                {/* A DONATION HAS NO TICKET COUNT. It takes no inventory
+                    (invariant 64), so a donation-only contributor would read
+                    "0 tickets" - which says they got nothing rather than that
+                    they gave. The marker replaces the count where there is
+                    none, and sits beside it where there is. */}
                 <span className="text-xs text-gray-400 tabular-nums">
-                  {r.tickets}{" "}
-                  {r.tickets === 1 ? u.one : u.many}
+                  {r.tickets > 0 ? (
+                    <>
+                      {r.tickets} {r.tickets === 1 ? u.one : u.many}
+                      {r.donated && (
+                        <span className="text-gray-600"> + donation</span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-gray-500">donation</span>
+                  )}
                 </span>
                 <span className="text-xs text-gray-500 tabular-nums w-14 text-right">
                   {shortDate(r.claimedAt)}
