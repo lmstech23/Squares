@@ -37,6 +37,11 @@ interface DonateBody {
   /// pending for the host to confirm on receipt. Defaults to card so every
   /// existing caller is unchanged.
   method?: "card" | "cash";
+  /// "I would like to help at the event." Carries NO entitlement: no grant,
+  /// no pass, no admission. Only a donation on a board WITH an event can mean
+  /// anything by it, and it is stored regardless so the flag matches what the
+  /// contributor actually ticked.
+  wantsToHelp?: boolean;
 }
 
 export async function POST(
@@ -49,6 +54,7 @@ export async function POST(
 
     const amountCents = Math.trunc(body.amountCents ?? 0);
     const method = body.method === "cash" ? "cash" : "card";
+    const wantsToHelp = body.wantsToHelp === true;
     const name = body.donorName?.trim() ?? "";
     const email = body.donorEmail?.trim().toLowerCase() ?? "";
 
@@ -151,6 +157,7 @@ export async function POST(
           contributorName: name,
           contributorEmail: email,
           contributorPhone: body.donorPhone?.trim() || null,
+          wantsToHelp,
           // No holdExpiresAt. Nothing is held, so there is nothing to expire
           // and no sweep will ever touch this row - invariants 64 and 65.
           holdExpiresAt: null,
@@ -188,6 +195,7 @@ export async function POST(
         contributorName: name,
         contributorEmail: email,
         contributorPhone: body.donorPhone?.trim() || null,
+        wantsToHelp,
         holdExpiresAt: null,
       })
     );

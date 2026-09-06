@@ -103,6 +103,8 @@ export async function createPendingCardContribution(
     contributorName: string;
     contributorEmail: string;
     contributorPhone?: string | null;
+    /// Sign-up interest. Entitlement-free - no grant, no pass. See the schema.
+    wantsToHelp?: boolean;
     holdExpiresAt: Date | null;
   }
 ) {
@@ -118,6 +120,7 @@ export async function createPendingCardContribution(
       contributorName: input.contributorName,
       contributorEmail: input.contributorEmail,
       contributorPhone: input.contributorPhone || null,
+      wantsToHelp: input.wantsToHelp ?? false,
       // Only squares are inventory. A donation-only contribution holds nothing.
       holdExpiresAt: input.squareAmountCents > 0 ? input.holdExpiresAt : null,
     },

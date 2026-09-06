@@ -105,14 +105,20 @@ export function mayClaim(supporterStatus: string): boolean {
 }
 
 /**
- * Interest is a one-way OR across grants, never a revoke (§4).
+ * Interest is a one-way OR across purchases, never a revoke (§4).
  *
  * A supporter who checks the help box on her first purchase and leaves it
  * unchecked on the second is still interested. This mirrors the supporter
- * status latch. Read as EXISTS, never stored on the supporter.
+ * status latch. Read as EXISTS, NEVER STORED ON THE SUPPORTER - a column there
+ * would be a latch a later write could clear.
+ *
+ * TWO SOURCES, ONE OR. Grants carry it for ticket purchases; Contribution
+ * carries it for donations, which mint no grant. The signature is unchanged
+ * because both rows are just `{ wantsToHelp: boolean }` - callers pass a
+ * combined array rather than this function learning about either table.
  */
-export function wantsToHelp(grants: { wantsToHelp: boolean }[]): boolean {
-  return grants.some((g) => g.wantsToHelp);
+export function wantsToHelp(sources: { wantsToHelp: boolean }[]): boolean {
+  return sources.some((s) => s.wantsToHelp);
 }
 
 /** The dedupe keys from §5b. The key names the thing being communicated. */

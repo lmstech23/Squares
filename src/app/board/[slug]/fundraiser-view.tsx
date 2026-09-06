@@ -44,7 +44,7 @@ interface Props {
    * ledger row for that session actually exists on this board. `settled` is
    * the row reading `confirmed`; `false` means the webhook has not landed yet.
    */
-  donation: { settled: boolean } | null;
+  donation: { settled: boolean; signupUrl: string | null } | null;
   /// Decided by the caller, not here: "is the changeover still ahead" depends
   /// on the current time, which makes it impure inside render.
   timezone: string | null;
@@ -453,6 +453,22 @@ export default function FundraiserView({
             <p className="text-sm text-green-200/80 mt-1">
               {donation.settled ? "Payment received" : "Payment is still processing"}
             </p>
+
+            {/* Offered only when a real token exists. A donor who ticked the
+                box but whose payment has not confirmed sees nothing here
+                rather than a control that 404s - the same rule the ticket
+                confirmation follows. NO PASS, NO GRANT: this is a sign-up
+                sheet, not admission. */}
+            {donation.signupUrl && (
+              <div className="mt-3 border-t border-green-800/40 pt-3">
+                <a
+                  href={donation.signupUrl}
+                  className="inline-block rounded-lg bg-green-200 px-3 py-2 text-sm font-medium text-gray-950 hover:bg-green-100 transition-colors"
+                >
+                  Sign up to volunteer
+                </a>
+              </div>
+            )}
           </div>
         )}
 
@@ -655,6 +671,8 @@ export default function FundraiserView({
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
             handles={handles}
+            // Both, or the box collects an intention nothing can act on.
+            canVolunteer={hasEvent && signupSheetExists}
             onClose={() => setDonating(false)}
           />
         )}

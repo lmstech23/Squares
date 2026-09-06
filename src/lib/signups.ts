@@ -7,7 +7,12 @@
 // importing one module. Only the four functions below touch Postgres.
 
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+// Relative, with extensions, not the "@/" alias. node
+// --experimental-strip-types does not resolve tsconfig paths, so an alias
+// here makes this module - and everything importing it - unloadable by the
+// test runner. That is exactly why signup-rules.ts was split out; the same
+// reason applies to donor-signup.ts, which needs the two functions below.
+import { prisma } from "./prisma.ts";
 import {
   mayClaim,
   isValidPositionCount,
@@ -15,9 +20,9 @@ import {
   hashSupporterToken,
   newSupporterToken,
   tokenExpiryFor,
-} from "@/lib/signup-rules";
+} from "./signup-rules.ts";
 
-export * from "@/lib/signup-rules";
+export * from "./signup-rules.ts";
 
 /** Claim, cancel and token issuance are the only database-touching parts. */
 export type SignupsTransaction = Prisma.TransactionClient;
