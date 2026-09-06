@@ -21,7 +21,12 @@ import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import { boardTotals } from "@/lib/contributions";
 import CashDonationForm from "./cash-donation-form";
-import { ledgerCells, showConfirmedSeparately } from "@/lib/ledger-row";
+import {
+  ledgerCells,
+  showConfirmedSeparately,
+  groupReservations,
+  mergeLedger,
+} from "@/lib/ledger-row";
 import ConfirmButton from "./confirm-button";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +119,31 @@ export default async function DonationsPage({
       _count: { select: { squares: true } },
     },
   });
+
+  // RESERVED CASH TICKETS. They create no Contribution - the ledger row appears
+  // only when the host marks the money received - so without this a
+  // contributor who has committed to paying is missing from a table that
+  // claims to show every state.
+  //
+  // A SECOND QUERY, NOT A SYNTHETIC Contribution. Nothing is written, and the
+  // four figures above the table come from boardTotals(), which reads
+  // Contribution only and cannot see these.
+  const reservedSquares = await prisma.square.findMany({
+    where: { boardId: board.boardId, paymentStatus: "reserved_cash" },
+    select: {
+      squareId: true,
+      batchId: true,
+      playerName: true,
+      playerEmail: true,
+      pricePaidCents: true,
+      claimedAt: true,
+    },
+  });
+  const reservations = groupReservations(reservedSquares);
+
+  // ONE CHRONOLOGY: contributions by createdAt, reservations by claimedAt,
+  // newest first. Not two lists sharing a page.
+  const ledger = mergeLedger(contributions, reservations);
 
   const hasPrize = board.prizePoolPercent > 0;
   // Every board carries one; the fallback matches what api/boards writes.
@@ -212,9 +242,10 @@ export default async function DonationsPage({
 
         <h2 className="mt-6 text-sm font-medium">Ledger</h2>
         <p className="mt-1 text-xs text-gray-500">
-          One row per payment, including released and voided. The totals above
-          count only confirmed, unvoided contributions. A dash means the column
-          does not apply to that kind of row.
+          One row per payment, newest first, including released and voided.
+          Reserved tickets appear here too and are NOT in the totals above:
+          those count only confirmed, unvoided contributions. A dash means the
+          column does not apply to that kind of row.
         </p>
 
         <div className="mt-3 overflow-x-auto">
@@ -233,14 +264,57 @@ export default async function DonationsPage({
               </tr>
             </thead>
             <tbody className="tabular-nums">
-              {contributions.length === 0 && (
+              {ledger.length === 0 && (
                 <tr>
                   <td colSpan={9} className="py-4 text-gray-600">
                     No contributions yet.
                   </td>
                 </tr>
               )}
-              {contributions.map((c) => {
+              {ledger.map((entry) => {
+                if (entry.kind === "reservation") {
+                  const r = entry.row;
+                  return (
+                    <tr
+                      key={r.key}
+                      className="border-b border-gray-900 bg-yellow-950/10"
+                    >
+                      <td className="py-2 pr-3">
+                        <span className="text-gray-200">{r.name}</span>
+                        {r.email && (
+                          <span className="block text-gray-600">{r.email}</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-300 whitespace-nowrap">
+                        Ticket reservation
+                      </td>
+                      <td className="py-2 pr-3 text-gray-400 whitespace-nowrap">
+                        {r.at ? stamp(r.at, tz) : "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-400">cash</td>
+                      {/* NOT A Contribution STATUS. This money has not arrived
+                          and is in none of the totals above; the word has to
+                          say so without borrowing `pending`, which on this
+                          table means a contribution awaiting a webhook. */}
+                      <td className="py-2 pr-3">
+                        <span className="text-yellow-500">reserved</span>
+                      </td>
+                      <td className="py-2 pr-3 text-right text-gray-400">
+                        {r.tickets}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {money(r.ticketCents)}
+                      </td>
+                      <td className="py-2 pr-3 text-right text-gray-700">
+                        {"—"}
+                      </td>
+                      <td className="py-2 text-right font-medium text-gray-400">
+                        {money(r.ticketCents)}
+                      </td>
+                    </tr>
+                  );
+                }
+                const c = entry.row;
                 // TYPE AND THE DASHES ARE DERIVED, not stored - see
                 // lib/ledger-row.ts. A dash means the field does not apply to
                 // this kind of row; a real zero is never hidden behind one.

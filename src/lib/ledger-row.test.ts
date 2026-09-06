@@ -1,6 +1,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { ledgerType, ledgerCells, showConfirmedSeparately } from "./ledger-row.ts";
+import {
+  ledgerType,
+  ledgerCells,
+  showConfirmedSeparately,
+  groupReservations,
+  mergeLedger,
+} from "./ledger-row.ts";
 
 // The host ledger's derived columns. Pure — Type and the dash rules come from
 // amounts the query already selects, so no join and no migration is involved.
@@ -115,5 +121,119 @@ describe("showConfirmedSeparately", () => {
 
   test("an unconfirmed row shows nothing", () => {
     assert.equal(showConfirmedSeparately(at("2026-09-05T18:00:00Z"), null, TZ), false);
+  });
+});
+
+describe("groupReservations", () => {
+  const at = (iso: string) => new Date(iso);
+  const sq = (
+    squareId: string,
+    batchId: string | null,
+    cents: number,
+    claimed: string | null,
+    name = "Chris"
+  ) => ({
+    squareId,
+    batchId,
+    playerName: name,
+    playerEmail: "c@example.com",
+    pricePaidCents: cents,
+    claimedAt: claimed ? at(claimed) : null,
+  });
+
+  // THE DUPLICATE-ROW PROBLEM. One reservation of three tickets is one thing
+  // the contributor did, and must read as one line.
+  test("a three-ticket reservation is ONE row", () => {
+    const rows = groupReservations([
+      sq("s1", "batch-a", 5000, "2026-09-05T18:00:00Z"),
+      sq("s2", "batch-a", 5000, "2026-09-05T18:00:00Z"),
+      sq("s3", "batch-a", 5000, "2026-09-05T18:00:00Z"),
+    ]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].tickets, 3);
+    assert.equal(rows[0].ticketCents, 15000);
+  });
+
+  // Summed from what each square was reserved AT, never count x current price.
+  // An early-bird reservation confirmed later still owes the early price.
+  test("mixed reserved prices sum, they are not multiplied", () => {
+    const rows = groupReservations([
+      sq("s1", "b", 4000, "2026-09-05T18:00:00Z"),
+      sq("s2", "b", 5000, "2026-09-05T18:00:00Z"),
+    ]);
+    assert.equal(rows[0].ticketCents, 9000, "not 2 x either price");
+  });
+
+  test("two reservations by the same person stay two rows", () => {
+    const rows = groupReservations([
+      sq("s1", "batch-a", 5000, "2026-09-05T18:00:00Z"),
+      sq("s2", "batch-b", 5000, "2026-09-06T09:00:00Z"),
+    ]);
+    assert.equal(rows.length, 2, "the ledger is transaction-keyed");
+  });
+
+  // Merging on a shared null would fuse unrelated contributors into one line.
+  test("null batchId falls back to one row per square", () => {
+    const rows = groupReservations([
+      sq("s1", null, 5000, "2026-09-05T18:00:00Z", "Alice"),
+      sq("s2", null, 5000, "2026-09-05T18:05:00Z", "Bob"),
+    ]);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(rows.map((r) => r.name).sort(), ["Alice", "Bob"]);
+  });
+
+  test("the batch carries its EARLIEST claim time", () => {
+    const rows = groupReservations([
+      sq("s1", "b", 100, "2026-09-05T18:30:00Z"),
+      sq("s2", "b", 100, "2026-09-05T18:00:00Z"),
+    ]);
+    assert.equal(rows[0].at!.toISOString(), "2026-09-05T18:00:00.000Z");
+  });
+
+  test("a null price counts the ticket but adds nothing", () => {
+    const rows = groupReservations([
+      { squareId: "s1", batchId: "b", playerName: "X", playerEmail: null,
+        pricePaidCents: null, claimedAt: at("2026-09-05T18:00:00Z") },
+    ]);
+    assert.equal(rows[0].tickets, 1);
+    assert.equal(rows[0].ticketCents, 0);
+  });
+});
+
+describe("mergeLedger", () => {
+  const at = (iso: string) => new Date(iso);
+  const contribution = (iso: string) => ({ createdAt: at(iso), id: iso });
+  const reservation = (iso: string | null, key: string) => ({
+    key, name: "R", email: null, tickets: 1, ticketCents: 100,
+    at: iso ? at(iso) : null,
+  });
+
+  // ONE CHRONOLOGY. Not two lists sharing a page.
+  test("both sources interleave, newest first", () => {
+    const merged = mergeLedger(
+      [contribution("2026-09-05T10:00:00Z"), contribution("2026-09-05T14:00:00Z")],
+      [reservation("2026-09-05T12:00:00Z", "r1")]
+    );
+    assert.deepEqual(
+      merged.map((e) => e.kind),
+      ["contribution", "reservation", "contribution"],
+      "the reservation sits between the two by time, not above or below them"
+    );
+  });
+
+  // An old row missing a timestamp is not the oldest thing that ever happened.
+  test("a reservation with no timestamp sorts last, not to 1970", () => {
+    const merged = mergeLedger(
+      [contribution("2026-09-05T10:00:00Z")],
+      [reservation(null, "r1")]
+    );
+    assert.equal(merged[0].kind, "contribution");
+    assert.equal(merged[1].kind, "reservation");
+  });
+
+  test("no reservations leaves the ledger exactly as it was", () => {
+    const merged = mergeLedger([contribution("2026-09-05T10:00:00Z")], []);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0].kind, "contribution");
   });
 });
