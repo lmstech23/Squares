@@ -1789,3 +1789,42 @@ Found while fixing the confirmation-email escaping. `notify-winner/route.ts`
 also calls `sendEmail` with a hand-built HTML string. Not audited - it is Game
 Day, which has been out of scope, and the escaping fix was scoped to
 `confirmation-email.ts`. Worth the same pass.
+
+### 6. A pending Stripe donation can sit in IN CHECKOUT indefinitely
+
+Logged 2026-09-06 with the counter change that made it visible.
+
+A donation holds no inventory, so `holdExpiresAt` is null by design (invariant
+64) and `resolveExpiredHolds` never touches it. The ONLY thing that moves a
+donation-only `pending` / `stripe` row out of that state is
+`checkout.session.expired` -> `releaseContributionBySession`. If that webhook
+never arrives, the row stays `pending` forever and stays in the IN CHECKOUT box
+forever.
+
+It never reaches any money figure: `raised`, the prize basis and the final
+total all read `confirmed AND voidedAt IS NULL`. **This is a display defect,
+not a money one.**
+
+Ticket checkouts do not have this problem - they carry `holdExpiresAt` and the
+cron sweeps them.
+
+Fix would be a sweep over donation-only pending rows older than some age, or a
+`checkoutSessionId` reconciliation against Stripe. Deliberately NOT invented for
+the counter: the state is real and countable as it stands, and inventing
+persistence to make a box tidy is how the counter starts lying about something
+else.
+
+Production at the time of logging: one pending donation-only row, 25 hours old,
+`cash` not `stripe`, so correctly in AWAITING PAYMENT. Zero stale card ones.
+
+### 7. AWAITING PAYMENT mixes two host actions
+
+Same pass. The box now counts reserved cash SQUARES and pending donation-only
+CASH contributions together. Both are "somebody said they would send money and
+has not", which is why they share a box - but they are cleared in two different
+places: squares from the cash panel on the board page, donations from
+`/host/boards/[id]/donations`.
+
+One number, two places to go and clear it. Ruled not to justify splitting the
+counter now. Recorded so the next person to notice it finds a decision rather
+than a surprise.

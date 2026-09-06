@@ -43,6 +43,26 @@ interface Props {
   pendingBatches: PendingBatch[];
 }
 
+/** One counter box. Extracted so the grouped side and the lone box match. */
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-center">
+      <div className={`text-lg font-semibold tabular-nums ${tone}`}>{value}</div>
+      <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5 leading-tight">
+        {label}
+      </div>
+    </div>
+  );
+}
+
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
     minimumFractionDigits: 0,
@@ -116,26 +136,41 @@ export default function FundraiserPanel({
 
         {/* The full state breakdown — money doc §10 host view. Awaiting
             payment is the number she works from: those are the contributors
-            who said they would send money and have not yet. */}
-        <div className="grid grid-cols-4 gap-2 mt-4">
-          {[
-            { label: "Confirmed", value: confirmedCount, tone: "text-green-400" },
-            { label: "Awaiting", value: awaitingCount, tone: "text-yellow-400" },
-            { label: "In checkout", value: inCheckoutCount, tone: "text-blue-400" },
-            { label: "Open", value: openCount, tone: "text-gray-400" },
-          ].map((s) => (
-            <div
-              key={s.label}
-              className="rounded-lg border border-gray-800 bg-gray-950 p-2 text-center"
-            >
-              <div className={`text-lg font-semibold tabular-nums ${s.tone}`}>
-                {s.value}
-              </div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">
-                {s.label}
-              </div>
+            who said they would send money and have not yet.
+
+            TWO GROUPS, AND THE GAP IS LOAD-BEARING. These four used to
+            partition the squares and sum to the board size. They no longer do:
+            the first three count contribution activity, INCLUDING DONATIONS,
+            while Open counts remaining inventory, so a board with one donation
+            has a row that adds up to nothing. Splitting them says that
+            visually rather than leaving a row that still looks like a total.
+            No fifth box: restating a number that no longer means anything
+            would be worse than not showing one. */}
+        <div className="mt-4 flex items-stretch gap-4">
+          <div className="flex-[3]">
+            <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">
+              Contributions
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: "Confirmed", value: confirmedCount, tone: "text-green-400" },
+                { label: "Awaiting payment", value: awaitingCount, tone: "text-yellow-400" },
+                { label: "In checkout", value: inCheckoutCount, tone: "text-blue-400" },
+              ].map((s) => (
+                <Stat key={s.label} {...s} />
+              ))}
             </div>
-          ))}
+          </div>
+          <div className="flex-1">
+            {/* The unit, from the shared resolver - never the literal word
+                "tickets", which is wrong on a prize-only or no-event board.
+                Falls back to "Inventory" on the one board type where the unit
+                IS "Contributions", so the two group labels cannot collide. */}
+            <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">
+              {u.Many === "Contributions" ? "Inventory" : u.Many}
+            </p>
+            <Stat label="Open" value={openCount} tone="text-gray-400" />
+          </div>
         </div>
       </div>
 

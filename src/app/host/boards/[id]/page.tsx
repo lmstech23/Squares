@@ -27,6 +27,7 @@ import EditDetailsButton from "./edit-details-button";
 import FundraiserPanel from "./fundraiser-panel";
 import ContributorList from "./contributor-list";
 import { contributorRows } from "@/lib/contributor-rows";
+import { boardCounters } from "@/lib/board-counters";
 import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 export const dynamic = "force-dynamic";
@@ -271,6 +272,22 @@ export default async function HostBoardPage({ params }: Props) {
 
     const contributors = contributorRows(claimed, donations);
 
+    // THE TOP COUNTERS. Donation-ONLY rows - `squareAmountCents = 0` - because
+    // a mixed purchase is already counted through its squares and counting it
+    // here as well would double it. Separate from the `donations` query above,
+    // which deliberately INCLUDES mixed rows so a donate-on-top contributor is
+    // marked in the list.
+    const counterDonations = await prisma.contribution.findMany({
+      where: {
+        boardId: board.boardId,
+        status: { in: ["confirmed", "pending"] },
+        squareAmountCents: 0,
+        donationAmountCents: { gt: 0 },
+      },
+      select: { status: true, paymentMethod: true, voidedAt: true },
+    });
+    const counters = boardCounters(board.squares, counterDonations);
+
     // Event panel — only on a board with an event.
     let expected = 0;
     let unpaidForecast = 0;
@@ -427,10 +444,10 @@ export default async function HostBoardPage({ params }: Props) {
           finalRaisedCents={board.finalRaisedCents}
           raisedCents={board.finalRaisedCents ?? totals.raisedCents}
           goalCents={board.fundraisingGoalCents}
-          confirmedCount={byStatus("paid").length}
-          awaitingCount={awaiting.length}
-          inCheckoutCount={byStatus("pending").length}
-          openCount={byStatus("open").length}
+          confirmedCount={counters.confirmed}
+          awaitingCount={counters.awaiting}
+          inCheckoutCount={counters.inCheckout}
+          openCount={counters.open}
           awaitingSquares={awaiting.map((sq) => ({
             squareId: sq.squareId,
             position: sq.position,
