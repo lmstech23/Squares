@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import { boardTotals } from "@/lib/contributions";
 import CashDonationForm from "./cash-donation-form";
+import { ledgerCells, showConfirmedSeparately } from "@/lib/ledger-row";
 import ConfirmButton from "./confirm-button";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,32 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Contributions — Daali",
 };
+
+/**
+ * "Sep 5, 9:01 PM" in the board's zone.
+ *
+ * WITH THE TIME, deliberately. Four $25 rows from one person on one day are
+ * indistinguishable without it, which is the complaint this column answers: a
+ * host cannot match a row to a payment anyone remembers making.
+ */
+function stamp(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
+}
+
+/** Month and day only - the secondary confirmation line needs no clock. */
+function shortDay(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "short",
+    day: "numeric",
+  }).format(d);
+}
 
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -55,6 +82,10 @@ export default async function DonationsPage({
       boardType: true,
       status: true,
       prizePoolPercent: true,
+      // The Date column renders in the BOARD's zone, never the viewer's - a
+      // host in another timezone reading her own ledger must see the day the
+      // payment happened where the event is.
+      timezone: true,
     },
   });
 
@@ -85,6 +116,8 @@ export default async function DonationsPage({
   });
 
   const hasPrize = board.prizePoolPercent > 0;
+  // Every board carries one; the fallback matches what api/boards writes.
+  const tz = board.timezone ?? "America/New_York";
 
   // Contributor-declared direct payments that have not landed yet. Scoped the
   // same way the confirm endpoint is: cash, donation-only, still pending.
@@ -179,8 +212,9 @@ export default async function DonationsPage({
 
         <h2 className="mt-6 text-sm font-medium">Ledger</h2>
         <p className="mt-1 text-xs text-gray-500">
-          Every row, including released and voided. The totals above count only
-          confirmed, unvoided contributions.
+          One row per payment, including released and voided. The totals above
+          count only confirmed, unvoided contributions. A dash means the column
+          does not apply to that kind of row.
         </p>
 
         <div className="mt-3 overflow-x-auto">
@@ -188,10 +222,12 @@ export default async function DonationsPage({
             <thead className="text-gray-500">
               <tr className="border-b border-gray-800">
                 <th className="py-2 pr-3 font-normal">Contributor</th>
+                <th className="py-2 pr-3 font-normal">Type</th>
+                <th className="py-2 pr-3 font-normal">Date</th>
                 <th className="py-2 pr-3 font-normal">Method</th>
                 <th className="py-2 pr-3 font-normal">Status</th>
-                <th className="py-2 pr-3 font-normal text-right">Squares</th>
-                <th className="py-2 pr-3 font-normal text-right">Square $</th>
+                <th className="py-2 pr-3 font-normal text-right">Tickets</th>
+                <th className="py-2 pr-3 font-normal text-right">Ticket $</th>
                 <th className="py-2 pr-3 font-normal text-right">Donation $</th>
                 <th className="py-2 font-normal text-right">Total</th>
               </tr>
@@ -199,18 +235,43 @@ export default async function DonationsPage({
             <tbody className="tabular-nums">
               {contributions.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-4 text-gray-600">
+                  <td colSpan={9} className="py-4 text-gray-600">
                     No contributions yet.
                   </td>
                 </tr>
               )}
-              {contributions.map((c) => (
+              {contributions.map((c) => {
+                // TYPE AND THE DASHES ARE DERIVED, not stored - see
+                // lib/ledger-row.ts. A dash means the field does not apply to
+                // this kind of row; a real zero is never hidden behind one.
+                const cells = ledgerCells(c, c._count.squares);
+                const showConfirmed = showConfirmedSeparately(
+                  c.createdAt,
+                  c.confirmedAt,
+                  tz
+                );
+                return (
                 <tr key={c.id} className="border-b border-gray-900">
                   <td className="py-2 pr-3">
                     <span className="text-gray-200">{c.contributorName}</span>
                     {c.contributorEmail && (
                       <span className="block text-gray-600">
                         {c.contributorEmail}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-gray-300 whitespace-nowrap">
+                    {cells.type}
+                  </td>
+                  <td className="py-2 pr-3 text-gray-400 whitespace-nowrap">
+                    {stamp(c.createdAt, tz)}
+                    {/* Only when it lands on a different day. A card payment
+                        confirmed seconds later would just repeat itself; a
+                        cash payment confirmed three days later is the fact a
+                        host is actually looking for. */}
+                    {showConfirmed && c.confirmedAt && (
+                      <span className="block text-[11px] text-gray-600">
+                        confirmed {shortDay(c.confirmedAt, tz)}
                       </span>
                     )}
                   </td>
@@ -233,19 +294,32 @@ export default async function DonationsPage({
                     </span>
                   </td>
                   <td className="py-2 pr-3 text-right text-gray-400">
-                    {c._count.squares}
+                    {cells.tickets === null ? (
+                      <span className="text-gray-700">{"—"}</span>
+                    ) : (
+                      cells.tickets
+                    )}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    {money(c.squareAmountCents)}
+                    {cells.ticketCents === null ? (
+                      <span className="text-gray-700">{"—"}</span>
+                    ) : (
+                      money(cells.ticketCents)
+                    )}
                   </td>
                   <td className="py-2 pr-3 text-right">
-                    {money(c.donationAmountCents)}
+                    {cells.donationCents === null ? (
+                      <span className="text-gray-700">{"—"}</span>
+                    ) : (
+                      money(cells.donationCents)
+                    )}
                   </td>
                   <td className="py-2 text-right font-medium">
                     {money(c.totalPaidCents)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
