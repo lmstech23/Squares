@@ -692,3 +692,30 @@ Removed with the prompt: the donation-form checkbox, the donation confirmation
 volunteer action, the donation email volunteer block, the donate route input,
 and `src/lib/donor-signup.ts` with its tests. Ticket volunteer signup,
 `AdmissionGrant.wantsToHelp`, admission and passes are untouched.
+
+---
+
+## Temporary: the claim route accepts the old single-slot shape
+
+Added 2026-09-06 with the batched sign-up save.
+
+`POST /api/signup/[token]/claim` now takes `{ changes: [{ slotId, target }] }`.
+It ALSO still accepts the old `{ slotId, target }`, normalized to a one-item
+batch.
+
+**Why it is there.** Every push to `main` deploys instantly and there is no
+preview environment, so a supporter can be holding an already-rendered sheet
+when the new code goes live. Her next tap posts the old shape. Without the
+compatibility path that save fails with a 400 she cannot interpret, on the one
+screen where she is trying to commit to bringing something.
+
+**Removal condition.** Remove once no client can still be running the old
+bundle — in practice, once the deploy that introduced batching has been live
+longer than any plausible open session, and the sheet has been re-rendered by
+every supporter who might act on it. A week is generous; a day is defensible.
+There is no telemetry on this, so it is a judgement call, not a metric.
+
+**How to remove.** Delete the `body.slotId` branch in the route's normalizer
+and the `the old single-slot shape still works` case in
+`src/lib/signup-batch.integration.test.ts`. Nothing else references it: the
+sheet has posted batches since the day it shipped.

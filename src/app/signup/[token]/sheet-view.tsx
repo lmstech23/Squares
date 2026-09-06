@@ -15,6 +15,12 @@
 // reducing is a smaller target — one path, one set of edge cases.
 
 import { useState } from "react";
+import {
+  dirtyChanges,
+  applyBatchResults,
+  batchSummary,
+  type BatchResult,
+} from "@/lib/signup-batch";
 import { useRouter } from "next/navigation";
 
 export interface SheetSlot {
@@ -62,39 +68,52 @@ export default function SignupSheetView({
   eventName, eventVenue, eventTimezone, slots,
 }: Props) {
   const router = useRouter();
+  // UNCOMMITTED SELECTIONS, keyed by slot. Nothing here has been sent: the
+  // stepper and the shift toggle both only write into this map, and it is the
+  // Save button that submits every entry that differs from what the server
+  // says she holds.
   const [drafts, setDrafts] = useState<Record<string, number>>({});
-  const [busy, setBusy] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saved, setSaved] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [savedNote, setSavedNote] = useState(false);
 
   const draftFor = (s: SheetSlot) => drafts[s.id] ?? s.yourCurrent;
+  const pending = dirtyChanges(slots, drafts);
 
-  async function save(slot: SheetSlot, target: number) {
-    setBusy(slot.id);
-    setErrors((e) => ({ ...e, [slot.id]: "" }));
+  async function saveAll() {
+    if (pending.length === 0) return;
+    setSaving(true);
+    setSummary(null);
+    setSavedNote(false);
     try {
       const res = await fetch(`/api/signup/${token}/claim`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slotId: slot.id, target }),
+        body: JSON.stringify({ changes: pending }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setErrors((e) => ({ ...e, [slot.id]: data.error ?? "Something went wrong." }));
-        // Capacity moved under her. Resync the stepper to what she CAN have and
-        // let her confirm — never submit the smaller number for her.
-        if (typeof data.maxTarget === "number") {
-          setDrafts((d) => ({ ...d, [slot.id]: Math.min(target, data.maxTarget) }));
-        }
+
+      // STATUS ALONE DOES NOT MEAN SUCCESS. A partial failure returns 200 with
+      // per-slot results, so a 200 with no `results` is the only thing that
+      // can be treated as a whole-request error.
+      if (!res.ok || !Array.isArray(data.results)) {
+        setSummary(data.error ?? "Something went wrong.");
         return;
       }
-      setDrafts((d) => { const n = { ...d }; delete n[slot.id]; return n; });
-      setSaved(slot.id);
+
+      const applied = applyBatchResults(drafts, data.results as BatchResult[]);
+      setDrafts(applied.drafts);
+      setErrors(applied.errors);
+      setSummary(batchSummary(applied));
+      setSavedNote(applied.savedCount > 0 && applied.failedCount === 0);
+      // Resync yourCurrent. Drafts for FAILED slots are client state and
+      // survive this, which is what lets her adjust and re-save.
       router.refresh();
     } catch {
-      setErrors((e) => ({ ...e, [slot.id]: "Couldn't reach the server. Try again." }));
+      setSummary("Couldn't reach the server. Try again.");
     } finally {
-      setBusy(null);
+      setSaving(false);
     }
   }
 
@@ -200,7 +219,7 @@ export default function SignupSheetView({
                         <button
                           type="button"
                           aria-label="Fewer"
-                          disabled={busy !== null || draft <= 0}
+                          disabled={saving || draft <= 0}
                           onClick={() => setDrafts((d) => ({ ...d, [slot.id]: draft - 1 }))}
                           className="h-8 w-8 rounded-lg border border-gray-700 text-sm text-gray-300 disabled:opacity-30"
                         >
@@ -211,7 +230,7 @@ export default function SignupSheetView({
                           type="button"
                           aria-label="More"
                           // Ceiling is yourCurrent + available, computed server-side.
-                          disabled={busy !== null || draft >= slot.maxTarget}
+                          disabled={saving || draft >= slot.maxTarget}
                           onClick={() => setDrafts((d) => ({ ...d, [slot.id]: draft + 1 }))}
                           className="h-8 w-8 rounded-lg border border-gray-700 text-sm text-gray-300 disabled:opacity-30"
                         >
@@ -220,36 +239,28 @@ export default function SignupSheetView({
                       </div>
                     ) : null}
 
+                    {/* A SHIFT IS ONE PERSON, so it is a checkbox, not a
+                        stepper - and like the stepper it now only writes a
+                        draft. Nothing commits until Save. */}
                     {slot.slotType === "SHIFT" ? (
-                      <button
-                        type="button"
-                        disabled={busy !== null || locked || (slot.yourCurrent === 0 && full)}
-                        onClick={() => save(slot, slot.yourCurrent === 1 ? 0 : 1)}
-                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-40 ${
-                          slot.yourCurrent === 1
-                            ? "border border-gray-700 text-gray-300 hover:text-white"
-                            : "bg-white text-gray-950 hover:bg-gray-200"
-                        }`}
-                      >
-                        {busy === slot.id
-                          ? "…"
-                          : slot.yourCurrent === 1
-                            ? "Cancel"
-                            : "Sign up"}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={busy !== null || !dirty || locked}
-                        onClick={() => save(slot, draft)}
-                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 transition-colors"
-                      >
-                        {busy === slot.id ? "…" : dirty ? "Save" : "Saved"}
-                      </button>
-                    )}
+                      <label className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={draft === 1}
+                          disabled={saving || locked || (slot.yourCurrent === 0 && full)}
+                          onChange={(e) =>
+                            setDrafts((d) => ({ ...d, [slot.id]: e.target.checked ? 1 : 0 }))
+                          }
+                          className="h-4 w-4 accent-green-500 disabled:opacity-40"
+                        />
+                        <span className="text-sm text-gray-300">
+                          {draft === 1 ? "I'll take this shift" : "Take this shift"}
+                        </span>
+                      </label>
+                    ) : null}
 
-                    {saved === slot.id && !dirty && !err && (
-                      <span className="text-xs text-green-400">Saved</span>
+                    {dirty && (
+                      <span className="text-xs text-yellow-500">unsaved</span>
                     )}
                   </div>
                 )}
@@ -258,6 +269,30 @@ export default function SignupSheetView({
               </div>
             );
           })}
+        </div>
+
+        {/* ONE SAVE FOR EVERYTHING. Choose all of it, then submit once. A
+            slot that cannot take what she asked for fails on its own and
+            leaves the rest committed - see the route. */}
+        <div className="sticky bottom-0 -mx-4 mt-6 border-t border-gray-800 bg-gray-950/95 px-4 py-3 backdrop-blur">
+          {summary && (
+            <p className="mb-2 text-xs text-yellow-400 leading-relaxed">{summary}</p>
+          )}
+          {savedNote && !summary && (
+            <p className="mb-2 text-xs text-green-400">Saved.</p>
+          )}
+          <button
+            type="button"
+            onClick={saveAll}
+            disabled={saving || pending.length === 0}
+            className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 transition-colors"
+          >
+            {saving
+              ? "Saving…"
+              : pending.length === 0
+                ? "Nothing to save"
+                : `Save ${pending.length} change${pending.length === 1 ? "" : "s"}`}
+          </button>
         </div>
 
         <p className="text-xs text-gray-600 mt-8 leading-relaxed">
