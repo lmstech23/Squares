@@ -5,6 +5,7 @@ import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
 import { entryPriceFor } from "@/lib/entry-pricing";
+import { squareProductFor } from "@/lib/square-product";
 import type { EntryTierOffer } from "./entry-sheet";
 import { donationReturnState } from "@/lib/donation-return";
 import { boardTotals } from "@/lib/contributions";
@@ -133,10 +134,6 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       distinct: ["playerEmail"],
       select: { squareId: true },
     });
-
-    const openCount = board.squares.filter(
-      (sq) => sq.paymentStatus === "open"
-    ).length;
 
     // Confirmation on return from Stripe — v2 §6. The squares in this
     // purchase are found by the session id rather than trusted from the URL.
@@ -311,18 +308,20 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         title={board.gameName}
         causeDescription={board.causeDescription}
         hostName={board.host.name}
-        squares={board.squares.map((sq) => ({
-          squareId: sq.squareId,
-          position: sq.position,
-          paymentStatus: sq.paymentStatus,
-        }))}
-        price={price}
+        squareProduct={squareProductFor(
+          board,
+          board.squares.map((sq) => ({
+            squareId: sq.squareId,
+            position: sq.position,
+            paymentStatus: sq.paymentStatus,
+          })),
+          price
+        )}
         donation={donation}
         timezone={board.timezone}
         raisedCents={board.finalRaisedCents ?? totals.raisedCents}
         goalCents={board.fundraisingGoalCents}
         supporterCount={supporters.length}
-        openCount={openCount}
         slug={board.slug}
         hasEvent={board.event != null}
         signupSheetExists={board.event?.signupSheet != null}

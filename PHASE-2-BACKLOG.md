@@ -1888,3 +1888,22 @@ holding squares since `0_init` — item 5 in this file.
 
 **Until then, teardown is manual SQL**, prepared per board, reviewed row-by-row
 before execution. That is how the pre-launch cleanup is being done.
+
+---
+
+## Raffle sold out with entry tickets still available — which CTA is primary?
+
+Deferred 2026-09-07 during Track 1 item 2, deliberately rather than missed.
+
+`fundraiser-view.tsx` promotes "Donate instead" to primary when the square
+product exists and `openCount` reaches zero — a full board that can still take
+money is the difference between a finished fundraiser and one that keeps going.
+Item 2 scoped that promotion to squares so raffle-on boards reproduce byte for
+byte, which leaves one combination undefined: **raffle on, sold out, and entry
+tickets still on sale.** Today donate takes primary and the entry CTA stays
+subordinate, which is probably wrong — an available ticket outranks a donation.
+
+Not decided in item 2 because it is a RAFFLE question, and the pilot that forced
+this work runs with `raffleEnabled = false`. No board can currently reach the
+state. Whoever picks it up: the decision is one ternary at the donate button,
+and the likely answer is that the entry CTA is promoted instead of donate.

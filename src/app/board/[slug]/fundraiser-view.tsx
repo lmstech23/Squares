@@ -36,10 +36,27 @@ interface Props {
   title: string;
   causeDescription: string | null;
   hostName: string | null;
-  squares: GridSquare[];
-  /** The one price a contributor sees, from publicPriceDisplay() on the
-      server. Never two prices - see src/lib/fundraiser-pricing.ts. */
-  price: PublicPrice;
+  /**
+   * The SQUARE product, or null when this board does not sell one.
+   *
+   * NULL IS "NOT OFFERED", WHICH IS NOT "SOLD OUT". Those were the same shape
+   * until now - `squares: []` with `openCount: 0` - and that is exactly how the
+   * defect shipped: a raffle-off board rendered a disabled "Every ticket is
+   * claimed" button, or worse, an ACTIVE one, because a board can hold a
+   * hundred `open` rows it must never sell. Absence had no representation, so
+   * the view could only ever ask "how many are left".
+   *
+   * Grouped rather than passed as three nullable props so a component cannot
+   * read `openCount` without first proving the product exists. That is the
+   * whole point: the failure mode becomes unrepresentable instead of merely
+   * unlikely.
+   */
+  squareProduct: {
+    squares: GridSquare[];
+    openCount: number;
+    /** From publicPriceDisplay() on the server. Never two prices. */
+    price: PublicPrice;
+  } | null;
   /**
    * Set only on return from a donation-only card checkout, and only when the
    * ledger row for that session actually exists on this board. `settled` is
@@ -55,7 +72,6 @@ interface Props {
   /// No longer displayed — money doc §10, see the note in the header block.
   /// Kept on the interface so the page's call site is unchanged.
   supporterCount?: number;
-  openCount: number;
   slug: string;
   hasEvent: boolean;
   cashModeEnabled: boolean;
@@ -116,13 +132,11 @@ export default function FundraiserView({
   title,
   causeDescription,
   hostName,
-  squares,
-  price,
+  squareProduct,
   donation,
   timezone,
   raisedCents,
   goalCents,
-  openCount,
   slug,
   hasEvent,
   cashModeEnabled,
@@ -140,6 +154,11 @@ export default function FundraiserView({
   // Defaulted once, here. Every read below is `offers`, so a board that sends
   // nothing behaves identically to one that sends an empty list.
   const offers = entryOffers ?? [];
+  // The square product, read once. Every square-derived value below comes from
+  // here and nowhere else, so `raffle off` is a single null check rather than a
+  // condition repeated at seven render sites.
+  const squares = squareProduct?.squares ?? [];
+  const sellsSquares = squareProduct !== null;
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
   // Selection lives on the board, so the checkout button can say how many
   // tickets are being bought before the sheet opens.
@@ -340,7 +359,10 @@ export default function FundraiserView({
   // currentPriceCents() charges on. THE VIEW STAYS PURE and does not re-derive
   // "is the window still open" from a timestamp - a badge that decided that for
   // itself could advertise a discount the checkout no longer applies.
-  const currentPrice = price.amountCents;
+  // NULL WHEN NO SQUARE IS SOLD. There is no "the price" on a board without a
+  // square product, and inventing one - zero, or the stored squarePrice - is
+  // how a price for a product nobody can buy reaches the page.
+  const currentPrice = squareProduct?.price.amountCents ?? null;
 
   // CTA language follows what the buyer actually receives.
   //
@@ -359,11 +381,14 @@ export default function FundraiserView({
   // One shared resolver — src/lib/board-vocabulary.ts. Never branched locally.
   const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
 
-  const ctaLabel = hasEvent
-    ? `Purchase ${u.many} — ${money(currentPrice)}`
-    : hasPrize
-      ? `Get ${u.many} — ${money(currentPrice)}`
-      : `Support this fundraiser — ${money(currentPrice)}`;
+  const ctaLabel =
+    currentPrice === null
+      ? null
+      : hasEvent
+        ? `Purchase ${u.many} — ${money(currentPrice)}`
+        : hasPrize
+          ? `Get ${u.many} — ${money(currentPrice)}`
+          : `Support this fundraiser — ${money(currentPrice)}`;
 
   // Clamped at 100% when raised exceeds the goal — the real figure still shows
   // above the bar. v2 §7.
@@ -399,26 +424,29 @@ export default function FundraiserView({
             After the changeover there is one price again and no early-bird
             framing at all. `price` comes from publicPriceDisplay() on the
             server, which calls the same predicate the checkout charges on. */}
-        {price.earlyBird ? (
+        {/* SQUARE PRICING IS SQUARE COPY. "$40 per ticket" on a board that
+            sells no tickets is the clearest possible statement of a product
+            that is not on offer, so the whole block is absent, not blank. */}
+        {squareProduct && (squareProduct.price.earlyBird ? (
           <div className="mt-3 rounded-lg border border-green-800/60 bg-green-950/30 px-3.5 py-3">
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-300">
                 Early bird
               </span>
               <span className="text-xl font-bold text-white tabular-nums">
-                {money(price.amountCents)}
+                {money(squareProduct.price.amountCents)}
               </span>
               <span className="text-sm text-gray-400">per {u.one}</span>
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              Through {shortDate(price.deadline, timezone)}
+              Through {shortDate(squareProduct.price.deadline, timezone)}
             </p>
           </div>
         ) : (
           <p className="text-sm text-gray-500 mt-2">
-            {money(price.amountCents)} per {u.one}
+            {money(squareProduct.price.amountCents)} per {u.one}
           </p>
-        )}
+        ))}
         {hostName && (
           <p className="text-xs text-gray-600 mt-2">hosted by {hostName}</p>
         )}
@@ -452,9 +480,11 @@ export default function FundraiserView({
             visible to anyone with the link. The raised amount, the goal and the
             progress bar stay; they are the two numbers.
 
-            `openCount` is still a PROP and still load-bearing: it disables the
-            purchase CTA at zero and promotes Donate to primary. Only the
-            display is gone. */}
+            The COUNT is still load-bearing and still absent from the page: it
+            lives on `squareProduct`, where it disables the purchase CTA at zero
+            and promotes Donate to primary. Only the display is gone — and on a
+            board with no square product there is no count to display or to
+            reason about. */}
 
         {/* DONATION-ONLY CARD RETURN. Same first line as every other successful
             submit state; what happened is the line under it, never mixed into
@@ -475,7 +505,7 @@ export default function FundraiserView({
         {/* Confirmation — v2 §6. Not a generic success page.
             Never says "ticket" on a no-prize board: ticket to what? The word
             only means something when there is a drawing, and Phase A has none. */}
-        {confirmation && confirmation.positions.length > 0 && (
+        {sellsSquares && confirmation && confirmation.positions.length > 0 && (
           <div className="rounded-lg border border-green-900/50 bg-green-950/30 p-4 mt-5">
             {/* The "🎉 Square #4 is yours." line is deliberately absent. A
                 fundraiser contributor bought a ticket, not a grid position; the
@@ -563,7 +593,7 @@ export default function FundraiserView({
           </div>
         )}
 
-        {hold && !holdResolvedByServer && (
+        {sellsSquares && hold && !holdResolvedByServer && (
           <div className="mt-5">
             <HoldTimer
               expiresAt={hold.holdExpiresAt}
@@ -618,24 +648,40 @@ export default function FundraiserView({
           </div>
         ) : (
         <div className="mt-5">
-          <button
-            type="button"
-            onClick={() => setClaiming(true)}
-            disabled={openCount === 0}
-            className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {openCount === 0 ? `Every ${u.one} is claimed` : ctaLabel}
-          </button>
+          {/* THE SQUARE CTA, ABSENT RATHER THAN DISABLED when the board sells
+              no squares. A board can hold a hundred `open` rows it must never
+              sell, so "how many are left" is the wrong question - the right one
+              is whether the product exists at all. */}
+          {squareProduct && (
+            <button
+              type="button"
+              onClick={() => setClaiming(true)}
+              disabled={squareProduct.openCount === 0}
+              className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {squareProduct.openCount === 0 ? `Every ${u.one} is claimed` : ctaLabel}
+            </button>
+          )}
 
           {/* Donate — donations SS12. Subordinate while squares are open, and
               PRIMARY the moment open squares reach zero: a full board that
               can still take money is the difference between a finished
-              fundraiser and one that keeps going. */}
+              fundraiser and one that keeps going.
+              
+              THE PROMOTION IS SCOPED TO SQUARES, deliberately. On a raffle-on
+              board this is byte-for-byte the previous condition. Off it, the
+              square question does not arise and donate is primary only when it
+              is the sole thing on offer - a lone secondary button is not a
+              hierarchy, it is a styling accident.
+
+              Backlogged, not decided here: a SOLD-OUT raffle board that also
+              sells entry tickets. That is a raffle question and this pilot has
+              raffle off. See PHASE-2-BACKLOG.md. */}
           <button
             type="button"
             onClick={() => setDonating(true)}
             className={
-              openCount === 0
+              (squareProduct ? squareProduct.openCount === 0 : offers.length === 0)
                 ? "mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
                 : "mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
             }
@@ -693,12 +739,16 @@ export default function FundraiserView({
           />
         )}
 
-        {claiming && (
+        {/* The square checkout cannot open on a board with no square product.
+            `claiming` is only ever set from the CTA above, which is absent -
+            this guard is the type-level proof of that, not a second condition
+            doing separate work. */}
+        {claiming && squareProduct && (
           <ClaimSheet
-            openSquares={squares
+            openSquares={squareProduct.squares
               .filter((sq) => sq.paymentStatus === "open")
               .map((sq) => ({ squareId: sq.squareId, position: sq.position }))}
-            priceCents={currentPrice}
+            priceCents={squareProduct.price.amountCents}
             hasEvent={hasEvent}
             hasPrize={hasPrize}
             cashModeEnabled={cashModeEnabled}
@@ -707,7 +757,7 @@ export default function FundraiserView({
             slug={slug}
             signupSheetExists={signupSheetExists}
             initialPicked={reclaim?.filter((id) =>
-              squares.some(
+              squareProduct.squares.some(
                 (sq) => sq.squareId === id && sq.paymentStatus === "open"
               )
             )}
