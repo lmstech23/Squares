@@ -85,6 +85,9 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
 
   beforeEach(async () => {
     if (!boardId) return;
+    // Contributions hold a board FK, so they must go before the board. These
+    // tests are the first in this file to create any.
+    await db.contribution.deleteMany({ where: { boardId } });
     await db.square.deleteMany({ where: { boardId } });
     await db.board.deleteMany({ where: { boardId } });
     boardId = "";
@@ -92,6 +95,7 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
 
   after(async () => {
     if (boardId) {
+      await db.contribution.deleteMany({ where: { boardId } });
       await db.square.deleteMany({ where: { boardId } });
       await db.board.deleteMany({ where: { boardId } });
     }
@@ -137,6 +141,71 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
       adultEarlyLocked: false,
       adultRegularLocked: false,
     });
+    assert.equal(await hasConfirmedContribution(boardId, db), false);
+  });
+
+  // INVARIANT 16 IS CONTRIBUTION-SCOPED, NOT SQUARE-SCOPED.
+  //
+  // The three cases that matter, and the reason the old square-count version
+  // was wrong: on a board that sells no squares it answered false forever, so
+  // the event date, venue, timezone and campaign title never locked no matter
+  // how many people had paid against the terms those fields describe.
+  async function contribute(
+    over: Partial<{ square: number; donation: number; entry: number }> = {},
+    status: "confirmed" | "pending" = "confirmed",
+    voided = false
+  ) {
+    const square = over.square ?? 0;
+    const donation = over.donation ?? 0;
+    const entry = over.entry ?? 0;
+    return db.contribution.create({
+      data: {
+        boardId,
+        status,
+        paymentMethod: "cash",
+        squareAmountCents: square,
+        donationAmountCents: donation,
+        entryAmountCents: entry,
+        totalPaidCents: square + donation + entry,
+        contributorName: "Parent",
+        contributorEmail: "p@example.com",
+        confirmedAt: status === "confirmed" ? new Date() : null,
+        voidedAt: voided ? new Date() : null,
+        voidedByHostId: voided ? hostId : null,
+      },
+    });
+  }
+
+  test("a confirmed DONATION locks terms, with no square sold", async () => {
+    await seedBoard(4);
+    assert.equal(await hasConfirmedContribution(boardId, db), false);
+    await contribute({ donation: 2500 });
+    assert.equal(
+      await hasConfirmedContribution(boardId, db),
+      true,
+      "the defect: this was false forever on a board with no squares"
+    );
+  });
+
+  test("a confirmed ENTRY TICKET purchase locks terms, with no square sold", async () => {
+    await seedBoard(4);
+    await contribute({ entry: 4000 });
+    assert.equal(await hasConfirmedContribution(boardId, db), true);
+  });
+
+  // The reasoning that chose `paid` over `pending` is unchanged: a checkout
+  // that expires leaves no trace and must not lock a host out of her own board.
+  test("a PENDING contribution locks nothing", async () => {
+    await seedBoard(4);
+    await contribute({ entry: 4000 }, "pending");
+    assert.equal(await hasConfirmedContribution(boardId, db), false);
+  });
+
+  // A void never changes `status`, so both halves of countsTowardRaised are
+  // load-bearing. Reversed money must not hold terms locked.
+  test("a VOIDED contribution locks nothing, despite status = confirmed", async () => {
+    await seedBoard(4);
+    await contribute({ donation: 2500 }, "confirmed", true);
     assert.equal(await hasConfirmedContribution(boardId, db), false);
   });
 

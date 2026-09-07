@@ -1268,6 +1268,94 @@ revenue.
 An `AdmissionGrant` with `source = STANDALONE` must have
 `donateAdmissions = false`. A stale or malformed donate flag must never suppress
 Pass minting for a paid standalone Entry Ticket purchase.
+---
+
+## 20. Capability model — the invariants this section owns and amends
+
+`invariant-registry.md` allocates the numbers and points here. It does not
+restate the wording; this section is authoritative for it.
+
+Implementation comments cite these by NAME, never by number alone.
+
+### 20.1 Amendments
+
+**Invariant 16 becomes contribution-scoped.**
+
+> Terms lock after the first confirmed **Contribution of any supported kind** —
+> square, donation, or standalone entry ticket. Not only a confirmed square
+> contribution.
+
+Once the platform supports donation-only and entry-only fundraisers, "first
+confirmed square contribution" stops being the right boundary. Someone who
+bought an entry ticket or gave a donation has already transacted against the
+fundraiser's disclosed terms. Letting the host change those terms afterward
+because no square happened to sell is inconsistent, and on a board that sells no
+squares it means terms never lock at all.
+
+The set of locked fields is unchanged. What changed is what starts the lock.
+
+**Invariant 58 is amended to agree with it.**
+
+> Terms lock on the first confirmed contribution of any kind. **Donations lock
+> terms.**
+
+58 previously read "donations lock nothing", which was the same square-scoped
+boundary stated from the donations side. It cannot survive the amendment to 16
+without openly contradicting it.
+
+**Invariant 52 is corrected to three terms.**
+
+> `totalPaidCents = squareAmountCents + donationAmountCents + entryAmountCents`,
+> enforced by CHECK.
+
+This is a correction, not a ruling. The live constraint
+`contributions_total_is_sum` has summed three terms since the standalone Entry
+Ticket migration; the registry line still said two. §19.2 already states the
+three-term form.
+
+**Invariant 65 is preserved, and narrowed to the path it describes.**
+
+> A **host-recorded** cash donation has no reserved state; it is recorded
+> confirmed in one host action.
+
+65 is correct and stays correct for the flow it was written about: the host has
+the money in hand and records it once. It was never a statement about the
+contributor-initiated path, which did not exist when it was written. That path is
+now registered separately as invariant 113 rather than being read into 65 or
+argued around at the call site.
+
+### 20.2 New invariants
+
+**113 — Contributor-declared direct payment is a two-actor flow.**
+A contributor may declare a direct payment they intend to send. That record is
+created `pending` by the contributor and is resolved by the **host**, who either
+confirms receipt or releases it. It is never confirmed by the act of declaring
+it, and it never auto-confirms. Until the host confirms, it counts toward
+nothing: not `raised`, not the prize basis, not any lock.
+
+**114 — A direct-payment entry ticket reservation resolves per tier line, and is
+never auto-released.**
+The resolution unit is one tier line — a tier at a price — not the whole
+reservation and not the individual pass. Passes mint only for lines actually
+paid. At scheduled close such a reservation is **never** auto-released, unlike a
+reserved square: releasing a square provably means no money moved, while a
+direct-payment reservation may already have been paid through a rail the
+platform cannot see. It blocks finalization instead, on both the scheduled and
+host-initiated paths, until the host resolves it.
+
+**115 — Entry tier prices lock independently.**
+Each of the three entry prices — child, adult early, adult regular — locks at the
+first confirmed pass sold at that tier and price basis, and at nothing else. The
+same principle as invariant 76 for square prices. A sold-out adult early tier
+does not freeze the child price. Locks are derived from the pass's **stored**
+`priceBasis`, never by comparing amounts, so no ambiguous-equal-prices case
+exists.
+
+**116 — The early-bird cutoff locks when either product has sold under it.**
+`Board.earlyBirdEndsAt` drives both square pricing and adult entry pricing. It
+locks when an early-bird **square** OR an early-priced adult **entry ticket** has
+been sold. Locking it on the square alone would let a host move a deadline that
+entry buyers had already paid against.
 
 ---
 

@@ -250,6 +250,8 @@ have accepted the wrong one both times.
 
 8. **Never overwrite `SYSTEM-FLOW.md` from a circulating copy.** The repo's is newer than any zip or project-knowledge version and carries the double-grid feature. Port edits onto it by hand — `system-flow-port.md`.
 
+9. **`prisma generate` before any verification, whenever `schema.prisma` changed.** TypeScript, the tests and the build all read the GENERATED client, not the schema file, so a green suite against a stale client proves only that the OLD client still compiles. Not hypothetical: `raffleEnabled` passed tsc and 169 tests while being invisible to TypeScript, because nothing referenced it yet — the first line that did failed instantly. (The numbers in this list are unreliable and always have been; two rules are numbered 8. Cite by name.)
+
 ---
 
 ## Untouchable without explicit approval

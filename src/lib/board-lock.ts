@@ -23,34 +23,51 @@ import type { Prisma } from "@prisma/client";
 // than a slightly less idiomatic import: invariant 76 is derived by price
 // comparison and has to be proven against real rows.
 import { prisma as defaultClient } from "./prisma.ts";
+import { countsTowardRaised } from "./contributions.ts";
 
 /**
  * Has this board received a confirmed contribution?
  *
- * "First contribution" means the first square reaching `paymentStatus = "paid"`.
- * Not `pending`, not `reserved_cash`. The derivation, so nobody has to re-argue
- * it at the next call site:
+ * CONTRIBUTION-SCOPED, NOT SQUARE-SCOPED — invariant 16 as amended in
+ * fundraiser-board-v2.md SS20. Any confirmed, unvoided `Contribution` counts:
+ * squares, a donation, or a standalone entry ticket.
+ *
+ * THIS FUNCTION USED TO COUNT PAID SQUARES, and its name has always said
+ * otherwise. That was defensible while every fundraiser sold squares. It stopped
+ * being defensible the moment donation-only and entry-only boards existed: on a
+ * board with no squares it returned false forever, so the event date, venue,
+ * timezone and campaign title never locked no matter how many people had
+ * already paid against the terms those fields describe.
+ *
+ * The reasoning that chose `paid` still holds, and is why the filter is
+ * `confirmed` AND unvoided rather than anything looser:
  *
  *  - Invariant 1: "`raised` counts confirmed contributions only. Never claimed,
- *    reserved, or pending." Every place this codebase computes `raised` filters
- *    on `paid` and nothing else.
+ *    reserved, or pending."
  *  - Invariant 3: "A reserved cash square contributes $0 and holds no ticket."
  *    A reservation is a promise, not money.
- *  - `pending` and `reserved_cash` are REVERSIBLE. `resolveExpiredHolds`
- *    returns them to `open`, and `closeBoard` treats both as unresolved rather
- *    than as revenue. A rule that counted reservations would permanently lock a
- *    board on the strength of a hold that expired ten minutes later and left no
- *    trace — locking the host out over an event that never happened.
+ *  - `pending` is REVERSIBLE — a checkout that expires leaves no trace, and a
+ *    rule counting it would lock a host out over a purchase that never
+ *    happened.
+ *  - A VOID NEVER CHANGES `status`, so `voidedAt` must be checked too. Reversed
+ *    money must not hold terms locked. `countsTowardRaised` is that exact pair,
+ *    reused rather than restated so this predicate and `raised` can never
+ *    disagree about what counts.
  *
- * Money arriving is the thing that makes terms binding on someone other than
- * the host, and `paid` is the only state that means money arrived.
+ * Money arriving is what makes terms binding on someone other than the host.
+ * Which product it arrived through is not the question.
+ *
+ * FUNDRAISER-ONLY, and all three call sites already are. Game Day squares sit
+ * outside the ledger entirely (A1 left them there), so a Game Day board has no
+ * Contribution rows and this would answer false for one if it were ever asked,
+ * which it is not.
  */
 export async function hasConfirmedContribution(
   boardId: string,
   client: Prisma.TransactionClient | typeof defaultClient = defaultClient
 ): Promise<boolean> {
-  const count = await client.square.count({
-    where: { boardId, paymentStatus: "paid" },
+  const count = await client.contribution.count({
+    where: { boardId, ...countsTowardRaised },
     take: 1,
   });
   return count > 0;

@@ -84,12 +84,40 @@ describe(
       });
     }
 
-    /** One confirmed square -- the trigger for the title-history rule. */
+    /**
+     * One confirmed contribution -- the trigger for the title-history rule.
+     *
+     * THE LEDGER ROW IS THE TRIGGER, not the square's payment_status. Invariant
+     * 16 is contribution-scoped (v2 SS20.1), so a paid square with no
+     * Contribution behind it locks nothing -- and it also is not a state the
+     * application can produce: both confirmation paths write the ledger row
+     * inside the same transaction that flips the square (api/checkout and
+     * confirm-cash). This fixture used to write only the square, which made it
+     * a test against a shape production cannot hold.
+     */
     async function confirmOne() {
       const sq = await db.square.findFirstOrThrow({ where: { boardId } });
+      const contribution = await db.contribution.create({
+        data: {
+          boardId,
+          status: "confirmed",
+          paymentMethod: "cash",
+          squareAmountCents: 5000,
+          donationAmountCents: 0,
+          totalPaidCents: 5000,
+          contributorName: "Contributor",
+          contributorEmail: "c@example.com",
+          confirmedAt: new Date(),
+        },
+      });
       await db.square.update({
         where: { squareId: sq.squareId },
-        data: { paymentStatus: "paid", pricePaidCents: 5000, batchId: randomUUID() },
+        data: {
+          paymentStatus: "paid",
+          pricePaidCents: 5000,
+          batchId: randomUUID(),
+          contributionId: contribution.id,
+        },
       });
     }
 
@@ -113,7 +141,9 @@ describe(
     beforeEach(async () => {
       CURRENT_USER = OWNER_UID;
       if (!boardId) return;
+      // Squares carry a contribution FK, and contributions carry a board FK.
       await db.square.deleteMany({ where: { boardId } });
+      await db.contribution.deleteMany({ where: { boardId } });
       await db.board.deleteMany({ where: { boardId } });
       boardId = "";
     });
@@ -121,6 +151,7 @@ describe(
     after(async () => {
       if (boardId) {
         await db.square.deleteMany({ where: { boardId } });
+        await db.contribution.deleteMany({ where: { boardId } });
         await db.board.deleteMany({ where: { boardId } });
       }
       await db.host.deleteMany({ where: { id: { in: [ownerId, strangerId] } } });

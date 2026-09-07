@@ -62,7 +62,7 @@ Statements are one-line summaries for lookup. **The owning document is authorita
 | 13 | `finalPrizePoolCents` never changes once written, including for disputes |
 | 14 | Prize tiers sum exactly to the finalized pool |
 | 15 | **Extended (§100).** Host and admin squares count toward `raised` but never receive an active drawing ticket |
-| 16 | **Amended (§72).** Terms lock after the first confirmed **square** contribution |
+| 16 | **Amended (§72, then v2 §20.1).** Terms lock after the first confirmed **Contribution of any kind** — square, donation, or standalone entry ticket |
 | 17 | Free entries never occupy a square or move the fundraising meter |
 | 18 | A `pending` square carries a server-set `holdExpiresAt`; the Stripe session is resolved before any release |
 | 19 | A `pending` square may be manually released only after `holdExpiresAt`, and only via the resolution sequence |
@@ -122,20 +122,20 @@ Statements are one-line summaries for lookup. **The owning document is authorita
 | # | Statement |
 |---|---|
 | 51 | `Contribution` is the money primitive; every counted dollar belongs to exactly one row |
-| 52 | `totalPaidCents = squareAmountCents + donationAmountCents`, enforced by CHECK |
+| 52 | **Corrected (v2 §20.1).** `totalPaidCents = squareAmountCents + donationAmountCents + entryAmountCents`, enforced by CHECK |
 | 53 | On a confirmed contribution, `squareAmountCents` equals the sum of its squares' `pricePaidCents` |
 | 54 | A confirmed contribution's amounts never change |
 | 55 | A donation claims no square and never changes square availability |
 | 56 | A donation never produces a drawing ticket or enters the eligible pool |
 | 57 | `prizeBasisCents` counts confirmed square money only; prize math never reads `raisedCents` |
-| 58 | Terms lock on the first confirmed square contribution; donations lock nothing |
+| 58 | **Amended (v2 §20.1).** Terms lock on the first confirmed contribution of any kind; **donations lock terms** |
 | 59 | A mixed checkout is one Stripe session and one `Contribution`; both portions confirm together or not at all |
 | 60 | An expired hold on a mixed checkout charges nothing; there is no split outcome |
 | 61 | There is no partial-success payment state |
 | 62 | Session `amount_total` must equal `totalPaidCents` at confirmation |
 | 63 | Confirmation is idempotent by conditional update on `status = 'pending'` |
 | 64 | A donation-only contribution has no hold, no `holdExpiresAt`, and no countdown |
-| 65 | A cash donation has no reserved state; it is recorded confirmed in one host action |
+| 65 | **Narrowed (v2 §20.1).** A **host-recorded** cash donation has no reserved state; it is recorded confirmed in one host action. The contributor-declared path is invariant 113 |
 | 66 | Donations stop when the board leaves `OPEN` |
 | 67 | `CLOSING` resolves every pending contribution against Stripe before finalization |
 | 68 | `finalRaisedCents`, `finalPrizeBasisCents`, `finalPrizePoolCents` are written together and are immutable |
@@ -204,6 +204,18 @@ the owning document, so there is nothing here that can drift out of step with
 it. Implementation comments cite them by NAME rather than by number: a number in
 a comment goes stale silently, and this file has already had one renumbering.
 
+### 113–116 · Fundraiser board v2 §20 — capability model
+
+| # | Invariant | Authoritative statement |
+|---|---|---|
+| 113 | Contributor-declared direct payment is a two-actor flow | `fundraiser-board-v2.md` §20.2 |
+| 114 | An entry ticket reservation resolves per tier line, and is never auto-released | `fundraiser-board-v2.md` §20.2 |
+| 115 | Entry tier prices lock independently | `fundraiser-board-v2.md` §20.2 |
+| 116 | The early-bird cutoff locks when either product has sold under it | `fundraiser-board-v2.md` §20.2 |
+
+An INDEX, as above. §20.1 of the same document carries the amended wording for
+16, 52, 58 and 65; those rows keep their numbers and nothing was renumbered.
+
 ---
 
 ## Environment invariants — E1–E5
@@ -233,4 +245,4 @@ Environment-blocked tests are marked `REQUIRED — ENVIRONMENT BLOCKED, NOT EXEC
 2. Add the row here and the full statement in the owning document, in one commit.
 3. Amending an existing invariant does not consume a new number — mark the row `**Amended (§X)**` and point at the amending document.
 
-*Next free number: **113**.*
+*Next free number: **117**.*
