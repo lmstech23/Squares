@@ -84,6 +84,25 @@ model Board {
   // by API validation on prize boards only (percent > 0) — the doc's "required"
   // is conditional, so it cannot be a NOT NULL column.
   boardType                 BoardType    @default(game) @map("board_type")
+  /// Does this fundraiser sell SQUARES - grid, square pricing, drawing, prize
+  /// pool? One of three independent capability flags; the other two are
+  /// deferred with the creation flow.
+  ///
+  /// DEFAULT TRUE, AND THAT IS THE BACKFILL. Every board that existed before
+  /// this column sold squares, so the default is the correct historical value
+  /// and no data migration is needed. Game Day is always true and has no way
+  /// to be otherwise - the flag is read only on fundraiser boards.
+  ///
+  /// WHEN FALSE, SQUARES ARE ABSENT, NOT DISABLED. No square CTA, no pricing,
+  /// no grid, no drawing or prize copy reaches a contributor - enforced where
+  /// the data is assembled, not by conditional rendering, so a component
+  /// written six months from now cannot reintroduce them by reading a prop it
+  /// should never have been handed.
+  ///
+  /// A board may still HOLD Square rows with this false. They are inert: the
+  /// close sequence counts only `pending` and `reserved_cash`, so `open` rows
+  /// are invisible to every step of it.
+  raffleEnabled             Boolean      @default(true) @map("raffle_enabled")
   causeDescription          String?      @map("cause_description")
   prizePoolPercent          Int          @default(0) @map("prize_pool_percent")
   prizeTierCount            Int          @default(4) @map("prize_tier_count")
