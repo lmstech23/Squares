@@ -62,6 +62,12 @@ interface Props {
    * on the square lock alone would let a host move a deadline that entry
    * buyers had already paid against.
    */
+  /**
+   * This board sells squares. When false there is no inventory to preview and
+   * the route refuses to resize, so the panel must not promise a resize it
+   * will not get. Mirrors the route's condition rather than inferring one.
+   */
+  raffleEnabled: boolean;
   cutoffLocked: boolean;
   cutoffLockReason: string;
   /** Dollars, as typed. "" means the tier is NOT OFFERED. */
@@ -107,6 +113,7 @@ export default function EditFundraiserButton({
   initialVenmo, initialZelle, initialCashapp, initialPaypal,
   inventoryLocked, regularLocked, earlyBirdLocked,
   inventoryLockReason, regularLockReason, earlyBirdLockReason,
+  raffleEnabled,
   cutoffLocked, cutoffLockReason,
   initialEntryChild, initialEntryAdultEarly, initialEntryAdultRegular,
   childLocked, adultEarlyLocked, adultRegularLocked,
@@ -176,7 +183,7 @@ export default function EditFundraiserButton({
   const goalChanged = goalCents !== initialGoalCents;
   const priceChanged = !regularLocked && priceCents !== toCents(initialPrice);
   const preview =
-    !inventoryLocked && (goalChanged || priceChanged)
+    raffleEnabled && !inventoryLocked && (goalChanged || priceChanged)
       ? validateTicketCount(goalCents, priceCents)
       : null;
   const nextCount = preview && preview.ok ? preview.count : null;

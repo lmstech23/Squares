@@ -459,6 +459,7 @@ export default async function HostBoardPage({ params }: Props) {
                 ? String(board.entryAdultRegularPriceCents / 100)
                 : ""
             }
+            raffleEnabled={board.raffleEnabled}
             cutoffLocked={priceLocks.cutoffLocked}
             childLocked={priceLocks.childLocked}
             adultEarlyLocked={priceLocks.adultEarlyLocked}

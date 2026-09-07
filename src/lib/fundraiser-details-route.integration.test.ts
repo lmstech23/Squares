@@ -168,6 +168,45 @@ describe(
       assert.equal(await storedTotal(), 150, "the column that three screens read");
     });
 
+    // RAFFLE OFF: THE SAME EDIT MUST MOVE NOTHING.
+    //
+    // `inventoryLocked` is false whenever no square has been PAID for, which on
+    // a board that sells no squares is true for its entire life. Without the
+    // raffleEnabled clause in the route this is the edit that silently
+    // materialises a grid on a board whose contributors are never shown one.
+    //
+    // The goal still SAVES. It just stops driving inventory.
+    test("raffle off: a goal change saves and resizes nothing", async () => {
+      await seedBoard();
+      await db.board.update({ where: { boardId }, data: { raffleEnabled: false } });
+      const before = await rowCount();
+      assert.equal(before, 100, "the board still holds its pre-existing rows");
+
+      const { status } = await call({ fundraisingGoalCents: 30_000 });
+      assert.equal(status, 200);
+
+      assert.equal(await rowCount(), before, "no row was created or deleted");
+      assert.equal(await storedTotal(), 100, "totalSquares did not move either");
+
+      const saved = await db.board.findUnique({
+        where: { boardId },
+        select: { fundraisingGoalCents: true },
+      });
+      assert.equal(saved!.fundraisingGoalCents, 30_000, "the goal itself still saved");
+    });
+
+    // A board that never had squares must not GROW them, which is the shape a
+    // raffle-off board created through the new flow will actually have.
+    test("raffle off with zero rows: a goal change creates none", async () => {
+      await seedBoard([]);
+      await db.board.update({ where: { boardId }, data: { raffleEnabled: false } });
+      assert.equal(await rowCount(), 0);
+
+      const { status } = await call({ fundraisingGoalCents: 50_000 });
+      assert.equal(status, 200);
+      assert.equal(await rowCount(), 0, "still no grid");
+    });
+
     test("goal $200 -> $100 shrinks to 50 rows AND totalSquares follows", async () => {
       await seedBoard();
       const { status } = await call({ fundraisingGoalCents: 10_000 });

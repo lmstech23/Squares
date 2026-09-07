@@ -135,6 +135,7 @@ export async function PATCH(request: Request, { params }: Props) {
         boardId: true,
         hostId: true,
         boardType: true,
+        raffleEnabled: true,
         // Fallback zone when an event is being ADDED — see effectiveTz.
         timezone: true,
         squarePrice: true,
@@ -395,7 +396,19 @@ export async function PATCH(request: Request, { params }: Props) {
       goalCents !== undefined && goalCents !== board.fundraisingGoalCents;
     const priceChanged =
       "squarePrice" in boardData && boardData.squarePrice !== board.squarePrice;
-    const willResize = !locks.inventoryLocked && (goalChanged || priceChanged);
+    // A RAFFLE-OFF BOARD HAS NO INVENTORY TO RESIZE, AND MUST NEVER GROW ANY.
+    //
+    // `inventoryLocked` is false whenever no square has been PAID for, which on
+    // a board that sells no squares is true forever. Without this clause a host
+    // correcting her fundraising goal would silently materialise a grid on a
+    // board whose contributors are never shown one - the goal is an
+    // aspirational number here, not a divisor.
+    //
+    // The goal still SAVES on such a board. It simply stops driving inventory,
+    // which is the same thing that happens to a raffle board once its squares
+    // lock; this is that rule reached by a different route.
+    const willResize =
+      board.raffleEnabled && !locks.inventoryLocked && (goalChanged || priceChanged);
 
     const nextGoal = goalCents !== undefined ? goalCents : board.fundraisingGoalCents;
     const nextPrice = (boardData.squarePrice as number | undefined) ?? board.squarePrice;
