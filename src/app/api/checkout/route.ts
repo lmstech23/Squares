@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { acceptsCard } from "@/lib/accepted-payments";
 import { normalizePhone } from "@/lib/roster-identity";
 import { stripe } from "@/lib/stripe";
 import { randomUUID } from "crypto";
@@ -178,6 +179,15 @@ export async function POST(request: Request) {
     }
 
     // 4. Host must have Stripe connected and charges enabled
+    // FUNDRAISER ONLY. Game Day has no board-level accepted list - its array
+    // is empty by design and consulting it would refuse every Game Day
+    // checkout. Its card path is unchanged.
+    if (isFundraiser && !acceptsCard(board, board.host)) {
+      return NextResponse.json(
+        { error: "This board is not accepting card payments." },
+        { status: 503 }
+      );
+    }
     if (!board.host.stripeAccountId || !board.host.stripeChargesEnabled) {
       return NextResponse.json(
         { error: "Host payment setup is incomplete." },

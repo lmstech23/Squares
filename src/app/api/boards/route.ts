@@ -498,6 +498,27 @@ export async function POST(request: Request) {
       hostZelle,
       hostCashapp,
       hostPaypal,
+      // WHAT THIS BOARD ACCEPTS. Derived at creation from what the host just
+      // supplied, which is the same set the backfill computed for existing
+      // boards - so a board created today and one created last week describe
+      // themselves the same way.
+      //
+      // NOT A CHOICE THE HOST MAKES YET. The onboarding control is Track 2.
+      // Until it ships this reproduces the old inferred behaviour exactly,
+      // which is the point: the column changes what the system can EXPRESS
+      // before it changes what any board DOES.
+      //
+      // Game Day gets an empty array and nothing consults it.
+      acceptedPaymentMethods:
+        boardType === "fundraiser"
+          ? ([
+              ...(host.stripeChargesEnabled ? ["card"] : []),
+              ...(hostZelle ? ["zelle"] : []),
+              ...(hostCashapp ? ["cashapp"] : []),
+              ...(hostVenmo ? ["venmo"] : []),
+              ...(hostPaypal ? ["paypal"] : []),
+            ] as ("card" | "zelle" | "cashapp" | "venmo" | "paypal")[])
+          : [],
       payoutVisibility: payoutVisibility as any,
       requirePlayerPayout,
       // Exactly one of these is populated. Game Day carries teams, sport,

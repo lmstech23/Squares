@@ -74,6 +74,9 @@ describe(
           gameName: "Cash Ledger",
           slug: "cash-" + randomUUID().slice(0, 8),
           boardType: "fundraiser",
+          // Every fundraiser must say what it accepts -
+          // boards_fundraiser_accepts_something refuses an empty list.
+          acceptedPaymentMethods: ["card"],
           squarePrice: PRICE,
           totalSquares: 6,
           timezone: "America/New_York",

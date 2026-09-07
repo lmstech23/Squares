@@ -4,6 +4,7 @@ import { normalizePhone } from "@/lib/roster-identity";
 import { randomUUID } from "crypto";
 import { currentPriceCents } from "@/lib/claim-price";
 import { prepareAdmission } from "@/lib/admission";
+import { acceptsAnyDirect } from "@/lib/accepted-payments";
 
 // ============================================================
 // PLAYER: Self-serve cash reservation with PIN
@@ -63,6 +64,11 @@ export async function POST(
         status: true,
         cashModeEnabled: true,
         cashPin: true,
+        acceptedPaymentMethods: true,
+        hostZelle: true,
+        hostCashapp: true,
+        hostVenmo: true,
+        hostPaypal: true,
         squarePrice: true,
         boardType: true,
         campaignEndsAt: true,
@@ -89,7 +95,9 @@ export async function POST(
     // the contributor picks the method at checkout instead of entering a code
     // the host would have to hand them in person.
     if (isFundraiser) {
-      if (!board.cashModeEnabled) {
+      // The board must accept at least one direct rail, not merely have a
+      // handle stored. A stored-but-unlisted handle is one the host paused.
+      if (!board.cashModeEnabled || !acceptsAnyDirect(board)) {
         return NextResponse.json(
           { error: "Direct payment is not available on this board." },
           { status: 403 }

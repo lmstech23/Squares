@@ -99,6 +99,9 @@ describe(
           gameName: "Batch",
           slug: "sb-" + randomUUID().slice(0, 8),
           boardType: "fundraiser",
+          // Every fundraiser must say what it accepts -
+          // boards_fundraiser_accepts_something refuses an empty list.
+          acceptedPaymentMethods: ["card"],
           squarePrice: 5000,
           totalSquares: 1,
           timezone: "America/New_York",
@@ -297,6 +300,7 @@ describe(
         data: {
           hostId, gameName: "Other", slug: "ot-" + randomUUID().slice(0, 8),
           boardType: "fundraiser", squarePrice: 5000, totalSquares: 1,
+          acceptedPaymentMethods: ["card"],
           timezone: "America/New_York", campaignEndsAt: new Date(Date.now() + 864e5),
         },
       });

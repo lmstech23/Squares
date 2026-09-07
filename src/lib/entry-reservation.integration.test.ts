@@ -39,6 +39,8 @@ describe(
           totalSquares: 0,
           timezone: "America/New_York",
           campaignEndsAt: new Date(Date.now() + 30 * 864e5),
+          acceptedPaymentMethods: ["zelle"],
+          hostZelle: "host@example.com",
           entryChildPriceCents: 1500,
           entryAdultEarlyPriceCents: 4000,
           entryAdultRegularPriceCents: 5000,

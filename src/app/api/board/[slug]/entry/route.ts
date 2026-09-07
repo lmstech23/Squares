@@ -4,6 +4,7 @@ import { stripe } from "@/lib/stripe";
 import { baseUrlFromRequest } from "@/lib/base-url";
 import { normalizePhone } from "@/lib/roster-identity";
 import { createPendingCardContribution } from "@/lib/contributions";
+import { acceptsCard } from "@/lib/accepted-payments";
 import {
   quoteEntry,
   offersEntry,
@@ -140,9 +141,17 @@ export async function POST(
       return NextResponse.json({ error: quote.error }, { status: 400 });
     }
 
-    if (!board.host.stripeAccountId || !board.host.stripeChargesEnabled) {
+    // CAPABILITY AND INTENT, both. A live Stripe account makes card possible;
+    // the board's accepted list makes it intended. Before that list existed,
+    // connecting Stripe for any reason turned card on for every fundraiser the
+    // host owned.
+    // The second clause is the type-level restatement of the first: acceptsCard
+    // already requires a Stripe account, but it returns a boolean and cannot
+    // narrow `stripeAccountId` for the session call below. Restated rather than
+    // asserted past, so the compiler is checking the same thing the guard is.
+    if (!acceptsCard(board, board.host) || !board.host.stripeAccountId) {
       return NextResponse.json(
-        { error: "Host payment setup is incomplete." },
+        { error: "This board is not accepting card payments." },
         { status: 503 }
       );
     }

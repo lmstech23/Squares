@@ -6,6 +6,7 @@ import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
 import { entryPriceFor } from "@/lib/entry-pricing";
 import { squareProductFor } from "@/lib/square-product";
+import { acceptsCard, acceptedHandles, acceptsAnyDirect } from "@/lib/accepted-payments";
 import type { EntryTierOffer } from "./entry-sheet";
 import { donationReturnState } from "@/lib/donation-return";
 import { boardTotals } from "@/lib/contributions";
@@ -326,17 +327,19 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         hasEvent={board.event != null}
         signupSheetExists={board.event?.signupSheet != null}
         entryOffers={board.event != null ? entryOffers : []}
-        cashModeEnabled={board.cashModeEnabled}
-        stripeConnected={board.host.stripeChargesEnabled ?? false}
+        cashModeEnabled={
+          // NARROWED AT THE BOUNDARY, the same rule the square product
+          // follows. A method the board does not accept never reaches the
+          // view, so no component can offer one by reading a prop it should
+          // not have been handed. Both conditions apply: capability AND
+          // intent.
+          board.cashModeEnabled && acceptsAnyDirect(board)
+        }
+        stripeConnected={acceptsCard(board, board.host)}
         hasPrize={board.prizePoolPercent > 0}
         status={board.status}
         confirmation={confirmation}
-        handles={{
-          venmo: board.hostVenmo,
-          zelle: board.hostZelle,
-          cashapp: board.hostCashapp,
-          paypal: board.hostPaypal,
-        }}
+        handles={acceptedHandles(board)}
       />
     );
   }

@@ -51,6 +51,9 @@ describe(
           campaignEndsAt: new Date(Date.now() + 30 * 864e5),
           cashModeEnabled: true,
           hostZelle: "host@example.com",
+          // What this board accepts. Zelle only - the route now requires the
+          // rail to be listed AND the handle to exist.
+          acceptedPaymentMethods: ["zelle"],
           entryChildPriceCents: 1500,
           entryAdultEarlyPriceCents: 4000,
           entryAdultRegularPriceCents: 5000,

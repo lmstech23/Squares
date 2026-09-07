@@ -7,6 +7,7 @@ import {
   createPendingCardContribution,
   MIN_CARD_DONATION_CENTS,
 } from "@/lib/contributions";
+import { acceptsCard, acceptsAnyDirect } from "@/lib/accepted-payments";
 
 // ============================================================
 // CONTRIBUTOR: donation-only card checkout — donations §6.
@@ -144,8 +145,9 @@ export async function POST(
           { status: 403 }
         );
       }
-      const hasHandle =
-        board.hostZelle || board.hostCashapp || board.hostVenmo || board.hostPaypal;
+      // A handle alone is no longer the offer: the board must also accept the
+      // rail. A stored-but-unlisted handle is one the host has paused.
+      const hasHandle = acceptsAnyDirect(board);
       if (!hasHandle) {
         return NextResponse.json(
           { error: "This host has not set up a direct payment method." },
@@ -184,9 +186,13 @@ export async function POST(
     }
 
     // ---------------------------------------------------------------- CARD --
-    if (!board.host.stripeAccountId || !board.host.stripeChargesEnabled) {
+    // The second clause is the type-level restatement of the first: acceptsCard
+    // already requires a Stripe account, but it returns a boolean and cannot
+    // narrow `stripeAccountId` for the session call below. Restated rather than
+    // asserted past, so the compiler is checking the same thing the guard is.
+    if (!acceptsCard(board, board.host) || !board.host.stripeAccountId) {
       return NextResponse.json(
-        { error: "Host payment setup is incomplete." },
+        { error: "This board is not accepting card payments." },
         { status: 503 }
       );
     }

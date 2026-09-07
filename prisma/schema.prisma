@@ -63,6 +63,25 @@ model Board {
   cashReservationTtlMins    Int         @default(20) @map("cash_reservation_ttl_mins")
   cashLiabilityAccepted     Boolean     @default(false) @map("cash_liability_accepted")
   winnerNotifiedByPeriod  Json    @default("{}") @map("winner_notified_by_period")
+  /// WHAT THIS BOARD ACCEPTS, as a host decision rather than an inference.
+  ///
+  /// Before this column, a fundraiser's payment methods were derived entirely
+  /// from account state: `cashModeEnabled` was hardcoded true, the four rails
+  /// were whichever handles happened to be populated, and card was on whenever
+  /// the host's Stripe account had charges enabled. A host could not say "this
+  /// board takes Zelle only" - and connecting Stripe for any reason silently
+  /// turned card on for every fundraiser they owned.
+  ///
+  /// NARROWING ONLY, NEVER WIDENING. Membership is checked IN ADDITION to the
+  /// existing capability checks, never instead of them: `card` still requires a
+  /// live Stripe account, and a rail still requires its handle. Listing a
+  /// method the account cannot perform grants nothing, which is what makes this
+  /// safe to add to boards that are already taking money.
+  ///
+  /// FUNDRAISER ONLY. Game Day's direct-payment model is a PIN-gated square
+  /// reservation, not a rail chosen at checkout, so it is left out rather than
+  /// bent to fit. Its array stays empty and nothing consults it.
+  acceptedPaymentMethods BoardPaymentMethod[] @default([]) @map("accepted_payment_methods")
   hostVenmo              String?          @map("host_venmo")
   hostZelle              String?          @map("host_zelle")
   hostCashapp            String?          @map("host_cashapp")
@@ -1190,4 +1209,22 @@ enum EntryReservationStatus {
   released
 
   @@map("entry_reservation_status")
+}
+
+/// What a fundraiser board accepts at checkout.
+///
+/// SEPARATE FROM `PaymentRail`, deliberately. That one describes how an
+/// EntryReservation will be paid, and a reservation can never be `card` - card
+/// purchases complete through Stripe and never become a reservation. Sharing an
+/// enum would put a value in one domain that is unreachable in the other, and
+/// the first person to add a rail would have to work out which of the two
+/// meanings they were extending.
+enum BoardPaymentMethod {
+  card
+  zelle
+  cashapp
+  venmo
+  paypal
+
+  @@map("board_payment_method")
 }

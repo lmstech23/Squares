@@ -48,6 +48,9 @@ describe("confirmSquares (integration)", { skip: !url && "TEST_DATABASE_URL not 
         squarePrice: 3000,
         totalSquares: count,
         boardType: "fundraiser",
+        // Every fundraiser must say what it accepts -
+        // boards_fundraiser_accepts_something refuses an empty list.
+        acceptedPaymentMethods: ["card"],
         timezone: "America/New_York",
         campaignEndsAt: new Date(Date.now() + 7 * 864e5),
         cashModeEnabled: true,

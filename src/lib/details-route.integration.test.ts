@@ -66,6 +66,7 @@ describe(
           gameName: boardType === "fundraiser" ? "QT'13 Homecoming 2026" : "Week 4",
           slug: "det-" + randomUUID().slice(0, 8),
           boardType,
+          acceptedPaymentMethods: boardType === "fundraiser" ? ["card"] : [],
           squarePrice: 5000,
           totalSquares: 4,
           timezone: "America/New_York",

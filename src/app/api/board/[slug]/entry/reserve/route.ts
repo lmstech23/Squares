@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizePhone } from "@/lib/roster-identity";
 import { quoteEntry, offersEntry, type EntryLine, type EntryTier } from "@/lib/entry-pricing";
 import { generateReferenceCode } from "@/lib/reference-code";
+import { acceptedRails, RAIL_LABEL, type DirectRail } from "@/lib/accepted-payments";
 
 // ============================================================
 // CONTRIBUTOR: reserve Entry Tickets, pay the host directly.
@@ -37,7 +38,7 @@ import { generateReferenceCode } from "@/lib/reference-code";
 
 export const runtime = "nodejs";
 
-type Rail = "zelle" | "cashapp" | "venmo" | "paypal";
+type Rail = DirectRail;
 
 interface ReserveBody {
   lines: { tier: string; quantity: number }[];
@@ -57,13 +58,6 @@ const HANDLE_FOR: Record<Rail, "hostZelle" | "hostCashapp" | "hostVenmo" | "host
   cashapp: "hostCashapp",
   venmo: "hostVenmo",
   paypal: "hostPaypal",
-};
-
-const RAIL_LABEL: Record<Rail, string> = {
-  zelle: "Zelle",
-  cashapp: "Cash App",
-  venmo: "Venmo",
-  paypal: "PayPal",
 };
 
 /** Codes collide at 1 in 33.5 million per board. Five attempts is generous. */
@@ -165,15 +159,16 @@ export async function POST(
         { status: 403 }
       );
     }
-    const handle = board[HANDLE_FOR[rail]];
-    if (!handle) {
-      // Only rails the host configured are offered, so reaching this means a
-      // stale form. Name the rail rather than saying "unavailable".
+    // THE RAIL MUST BE BOTH ACCEPTED AND POSSIBLE. `acceptedRails` requires the
+    // board to list it AND the handle to exist, so a handle the host has stored
+    // but paused is not an offer. Reaching this means a stale form.
+    if (!acceptedRails(board).includes(rail)) {
       return NextResponse.json(
-        { error: `This host is not set up to receive ${RAIL_LABEL[rail]}.` },
+        { error: `This board is not accepting ${RAIL_LABEL[rail]}.` },
         { status: 503 }
       );
     }
+    const handle = board[HANDLE_FOR[rail]]!;
 
     // ONE QUOTE, TAKEN ONCE. Everything persisted below derives from it, and
     // confirmation reads what was stored rather than asking again.

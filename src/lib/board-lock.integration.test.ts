@@ -45,6 +45,9 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
         gameName: "Lock Test",
         slug: "lock-" + randomUUID().slice(0, 8),
         boardType: "fundraiser",
+        // Every fundraiser must say what it accepts -
+        // boards_fundraiser_accepts_something refuses an empty list.
+        acceptedPaymentMethods: ["card"],
         squarePrice: REGULAR,
         earlyBirdPriceCents: earlyBird,
         earlyBirdEndsAt: earlyBird == null ? null : new Date(Date.now() + 3 * 864e5),

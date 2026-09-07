@@ -100,6 +100,9 @@ describe(
           gameName: "Email Board",
           slug: "de-" + randomUUID().slice(0, 8),
           boardType: "fundraiser",
+          // Every fundraiser must say what it accepts -
+          // boards_fundraiser_accepts_something refuses an empty list.
+          acceptedPaymentMethods: ["card"],
           squarePrice: PRICE,
           totalSquares: 4,
           timezone: "America/New_York",
