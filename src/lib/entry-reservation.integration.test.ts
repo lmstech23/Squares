@@ -301,6 +301,83 @@ describe(
       assert.equal(r.status, "resolved", "confirm is not undone by a late release");
     });
 
+    // ---- the donation carried on a reservation -----------------------------
+
+    test("a donation rides the reservation into one contribution", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({
+        where: { id },
+        data: { donationAmountCents: 2500 },
+      });
+
+      const out = await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      assert.equal(out.ticketCents, 9500);
+      assert.equal(out.donationCents, 2500);
+
+      const rows = await db.contribution.findMany({ where: { boardId } });
+      assert.equal(rows.length, 1, "one payment, one row - not a second donation row");
+      const c = rows[0];
+      assert.equal(c.entryAmountCents, 9500);
+      assert.equal(c.donationAmountCents, 2500);
+      assert.equal(c.totalPaidCents, 12000, "the three-term CHECK accepted it");
+    });
+
+    // THE SUM ASSERTION IS ABOUT PASSES, NOT ABOUT THE PAYMENT. A donation buys
+    // no pass, so including it in the amount confirmEntryPurchase checks would
+    // make a perfectly correct reservation fail.
+    test("a donation mints no extra pass and does not disturb the assertion", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({
+        where: { id },
+        data: { donationAmountCents: 2500 },
+      });
+      const out = await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      assert.equal(out.passesMinted, 3, "still 2 adult + 1 child");
+      const passes = await db.admissionPass.findMany({
+        where: { supporter: { eventId } },
+        select: { pricePaidCents: true },
+      });
+      assert.equal(passes.length, 3);
+      assert.equal(
+        passes.reduce((n, p) => n + (p.pricePaidCents ?? 0), 0),
+        9500,
+        "passes sum to the TICKET money, not the payment"
+      );
+    });
+
+    test("no donation leaves the donation column at zero", async () => {
+      await seed();
+      const id = await reserve();
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
+      assert.equal(c.donationAmountCents, 0);
+      assert.equal(c.totalPaidCents, c.entryAmountCents);
+    });
+
+    // Releasing takes the donation with it. There was never any money.
+    test("releasing a reservation with a donation writes nothing", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({
+        where: { id },
+        data: { donationAmountCents: 2500 },
+      });
+      await db.$transaction((tx) =>
+        releaseEntryReservation(tx, { reservationId: id, reason: "never arrived" })
+      );
+      assert.equal(await db.contribution.count({ where: { boardId } }), 0);
+      const r = await db.entryReservation.findUniqueOrThrow({ where: { id } });
+      assert.equal(r.donationAmountCents, 2500, "retained for the audit record");
+    });
+
     test("a single-tier reservation confirms cleanly", async () => {
       await seed();
       const id = await reserve([

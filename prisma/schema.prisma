@@ -1108,6 +1108,20 @@ model EntryReservation {
   contributorEmail String                 @map("contributor_email")
   contributorPhone String                 @map("contributor_phone")
 
+  /// A donation added on top of the tickets, in the same payment.
+  ///
+  /// NOT A TIER LINE, and deliberately not modelled as one. It has no tier, no
+  /// price basis and no quantity, so `quantityConfirmed` does not apply to it
+  /// and there is nothing about it to partially confirm. It travels
+  /// ATOMICALLY with the reservation: one reference code, one transfer, one
+  /// host action.
+  ///
+  /// Zero means no donation. Non-null with a default rather than nullable,
+  /// matching `Contribution.donationAmountCents` exactly — the two are summed
+  /// into one row at confirmation and a null on one side would be a
+  /// distinction with no meaning on the other.
+  donationAmountCents Int                 @default(0) @map("donation_amount_cents")
+
   /// Which rail the contributor said they would send through. Display and
   /// reconciliation only — no money moves through Daali on any of them.
   paymentRail      PaymentRail            @map("payment_rail")

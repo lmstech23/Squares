@@ -24,6 +24,9 @@ export interface ReservationRow {
   contributorName: string;
   contributorEmail: string;
   railLabel: string;
+  ticketCents: number;
+  /// Zero when there is none. Its own line, so the total is legible.
+  donationCents: number;
   totalCents: number;
   createdAt: string;
   ageLabel: string;
@@ -169,6 +172,14 @@ export default function ReservationWorklist({
                 )
                 .join(" · ")}
             </p>
+            {/* THE SPLIT, SHOWN. A host reconciling a bank memo of $120 against
+                a reservation needs to see $95 of tickets and a $25 donation, or
+                the number will not match anything she can check. */}
+            {r.donationCents > 0 && (
+              <p className="mt-0.5 text-xs text-gray-400">
+                {money(r.ticketCents)} tickets + {money(r.donationCents)} donation
+              </p>
+            )}
             <p className="mt-0.5 text-xs text-gray-600">
               {r.railLabel} · reserved {r.ageLabel}
             </p>

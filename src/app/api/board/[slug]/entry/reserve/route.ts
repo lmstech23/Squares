@@ -45,6 +45,8 @@ interface ReserveBody {
   buyerEmail: string;
   buyerPhone?: string | null;
   paymentRail: string;
+  /// Optional donation on top, sent in the same transfer. Not a tier line.
+  donationAmountCents?: number;
 }
 
 const RAILS: Rail[] = ["zelle", "cashapp", "venmo", "paypal"];
@@ -98,6 +100,18 @@ export async function POST(
     const rail = RAILS.find((r) => r === body.paymentRail);
     if (!rail) {
       return NextResponse.json({ error: "Choose how you will pay." }, { status: 400 });
+    }
+
+    // A DONATION ON TOP, IN THE SAME TRANSFER. One reference code, one payment,
+    // one host action. No floor: the $5 card minimum exists because Stripe's
+    // per-transaction cost eats a small gift, and a direct payment has no
+    // processor - the same reasoning the cash donation path uses.
+    const donationAmountCents = Math.trunc(Number(body.donationAmountCents ?? 0));
+    if (!Number.isFinite(donationAmountCents) || donationAmountCents < 0) {
+      return NextResponse.json(
+        { error: "A donation cannot be negative." },
+        { status: 400 }
+      );
     }
 
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
@@ -208,7 +222,11 @@ export async function POST(
     // THE TRANSACTION it fires in — proven in this codebase — so the retry has
     // to discard the transaction and start a new one rather than catch and
     // continue inside it.
-    let created: { id: string; referenceCode: string } | null = null;
+    let created: {
+      id: string;
+      referenceCode: string;
+      donationAmountCents: number;
+    } | null = null;
     for (let attempt = 0; attempt < CODE_ATTEMPTS && !created; attempt++) {
       const referenceCode = generateReferenceCode();
       try {
@@ -222,11 +240,12 @@ export async function POST(
               contributorEmail: email,
               contributorPhone: phone,
               paymentRail: rail,
+              donationAmountCents,
               // `pending` until the host confirms or releases. Nothing else may
               // move it, and no sweep will.
               status: "pending",
             },
-            select: { id: true, referenceCode: true },
+            select: { id: true, referenceCode: true, donationAmountCents: true },
           });
 
           await tx.entryReservationLine.createMany({
@@ -264,7 +283,11 @@ export async function POST(
     return NextResponse.json({
       reservationId: created.id,
       referenceCode: created.referenceCode,
-      totalCents: quote.totalCents,
+      // Three numbers, because a single total cannot be checked against what
+      // was chosen. The screens show tickets, donation and total.
+      ticketCents: quote.totalCents,
+      donationCents: created.donationAmountCents,
+      totalCents: quote.totalCents + created.donationAmountCents,
       paymentRail: rail,
       railLabel: RAIL_LABEL[rail],
       handle,

@@ -90,7 +90,13 @@ export class ReservationNotPending extends Error {
 export async function confirmEntryReservation(
   tx: Prisma.TransactionClient,
   input: { reservationId: string; hostId: string }
-): Promise<{ contributionId: string; passesMinted: number; postClose: boolean }> {
+): Promise<{
+  contributionId: string;
+  passesMinted: number;
+  postClose: boolean;
+  ticketCents: number;
+  donationCents: number;
+}> {
   // Conditional read plus a conditional update below: two hosts double-clicking
   // Confirm must produce one contribution, not two.
   const reservation = await tx.entryReservation.findUnique({
@@ -103,6 +109,7 @@ export async function confirmEntryReservation(
       contributorName: true,
       contributorEmail: true,
       contributorPhone: true,
+      donationAmountCents: true,
       lines: {
         select: { id: true, tier: true, priceBasis: true, unitPriceCents: true, quantity: true },
       },
@@ -114,6 +121,20 @@ export async function confirmEntryReservation(
     throw new ReservationNotPending();
   }
 
+  // BINARY CONFIRMATION IS THE INTERFACE, NOT THE MODEL.
+  //
+  // This release confirms or releases a WHOLE reservation, and the donation
+  // travels atomically with it. That is a pilot UI decision, not a limit of the
+  // schema: `quantityConfirmed` and its range CHECK exist precisely so a line
+  // can be partly confirmed, and line-level confirmation can be built on top of
+  // what is already here without a migration.
+  //
+  // DO NOT READ THE DONATION AS EVIDENCE OTHERWISE. It is a single amount, not
+  // a tier line - no tier, no price basis, no quantity - so `quantityConfirmed`
+  // has nothing to say about it and there is no line to partially confirm. A
+  // parent reserving $95 of tickets plus a $25 donation sends $120 against one
+  // reference code, and the host confirms one payment. Whoever builds
+  // line-level confirmation later confirms LINES; the donation stays whole.
   const lines: ReservationLine[] = reservation.lines.map((l) => ({
     tier: l.tier as EntryTier,
     priceBasis: l.priceBasis as EntryPriceBasis,
@@ -121,7 +142,11 @@ export async function confirmEntryReservation(
     quantity: l.quantity,
   }));
 
-  const totalCents = reservationTotalCents(lines);
+  // TICKET MONEY AND DONATION MONEY STAY SEPARATE ALL THE WAY DOWN. They land
+  // in different columns of one Contribution, which is what keeps donation
+  // money out of the prize basis structurally rather than by a filter.
+  const ticketCents = reservationTotalCents(lines);
+  const donationCents = reservation.donationAmountCents;
   const passes = expandReservationLines(lines);
 
   // The board sealed before the host got round to confirming. Record it, mark
@@ -135,9 +160,11 @@ export async function confirmEntryReservation(
       status: "confirmed",
       paymentMethod: "cash",
       squareAmountCents: 0,
-      donationAmountCents: 0,
-      entryAmountCents: totalCents,
-      totalPaidCents: totalCents,
+      donationAmountCents: donationCents,
+      entryAmountCents: ticketCents,
+      // The three-term CHECK sums these. The donation reaches `raised` and
+      // never the prize basis, because it is in a different column.
+      totalPaidCents: ticketCents + donationCents,
       contributorName: reservation.contributorName,
       contributorEmail: reservation.contributorEmail,
       contributorPhone: reservation.contributorPhone,
@@ -156,7 +183,10 @@ export async function confirmEntryReservation(
   const { passesMinted } = await confirmEntryPurchase(tx, {
     eventId: reservation.eventId,
     contributionId: contribution.id,
-    entryAmountCents: totalCents,
+    // Ticket money only. The assertion inside is that the PASSES sum to this,
+    // and a donation buys no pass - including it would make a correct purchase
+    // fail.
+    entryAmountCents: ticketCents,
     passes,
     contact: {
       name: reservation.contributorName,
@@ -181,7 +211,13 @@ export async function confirmEntryReservation(
   });
   if (count === 0) throw new ReservationNotPending();
 
-  return { contributionId: contribution.id, passesMinted, postClose };
+  return {
+    contributionId: contribution.id,
+    passesMinted,
+    postClose,
+    ticketCents,
+    donationCents,
+  };
 }
 
 /**

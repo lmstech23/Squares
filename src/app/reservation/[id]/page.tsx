@@ -73,6 +73,7 @@ export default async function ReservationPage({ params }: Props) {
     select: {
       referenceCode: true,
       contributorName: true,
+      donationAmountCents: true,
       paymentRail: true,
       status: true,
       createdAt: true,
@@ -102,10 +103,15 @@ export default async function ReservationPage({ params }: Props) {
 
   // Read from the STORED unit price, never re-quoted. A reservation taken
   // before the early-bird cutoff still shows and still owes the early price.
-  const totalCents = reservation.lines.reduce(
+  const ticketCents = reservation.lines.reduce(
     (sum, l) => sum + l.unitPriceCents * l.quantity,
     0
   );
+  // THREE NUMBERS, NOT ONE. Someone checking this against what they chose
+  // needs to see the donation as its own line; a single total they cannot
+  // reconcile is a total they will query.
+  const donationCents = reservation.donationAmountCents;
+  const totalCents = ticketCents + donationCents;
   const totalTickets = reservation.lines.reduce((n, l) => n + l.quantity, 0);
 
   const reservedOn = new Intl.DateTimeFormat("en-US", {
@@ -179,6 +185,12 @@ export default async function ReservationPage({ params }: Props) {
               </li>
             ))}
           </ul>
+          {donationCents > 0 && (
+            <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-800 pt-2 text-sm">
+              <span className="text-gray-300">Donation</span>
+              <span className="tabular-nums text-gray-200">{money(donationCents)}</span>
+            </div>
+          )}
           <div className="mt-3 flex items-baseline justify-between border-t border-gray-800 pt-2.5">
             <span className="text-sm font-medium">Total</span>
             <span className="text-lg font-bold tabular-nums">{money(totalCents)}</span>

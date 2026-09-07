@@ -159,6 +159,7 @@ export default async function DonationsPage({
       contributorName: true,
       contributorEmail: true,
       paymentRail: true,
+      donationAmountCents: true,
       createdAt: true,
       lines: {
         select: { tier: true, priceBasis: true, unitPriceCents: true, quantity: true },
@@ -192,7 +193,11 @@ export default async function DonationsPage({
     railLabel: RAIL_LABEL[r.paymentRail] ?? r.paymentRail,
     // From the STORED unit prices. Never re-quoted, so a reservation taken
     // before the early-bird cutoff still reads at the price it was taken at.
-    totalCents: r.lines.reduce((n, l) => n + l.unitPriceCents * l.quantity, 0),
+    ticketCents: r.lines.reduce((n, l) => n + l.unitPriceCents * l.quantity, 0),
+    donationCents: r.donationAmountCents,
+    totalCents:
+      r.lines.reduce((n, l) => n + l.unitPriceCents * l.quantity, 0) +
+      r.donationAmountCents,
     createdAt: r.createdAt.toISOString(),
     ageLabel: ageLabel(r.createdAt),
     lines: r.lines.map((l) => ({
