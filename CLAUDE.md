@@ -214,6 +214,35 @@ rollback list.
 "Deploy to beta" has always meant deploy to production, against the production
 database, with real contributor rows.
 
+**Comparing a page across a deploy. Byte-identical HTML is not achievable and
+never was.** Three things rotate on every single deployment regardless of code
+— the Vercel deployment id stamped into every asset URL (`?dpl=dpl_...`), the
+chunk filename hashes, and the Next.js build id inside the RSC flight payload.
+All three are FIXED-LENGTH substitutions, which is what makes the method below
+sound rather than merely convenient.
+
+A fourth applies to any client component: **RSC serialises client-component PROP
+NAMES into the flight payload**, so renaming a prop shows up in the bytes even
+when the rendered result is identical. On 2026-09-07 a change whose whole
+purpose was folding three props into one was measured against a byte-identical
+criterion no correct implementation could have passed.
+
+So: **normalise the deployment id, the chunk filename hashes and the build id,
+then compare.** They are build artifacts, not output, and the code changing is
+already known — hiding it costs nothing. What is being tested is whether the
+RENDERED RESULT changed.
+
+Two things make the reading reliable. Because the normalised tokens are
+fixed-length, a real markup difference cannot hide inside them — it would add
+bytes on top. And a behavioural difference varies with the data, so run several
+boards with different row counts and states: a delta IDENTICAL across all of
+them is structural, one that varies is behavioural. Nine boards at exactly +20
+bytes each, accounted for to the byte by a single prop rename, is the shape of
+a pass.
+
+Do not run a byte comparison across a change whose point is a visible
+difference. Show the before and after page instead.
+
 **Package-import safeguard.** When replacing a spec package from similarly named
 ZIPs, **compare file hashes, not byte length.** Two same-length revisions have
 already shipped in this project: `files (58)` vs `(59)` differed in the
