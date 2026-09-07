@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import { boardTotals } from "@/lib/contributions";
 import CashDonationForm from "./cash-donation-form";
+import ReservationWorklist, { type ReservationRow } from "./reservation-worklist";
 import {
   ledgerCells,
   showConfirmedSeparately,
@@ -142,6 +143,66 @@ export default async function DonationsPage({
   });
   const reservations = groupReservations(reservedSquares);
 
+  // DIRECT-PAYMENT TICKET RESERVATIONS. A second worklist, deliberately not
+  // merged with the donation one above: these resolve to passes and a ledger
+  // row, those resolve to a ledger row alone, and the confirm actions are
+  // different endpoints doing different work.
+  //
+  // PENDING ONLY. A resolved or released reservation is history and belongs in
+  // a record, not in a list of things to do.
+  const pendingReservations = await prisma.entryReservation.findMany({
+    where: { boardId: board.boardId, status: "pending" },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      referenceCode: true,
+      contributorName: true,
+      contributorEmail: true,
+      paymentRail: true,
+      createdAt: true,
+      lines: {
+        select: { tier: true, priceBasis: true, unitPriceCents: true, quantity: true },
+        orderBy: { tier: "asc" },
+      },
+    },
+  });
+
+  const RAIL_LABEL: Record<string, string> = {
+    zelle: "Zelle",
+    cashapp: "Cash App",
+    venmo: "Venmo",
+    paypal: "PayPal",
+  };
+
+  // Age as a plain phrase, computed on the server so the render stays pure.
+  // NOT a warning and NOT a badge: there is no expiry, so a colour here would
+  // imply a deadline that does not exist.
+  const ageLabel = (at: Date) => {
+    const days = Math.floor((Date.now() - at.getTime()) / 864e5);
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    return `${days} days ago`;
+  };
+
+  const reservationRows: ReservationRow[] = pendingReservations.map((r) => ({
+    id: r.id,
+    referenceCode: r.referenceCode,
+    contributorName: r.contributorName,
+    contributorEmail: r.contributorEmail,
+    railLabel: RAIL_LABEL[r.paymentRail] ?? r.paymentRail,
+    // From the STORED unit prices. Never re-quoted, so a reservation taken
+    // before the early-bird cutoff still reads at the price it was taken at.
+    totalCents: r.lines.reduce((n, l) => n + l.unitPriceCents * l.quantity, 0),
+    createdAt: r.createdAt.toISOString(),
+    ageLabel: ageLabel(r.createdAt),
+    lines: r.lines.map((l) => ({
+      tier: l.tier,
+      priceBasis: l.priceBasis,
+      unitPriceCents: l.unitPriceCents,
+      quantity: l.quantity,
+    })),
+  }));
+
   // ONE CHRONOLOGY: contributions by createdAt, reservations by claimedAt,
   // newest first. Not two lists sharing a page.
   const ledger = mergeLedger(contributions, reservations);
@@ -260,6 +321,11 @@ export default async function DonationsPage({
             </ul>
           </div>
         )}
+
+        <ReservationWorklist
+          boardId={board.boardId}
+          reservations={reservationRows}
+        />
 
         <div className="mt-5">
           <CashDonationForm boardId={board.boardId} />
