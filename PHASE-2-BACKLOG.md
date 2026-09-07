@@ -1907,3 +1907,23 @@ Not decided in item 2 because it is a RAFFLE question, and the pilot that forced
 this work runs with `raffleEnabled = false`. No board can currently reach the
 state. Whoever picks it up: the decision is one ternary at the donate button,
 and the likely answer is that the entry CTA is promoted instead of donate.
+
+---
+
+## claim-sheet still shows every payment handle at once
+
+Deferred 2026-09-08 while making Buy Tickets and Donate Only consistent.
+
+Both donor paths for a raffle-off fundraiser now narrow through
+`acceptedRails` — the board must list the rail AND the handle must exist — and
+each asks the contributor to pick one rail, then shows only that one. The SQUARE
+purchase path was left alone: `claim-sheet.tsx` still renders
+`DirectPaymentHandles` at :310 and :641, which lists every populated handle
+together, and it is the only remaining consumer of that component.
+
+Out of scope because the pilot runs `raffleEnabled = false`, so no contributor
+can reach it. It matters the moment a raffle board takes direct payment again:
+the same donor sees one destination on one path and a list on another.
+
+Whoever picks it up: `claim-sheet` takes `handles` where it should take `rails`,
+and `direct-payment.tsx` can be deleted once it does.

@@ -133,16 +133,14 @@ export default async function ReservationPage({ params }: Props) {
             A resolved or released reservation must never keep showing "send
             $95" — that is how a contributor pays twice, or pays for something
             the host already let go. */}
-        {pending ? (
-          <div className="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3.5 py-3">
-            <p className="text-sm font-medium text-amber-200">Awaiting payment</p>
-            <p className="mt-1 text-xs text-gray-400 leading-relaxed">
-              Reserved {reservedOn}. Your {totalTickets === 1 ? "ticket is" : "tickets are"}{" "}
-              held for you here until {board.gameName} closes; there is no
-              countdown and nothing expires.
-            </p>
-          </div>
-        ) : reservation.status === "released" ? (
+        {/* NO "AWAITING PAYMENT" BANNER. The instructions below - an amount,
+            a handle and a reference code - already say the money has not been
+            sent. A banner above them restated it and pushed the thing they
+            came for further down the screen.
+
+            The other two states DO get a banner, because they are the cases
+            where the instructions must NOT be acted on. */}
+        {pending ? null : reservation.status === "released" ? (
           <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3.5 py-3">
             <p className="text-sm font-medium">This reservation was released.</p>
             <p className="mt-1 text-xs text-gray-400 leading-relaxed">

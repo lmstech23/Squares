@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import DirectPaymentHandles from "./direct-payment";
+import type { PanelRail } from "./purchase-panel";
 import {
   CONTRIBUTION_THANKS,
   AWAITING_HOST_CONFIRMATION,
@@ -39,19 +39,18 @@ export default function DonateSheet({
   slug,
   cashModeEnabled,
   stripeConnected,
-  handles,
+  rails,
   onClose,
 }: {
   slug: string;
   cashModeEnabled: boolean;
   stripeConnected: boolean;
-  /// Where a direct payment should be sent. Same handles the ticket sheet uses.
-  handles: {
-    venmo: string | null;
-    zelle: string | null;
-    cashapp: string | null;
-    paypal: string | null;
-  };
+  /**
+   * The rails this board accepts, ALREADY NARROWED by the server through
+   * `acceptedRails` - the same source the ticket panel uses. This sheet does
+   * not decide eligibility and never sees a method it may not offer.
+   */
+  rails: PanelRail[];
   onClose: () => void;
 }) {
   // `Other` is a peer option, not a smaller link — the person giving $250
@@ -70,14 +69,25 @@ export default function DonateSheet({
   );
   // Set once a direct payment is declared: the sheet stops being a form and
   // becomes the instructions, because the money moves outside Daali.
-  const [declared, setDeclared] = useState<number | null>(null);
+  const [declared, setDeclared] = useState<
+    { amountCents: number; railLabel: string; handle: string } | null
+  >(null);
+  // ONE RAIL, CHOSEN BEFORE SUBMITTING. Preselected only when there is exactly
+  // one: with two, a default is a payment sent to the wrong app by someone who
+  // did not notice the choice was made for them.
+  const [rail, setRail] = useState<PanelRail["rail"] | null>(
+    rails.length === 1 ? rails[0].rail : null
+  );
 
   const otherCents = Math.round(parseFloat(otherText) * 100);
   const amountCents =
     preset === "other" ? (Number.isNaN(otherCents) ? 0 : otherCents) : preset;
 
-  const anyHandle =
-    handles.zelle || handles.cashapp || handles.venmo || handles.paypal;
+  // BOTH CONDITIONS, matching what the route enforces. `rails` is already
+  // narrowed by acceptedRails, but the route ALSO refuses when direct payment
+  // is switched off on the board - so offering a rail on that basis alone would
+  // put a donor in front of a 403 they cannot act on.
+  const anyHandle = cashModeEnabled && rails.length > 0;
 
   async function submit() {
     // The $5 floor is a CARD rule - it exists because Stripe's per-transaction
@@ -87,6 +97,10 @@ export default function DonateSheet({
     // is the enforcement; this is the courtesy that saves a round trip.
     if (!phone.trim()) {
       setError("A phone number is required.");
+      return;
+    }
+    if (method === "cash" && !rail) {
+      setError("Choose how you will pay.");
       return;
     }
     if (method === "card" && amountCents < MIN_CENTS) {
@@ -117,6 +131,7 @@ export default function DonateSheet({
           donorEmail: email.trim(),
           donorPhone: phone.trim() || null,
           method,
+          paymentRail: rail,
         }),
       });
       const data = await res.json();
@@ -132,7 +147,13 @@ export default function DonateSheet({
       if (data.pending) {
         // Nothing redirects: the money moves outside Daali and the host marks
         // it received. Swap the form for the instructions.
-        setDeclared(data.amountCents ?? amountCents);
+        // The server echoes back the ONE handle for the rail chosen, so the
+        // next screen shows a single destination rather than a list.
+        setDeclared({
+          amountCents: data.amountCents ?? amountCents,
+          railLabel: data.railLabel ?? "",
+          handle: data.handle ?? "",
+        });
         setLoading(false);
         return;
       }
@@ -154,12 +175,20 @@ export default function DonateSheet({
               contributor is never thanked at all. What has and has not
               happened is the next-step line at the bottom. */}
           <p className="text-base font-medium">{CONTRIBUTION_THANKS}</p>
-          <h2 className="mt-1 text-sm text-gray-300">Send {money(declared)}</h2>
-          <p className="mt-1 text-sm text-gray-400">
-            Use one of the payment options below.
-          </p>
-          <div className="mt-4">
-            <DirectPaymentHandles amountLabel={null} handles={handles} />
+          <h2 className="mt-1 text-sm text-gray-300">
+            Send {money(declared.amountCents)} by {declared.railLabel}
+          </h2>
+          {/* ONE DESTINATION. This screen used to list every handle the host
+              had, which left the donor choosing between the host's payment
+              identities at the moment they were trying to send money. The
+              choice is made up front now, and this shows only its answer. */}
+          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3.5 py-3">
+            <p className="text-[11px] uppercase tracking-wider text-gray-500">
+              {declared.railLabel} to
+            </p>
+            <p className="mt-1 text-base text-gray-100 select-all break-all">
+              {declared.handle}
+            </p>
           </div>
           <p className="mt-4 text-sm text-gray-400">{AWAITING_HOST_CONFIRMATION}</p>
 
@@ -278,22 +307,14 @@ export default function DonateSheet({
           </div>
         </div>
 
-        {/* How would you like to pay? - SS6C, matching the ticket sheet.
-            Only methods that actually work are offered. */}
-        {!(stripeConnected && cashModeEnabled && anyHandle) && (
-          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5">
-            <p className="text-sm text-gray-300">
-              Payment:{" "}
-              <span className="text-white">
-                {stripeConnected
-                  ? "Credit or debit card"
-                  : "Zelle, Cash App, Venmo, or PayPal"}
-              </span>
-            </p>
-          </div>
-        )}
-
-        {stripeConnected && cashModeEnabled && anyHandle && (
+        {/* HOW WILL YOU PAY.
+            
+            The card-or-direct choice comes first and only when both are
+            genuinely available; the generic "Zelle, Cash App, Venmo, or
+            PayPal" line is gone, because it advertised methods this board may
+            not accept. Everything offered here came through `acceptedRails`,
+            the same source the ticket panel uses. */}
+        {stripeConnected && anyHandle && (
           <div className="mt-4">
             <span className={labelClass}>How would you like to pay?</span>
             <div className="space-y-2">
@@ -308,19 +329,45 @@ export default function DonateSheet({
                       : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
                   }`}
                 >
-                  {m === "card" ? "Card" : "Zelle, CashApp, Venmo, or PayPal"}
+                  {m === "card" ? "Card" : "Send it directly"}
                 </button>
               ))}
             </div>
           </div>
         )}
 
+        {stripeConnected && !anyHandle && (
+          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5">
+            <p className="text-sm text-gray-300">
+              Payment: <span className="text-white">Credit or debit card</span>
+            </p>
+          </div>
+        )}
+
+        {/* ONE RAIL, NAMED. Only what this board accepts appears. */}
         {method === "cash" && anyHandle && (
-          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3">
-            <DirectPaymentHandles amountLabel={money(amountCents)} handles={handles} />
-            <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
-              Your donation counts toward the total once the host marks your
-              payment received.
+          <div className="mt-4">
+            <span className={labelClass}>How will you pay?</span>
+            <div className="grid grid-cols-2 gap-2">
+              {rails.map((r) => (
+                <button
+                  key={r.rail}
+                  type="button"
+                  onClick={() => setRail(r.rail)}
+                  className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                    rail === r.rail
+                      ? "border-white bg-white text-gray-950 font-medium"
+                      : "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">
+              You send the money directly to the host. Nothing is charged here,
+              and your donation counts toward the total once they mark it
+              received.
             </p>
           </div>
         )}

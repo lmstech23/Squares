@@ -695,6 +695,21 @@ model Contribution {
   /// that check and the seal, not the common case.
   postCloseAt         DateTime?          @map("post_close_at") @db.Timestamptz(6)
 
+  /// Which direct-payment rail the contributor said they would send through.
+  ///
+  /// DONATIONS HAVE NO REFERENCE CODE. A ticket reservation gives the host a
+  /// five-character string to match against a bank memo; a declared donation
+  /// gives them nothing but a name and an amount. The rail is then the only
+  /// narrowing signal they have for where the money should appear, so it is
+  /// recorded rather than left to be guessed from four possible apps.
+  ///
+  /// NULL ON EVERYTHING ELSE, and deliberately not backfilled. Card
+  /// contributions have no rail. Every donation declared before this column
+  /// existed stays NULL, because the rail was never captured and inferring one
+  /// from which handles the board happens to have would manufacture a fact.
+  /// NULL means "not recorded", never "none".
+  paymentRail         PaymentRail?       @map("payment_rail")
+
   reservationLines EntryReservationLine[]
 
   board          Board           @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)

@@ -7,7 +7,13 @@ import {
   createPendingCardContribution,
   MIN_CARD_DONATION_CENTS,
 } from "@/lib/contributions";
-import { acceptsCard, acceptsAnyDirect } from "@/lib/accepted-payments";
+import {
+  acceptsCard,
+  acceptedRails,
+  RAIL_LABEL,
+  HANDLE_FOR,
+  type DirectRail,
+} from "@/lib/accepted-payments";
 
 // ============================================================
 // CONTRIBUTOR: donation-only card checkout — donations §6.
@@ -39,6 +45,10 @@ interface DonateBody {
   /// pending for the host to confirm on receipt. Defaults to card so every
   /// existing caller is unchanged.
   method?: "card" | "cash";
+  /// Which rail, on the direct-payment path. Required there: a donation has no
+  /// reference code, so the rail is the host's only narrowing signal when they
+  /// go looking for the money.
+  paymentRail?: string;
 }
 
 export async function POST(
@@ -145,13 +155,22 @@ export async function POST(
           { status: 403 }
         );
       }
-      // A handle alone is no longer the offer: the board must also accept the
-      // rail. A stored-but-unlisted handle is one the host has paused.
-      const hasHandle = acceptsAnyDirect(board);
-      if (!hasHandle) {
+      // ONE RAIL, CHOSEN BY THE CONTRIBUTOR, and it must be one this board
+      // actually accepts - `acceptedRails` requires both the listing and the
+      // handle. The donor picked from exactly this set, so anything else is a
+      // stale form.
+      const usable = acceptedRails(board);
+      if (usable.length === 0) {
         return NextResponse.json(
           { error: "This host has not set up a direct payment method." },
           { status: 503 }
+        );
+      }
+      const rail = usable.find((r) => r === body.paymentRail);
+      if (!rail) {
+        return NextResponse.json(
+          { error: "Choose how you will pay." },
+          { status: 400 }
         );
       }
 
@@ -169,6 +188,9 @@ export async function POST(
           // No holdExpiresAt. Nothing is held, so there is nothing to expire
           // and no sweep will ever touch this row - invariants 64 and 65.
           holdExpiresAt: null,
+          // Recorded, never inferred. NULL on every historical row and on
+          // every card contribution.
+          paymentRail: rail,
         },
       });
 
@@ -176,12 +198,13 @@ export async function POST(
         pending: true,
         contributionId: pending.id,
         amountCents,
-        handles: {
-          zelle: board.hostZelle,
-          cashapp: board.hostCashapp,
-          venmo: board.hostVenmo,
-          paypal: board.hostPaypal,
-        },
+        // ONE HANDLE, THE ONE THEY CHOSE. Returning all four was how the donor
+        // ended up looking at a list of the host's payment identities and
+        // deciding for themselves - which is the decision this route now asks
+        // for explicitly, up front.
+        paymentRail: rail,
+        railLabel: RAIL_LABEL[rail as DirectRail],
+        handle: board[HANDLE_FOR[rail as DirectRail]],
       });
     }
 

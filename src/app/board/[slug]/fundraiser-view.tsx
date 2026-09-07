@@ -695,31 +695,39 @@ export default function FundraiserView({
               Backlogged, not decided here: a SOLD-OUT raffle board that also
               sells entry tickets. That is a raffle question and this pilot has
               raffle off. See PHASE-2-BACKLOG.md. */}
-          <button
-            type="button"
-            onClick={() => setDonating(true)}
-            className={
-              (squareProduct ? squareProduct.openCount === 0 : offers.length === 0)
-                ? "mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
-                : "mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
-            }
-          >
-            Donate instead
-          </button>
-
-          {/* ENTRY TICKETS. Present only on a board that priced them, and
-              subordinate to both buttons above: someone who came here to
-              support the cause should be offered that first. Admission is what
-              they choose when supporting is not what they came for. */}
+          {/* BUY TICKETS FIRST. A parent arriving from a class group chat came
+              to get into the event; the donation is the other thing they can
+              do, not the first thing they are asked. */}
           {offers.length > 0 && (entryByCard || entryByReservation) && (
             <button
               type="button"
               onClick={() => setBuyingEntry(true)}
-              className="mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
+              className="mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
             >
-              Buy entry tickets
+              Buy Tickets
             </button>
           )}
+
+          {/* DONATE ONLY, and the wording is load-bearing. "Donate instead"
+              read as an alternative to the whole page; this names a path -
+              giving WITHOUT tickets. A contributor who wants both uses the
+              donation field inside Buy Tickets, which keeps the money on one
+              reservation, one reference code and one transfer.
+
+              Backlogged, not decided here: a SOLD-OUT raffle board that also
+              sells entry tickets. That is a raffle question and this pilot has
+              raffle off. See PHASE-2-BACKLOG.md. */}
+          <button
+            type="button"
+            onClick={() => setDonating(true)}
+            className={
+              offers.length === 0 && (squareProduct ? squareProduct.openCount === 0 : true)
+                ? "mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+                : "mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
+            }
+          >
+            Donate Only
+          </button>
         </div>
         )}
 
@@ -766,7 +774,7 @@ export default function FundraiserView({
             slug={slug}
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
-            handles={handles}
+            rails={rails}
             onClose={() => setDonating(false)}
           />
         )}
