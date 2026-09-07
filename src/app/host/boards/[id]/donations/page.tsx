@@ -109,6 +109,7 @@ export default async function DonationsPage({
       id: true,
       status: true,
       paymentMethod: true,
+      paymentRail: true,
       squareAmountCents: true,
       donationAmountCents: true,
       entryAmountCents: true,
@@ -314,6 +315,19 @@ export default async function DonationsPage({
                   <span className="min-w-0">
                     <span className="text-gray-200">{c.contributorName}</span>
                     <span className="text-gray-500"> — {money(c.totalPaidCents)}</span>
+                    {/* WHERE TO LOOK FOR THE MONEY. A declared donation has
+                        no reference code, so the rail is the only narrowing
+                        signal a host has before confirming - without it they
+                        are checking four apps for one name.
+
+                        NULL SHOWS NOTHING. Every donation declared before the
+                        column existed never captured a rail, and a placeholder
+                        would read as a fact. */}
+                    {c.paymentRail && (
+                      <span className="block text-xs text-gray-500">
+                        {RAIL_LABEL[c.paymentRail] ?? c.paymentRail}
+                      </span>
+                    )}
                     {c.contributorEmail && (
                       <span className="block text-xs text-gray-600 truncate">
                         {c.contributorEmail}
