@@ -19,6 +19,10 @@ import {
   EARLY_BIRD_LOCK_REASON,
   REGULAR_LOCK_REASON,
   INVENTORY_LOCK_REASON,
+  CUTOFF_LOCK_REASON,
+  ENTRY_CHILD_LOCK_REASON,
+  ENTRY_ADULT_EARLY_LOCK_REASON,
+  ENTRY_ADULT_REGULAR_LOCK_REASON,
 } from "@/lib/board-lock";
 import EditFundraiserButton from "./edit-fundraiser-button";
 import { calculateWinners } from "@/lib/winners";
@@ -278,17 +282,23 @@ export default async function HostBoardPage({ params }: Props) {
 
     const contributors = contributorRows(claimed, donations);
 
-    // THE TOP COUNTERS. Donation-ONLY rows - `squareAmountCents = 0` - because
-    // a mixed purchase is already counted through its squares and counting it
+    // THE TOP COUNTERS. SQUARELESS rows - `squareAmountCents = 0` - because a
+    // mixed purchase is already counted through its squares and counting it
     // here as well would double it. Separate from the `donations` query above,
     // which deliberately INCLUDES mixed rows so a donate-on-top contributor is
     // marked in the list.
+    //
+    // The `donationAmountCents > 0` clause is GONE. It made the filter mean
+    // "donation-only" rather than "squareless", so a standalone Entry Ticket
+    // purchase - which carries entry money and nothing else - matched nothing
+    // and moved no counter. A host would have watched someone pay for
+    // admission while CONFIRMED stayed put: the exact defect this file was
+    // written to fix, in a second flavour.
     const counterDonations = await prisma.contribution.findMany({
       where: {
         boardId: board.boardId,
         status: { in: ["confirmed", "pending"] },
         squareAmountCents: 0,
-        donationAmountCents: { gt: 0 },
       },
       select: { status: true, paymentMethod: true, voidedAt: true },
     });
@@ -432,6 +442,31 @@ export default async function HostBoardPage({ params }: Props) {
             inventoryLockReason={INVENTORY_LOCK_REASON}
             regularLockReason={REGULAR_LOCK_REASON}
             earlyBirdLockReason={EARLY_BIRD_LOCK_REASON}
+            // Dollars as typed, "" when the tier is not offered — the same
+            // convention the early bird price uses on this surface.
+            initialEntryChild={
+              board.entryChildPriceCents != null
+                ? String(board.entryChildPriceCents / 100)
+                : ""
+            }
+            initialEntryAdultEarly={
+              board.entryAdultEarlyPriceCents != null
+                ? String(board.entryAdultEarlyPriceCents / 100)
+                : ""
+            }
+            initialEntryAdultRegular={
+              board.entryAdultRegularPriceCents != null
+                ? String(board.entryAdultRegularPriceCents / 100)
+                : ""
+            }
+            cutoffLocked={priceLocks.cutoffLocked}
+            childLocked={priceLocks.childLocked}
+            adultEarlyLocked={priceLocks.adultEarlyLocked}
+            adultRegularLocked={priceLocks.adultRegularLocked}
+            cutoffLockReason={CUTOFF_LOCK_REASON}
+            childLockReason={ENTRY_CHILD_LOCK_REASON}
+            adultEarlyLockReason={ENTRY_ADULT_EARLY_LOCK_REASON}
+            adultRegularLockReason={ENTRY_ADULT_REGULAR_LOCK_REASON}
           />
         </div>
 

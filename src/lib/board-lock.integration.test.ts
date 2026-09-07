@@ -107,6 +107,13 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
       inventoryLocked: false,
       earlyBirdLocked: false,
       regularLocked: false,
+      // ENTRY TICKETS SOLD NOTHING HERE, so nothing about them locks either -
+      // including the shared cutoff, which needs an early sale from EITHER
+      // product before it freezes.
+      cutoffLocked: false,
+      childLocked: false,
+      adultEarlyLocked: false,
+      adultRegularLocked: false,
     });
   });
 
@@ -122,6 +129,13 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
       inventoryLocked: false,
       earlyBirdLocked: false,
       regularLocked: false,
+      // ENTRY TICKETS SOLD NOTHING HERE, so nothing about them locks either -
+      // including the shared cutoff, which needs an early sale from EITHER
+      // product before it freezes.
+      cutoffLocked: false,
+      childLocked: false,
+      adultEarlyLocked: false,
+      adultRegularLocked: false,
     });
     assert.equal(await hasConfirmedContribution(boardId, db), false);
   });
@@ -155,6 +169,12 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
       inventoryLocked: true,
       earlyBirdLocked: true,
       regularLocked: true,
+      // An early-bird SQUARE locks the shared cutoff on its own; no Entry
+      // Ticket has been sold, so the three tier locks stay open.
+      cutoffLocked: true,
+      childLocked: false,
+      adultEarlyLocked: false,
+      adultRegularLocked: false,
     });
   });
 
@@ -170,6 +190,12 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
       inventoryLocked: true,
       earlyBirdLocked: true,
       regularLocked: true,
+      // An early-bird SQUARE locks the shared cutoff on its own; no Entry
+      // Ticket has been sold, so the three tier locks stay open.
+      cutoffLocked: true,
+      childLocked: false,
+      adultEarlyLocked: false,
+      adultRegularLocked: false,
     });
   });
 

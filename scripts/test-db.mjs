@@ -9,15 +9,26 @@
 // seconds, never auto-pauses, and is disposable — a failed test run is fixed by
 // deleting it. Nothing here can reach production.
 //
-// The schema is built with `prisma db push` from a COPY of schema.prisma with
-// the URL hardcoded, never from an env override. If a variable ever failed to
-// override .env, db push would run against production, and `db push` is the
-// one command that reconciles by generating its own DDL. The copy makes that
-// impossible rather than unlikely. It is generated fresh each run, so it
-// cannot drift from the real schema.
+// The schema is built by REPLAYING prisma/migrations, from a COPY of
+// schema.prisma with the URL hardcoded, never from an env override. If a
+// variable ever failed to override .env, the command would run against
+// production; the copy makes that impossible rather than unlikely, and it is
+// generated fresh each run.
+//
+// Why replay and not `db push`: db push generates DDL from the Prisma models,
+// and a CHECK constraint is invisible to them. Every CHECK this project relies
+// on exists only in migration SQL, so a db push database silently ACCEPTS the
+// rows those constraints exist to reject — a test asserting the rejection then
+// fails for a reason that has nothing to do with the code under test. Replay
+// gives the tests the same database production has.
+//
+// db push had one property replay does not: the test database could not drift
+// from schema.prisma. That property is now stated rather than free — the
+// `migrate diff` below asserts the replayed database matches the models, and
+// fails the build if a migration and the schema have parted ways.
 
 import { execFileSync } from "child_process";
-import { readFileSync, writeFileSync, mkdtempSync } from "fs";
+import { readFileSync, writeFileSync, mkdtempSync, cpSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -75,9 +86,30 @@ function up() {
     process.exit(1);
   }
 
-  const path = join(mkdtempSync(join(tmpdir(), "daali-schema-")), "schema.prisma");
+  const dir = mkdtempSync(join(tmpdir(), "daali-schema-"));
+  const path = join(dir, "schema.prisma");
   writeFileSync(path, replaced);
-  run("npx", ["prisma", "db", "push", "--schema", path, "--skip-generate"]);
+  // migrate deploy resolves prisma/migrations relative to the schema it is given.
+  cpSync("prisma/migrations", join(dir, "migrations"), { recursive: true });
+  run("npx", ["prisma", "migrate", "deploy", "--schema", path]);
+
+  // The property db push gave for free, now asserted. A null result is a
+  // non-zero exit from --exit-code: the replay and the models disagree.
+  const drift = quiet("npx", [
+    "prisma", "migrate", "diff",
+    "--from-url", JSON.stringify(TEST_URL),
+    "--to-schema-datamodel", JSON.stringify(path),
+    "--exit-code",
+  ]);
+  if (drift === null) {
+    console.error(
+      "\nThe replayed database does not match prisma/schema.prisma.\n" +
+        "A migration and the models have drifted. To see the difference:\n" +
+        "  npx prisma migrate diff --from-url " + JSON.stringify(TEST_URL) +
+        " --to-schema-datamodel prisma/schema.prisma --script"
+    );
+    process.exit(1);
+  }
 
   console.log(`\nReady. TEST_DATABASE_URL=${TEST_URL}`);
 }

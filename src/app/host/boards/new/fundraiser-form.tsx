@@ -38,6 +38,13 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   const [campaignEndsAt, setCampaignEndsAt] = useState("");
   const [cashHoldDays, setCashHoldDays] = useState("7");
 
+  // ENTRY TICKET TIERS. "" means the tier is NOT OFFERED - there is no separate
+  // flag, exactly as with the early bird price. A host who ignores this block
+  // creates a board the whole feature is invisible on.
+  const [entryChild, setEntryChild] = useState("");
+  const [entryAdultEarly, setEntryAdultEarly] = useState("");
+  const [entryAdultRegular, setEntryAdultRegular] = useState("");
+
   const [hasEvent, setHasEvent] = useState(false);
   const [eventName, setEventName] = useState("");
   const [eventStartsAt, setEventStartsAt] = useState("");
@@ -56,6 +63,14 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
   const earlyCents = earlyBirdPrice
     ? Math.round(parseFloat(earlyBirdPrice) * 100)
     : null;
+  const toCents = (v: string) =>
+    v.trim() === "" ? null : Math.round(parseFloat(v) * 100);
+  const entryChildCents = toCents(entryChild);
+  const entryEarlyCents = toCents(entryAdultEarly);
+  const entryRegularCents = toCents(entryAdultRegular);
+  // ONE CUTOFF, TWO PRODUCTS. The date is asked for once, by whichever turned
+  // it on - the same instant flips square pricing and adult entry pricing.
+  const needsCutoff = earlyBirdOn || entryEarlyCents != null;
 
   // DERIVED INVENTORY — always the REGULAR price. Early bird is a temporary
   // discount, not a resize: a $5,000 goal at $50 makes 100 tickets even if the
@@ -109,10 +124,52 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         setError("Early bird price must be below the standard price.");
         return;
       }
-      if (!earlyBirdEndsAt) {
-        setError("Set a date for the early bird price to end.");
+    }
+
+    // ENTRY TICKET TIERS. Each independently optional; the same rules the
+    // creation route re-checks, stated here so a host is told before a round
+    // trip rather than instead of the server checking.
+    for (const [cents, label] of [
+      [entryChildCents, "Child entry ticket price"],
+      [entryEarlyCents, "Adult early bird entry price"],
+      [entryRegularCents, "Adult entry ticket price"],
+    ] as const) {
+      if (cents == null) continue;
+      if (!Number.isFinite(cents) || cents < 100) {
+        setError(`${label} must be at least $1, or left blank.`);
         return;
       }
+    }
+    // ADMISSION NEEDS SOMETHING TO ADMIT TO.
+    if (
+      !hasEvent &&
+      [entryChildCents, entryEarlyCents, entryRegularCents].some((c) => c != null)
+    ) {
+      setError(
+        "Entry ticket prices need an event. Add the event, or clear the entry prices."
+      );
+      return;
+    }
+    // ONLY THE ADULT EARLY PRICE HAS DEPENDENCIES - which is what lets a
+    // child-only board exist. Mirrors boards_entry_pricing_coherent.
+    if (entryEarlyCents != null) {
+      if (entryRegularCents == null) {
+        setError(
+          "An adult early bird entry price needs an adult entry ticket price to be early against."
+        );
+        return;
+      }
+      if (entryEarlyCents >= entryRegularCents) {
+        setError(
+          "The adult early bird entry price must be below the adult entry ticket price."
+        );
+        return;
+      }
+    }
+    // ONE CUTOFF, ASKED FOR ONCE, required by whichever product turned it on.
+    if (needsCutoff && !earlyBirdEndsAt) {
+      setError("Choose the date early bird pricing ends, or turn early bird pricing off.");
+      return;
     }
     if (!campaignEndsAt) {
       setError("A campaign close date is required.");
@@ -145,6 +202,9 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
           campaignEndsAt,
           earlyBirdPriceCents: earlyCents,
           earlyBirdEndsAt: earlyBirdEndsAt || null,
+          entryChildPriceCents: entryChildCents,
+          entryAdultEarlyPriceCents: entryEarlyCents,
+          entryAdultRegularPriceCents: entryRegularCents,
           cashHoldDays: parseInt(cashHoldDays, 10) || 7,
           hasEvent,
           eventName: eventName.trim() || null,
@@ -314,7 +374,12 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
         </div>
         )}
 
-        {earlyBirdOn && (
+        {/* THE CUTOFF DATE, SHARED. Outside the early-bird square block because
+            it is no longer that block's field: the same instant flips square
+            pricing and adult entry pricing, so it is shown whenever either is
+            set. A board with early entry pricing and no date is one the
+            database refuses. */}
+        {needsCutoff && (
           <div>
             <label htmlFor="earlyBirdEndsAt" className={labelClass}>
               Early bird ends
@@ -328,6 +393,9 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
             />
             <p className="text-xs text-gray-600 mt-1.5">
               The early price applies through 11:59 PM Eastern on this date.
+              {earlyBirdOn && entryEarlyCents != null
+                ? " It sets both the ticket and the adult entry early price."
+                : ""}
             </p>
           </div>
         )}
@@ -434,6 +502,91 @@ export default function FundraiserForm({ isCashHost, onBack }: Props) {
                 placeholder="Armstrong Stadium, Lot C"
                 className={inputClass}
               />
+            </div>
+
+            {/* --- Entry tickets ---------------------------------------------
+                OPTIONAL, TIER BY TIER, and inside the event block because
+                admission with nothing to be admitted to is not a thing to
+                configure. Leaving all three blank is the ordinary case: the
+                board sells no entry and contributors are shown nothing about
+                it.
+
+                HERE AT CREATION, not only on the edit panel. A host pricing a
+                ticketed fundraiser should not have to create the board and
+                then reopen it, and a two-step path can fail in step two for a
+                reason set in step one - the shared cutoff date. ---------- */}
+            <div className="rounded-lg border border-gray-800 p-3 space-y-4">
+              <div>
+                <span className="block text-sm">Entry tickets</span>
+                <span className="block text-xs text-gray-600 mt-0.5">
+                  Admission sold on its own, without claiming a spot on the
+                  board. Leave a price blank and that ticket type is not
+                  offered.
+                </span>
+              </div>
+
+              <div>
+                <label htmlFor="entryChild" className={labelClass}>
+                  Child ticket price{" "}
+                  <span className="text-gray-600">(optional)</span>
+                </label>
+                <input
+                  id="entryChild"
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="decimal"
+                  value={entryChild}
+                  onChange={(e) => setEntryChild(e.target.value)}
+                  placeholder="15"
+                  className={inputClass}
+                />
+                <p className="text-xs text-gray-600 mt-1.5">
+                  One price all the way through. Child tickets have no early
+                  bird.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="entryAdultRegular" className={labelClass}>
+                  Adult ticket price{" "}
+                  <span className="text-gray-600">(optional)</span>
+                </label>
+                <input
+                  id="entryAdultRegular"
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="decimal"
+                  value={entryAdultRegular}
+                  onChange={(e) => setEntryAdultRegular(e.target.value)}
+                  placeholder="50"
+                  className={inputClass}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="entryAdultEarly" className={labelClass}>
+                  Adult early bird price{" "}
+                  <span className="text-gray-600">(optional)</span>
+                </label>
+                <input
+                  id="entryAdultEarly"
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="decimal"
+                  value={entryAdultEarly}
+                  onChange={(e) => setEntryAdultEarly(e.target.value)}
+                  placeholder="40"
+                  className={inputClass}
+                />
+                <p className="text-xs text-gray-600 mt-1.5">
+                  Must be below the adult ticket price, and uses the same early
+                  bird end date as tickets. Setting it adds that date field
+                  above.
+                </p>
+              </div>
             </div>
 
           </div>

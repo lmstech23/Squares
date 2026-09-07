@@ -150,10 +150,35 @@ export const LOCK_REASON =
 export interface PricingLocks {
   /** A confirmed square exists at all. Board size is fixed. */
   inventoryLocked: boolean;
-  /** A confirmed square was bought at the early bird price. */
+  /**
+   * A confirmed square was bought at the early bird price.
+   *
+   * SQUARE EARLY-BIRD PRICE ONLY. This used to gate the cutoff DATE as well;
+   * `cutoffLocked` now does that, because the date is shared with Entry
+   * Tickets and can be locked by a product this flag knows nothing about.
+   */
   earlyBirdLocked: boolean;
   /** A confirmed square was bought at the regular price. */
   regularLocked: boolean;
+  /**
+   * `earlyBirdEndsAt` may no longer move.
+   *
+   * ONE CUTOFF, TWO PRODUCTS. The same instant flips square pricing and Adult
+   * Entry Ticket pricing, so it locks when EITHER has sold under it. Without
+   * this a host could sell Entry Tickets at the early price and then move the
+   * deadline, because no early-bird SQUARE had sold - changing the terms under
+   * people who already paid.
+   *
+   * Irrelevant to a board that configures neither early-bird product: both
+   * disjuncts are false and the date stays editable.
+   */
+  cutoffLocked: boolean;
+  /** A confirmed standalone CHILD Entry Ticket exists. */
+  childLocked: boolean;
+  /** A confirmed standalone ADULT / EARLY Entry Ticket exists. */
+  adultEarlyLocked: boolean;
+  /** A confirmed standalone ADULT / REGULAR Entry Ticket exists. */
+  adultRegularLocked: boolean;
 }
 
 export async function pricingLocks(
@@ -165,7 +190,17 @@ export async function pricingLocks(
     select: { squarePrice: true, earlyBirdPriceCents: true },
   });
   if (!board) {
-    return { inventoryLocked: true, earlyBirdLocked: true, regularLocked: true };
+    // No board: lock everything. Failing closed here means a missing row can
+    // never be read as "everything is editable".
+    return {
+      inventoryLocked: true,
+      earlyBirdLocked: true,
+      regularLocked: true,
+      cutoffLocked: true,
+      childLocked: true,
+      adultEarlyLocked: true,
+      adultRegularLocked: true,
+    };
   }
 
   const confirmed = await client.square.findMany({
@@ -173,15 +208,59 @@ export async function pricingLocks(
     select: { pricePaidCents: true },
   });
 
+  // ENTRY TICKET LOCKS, from the STORED priceBasis rather than by comparing
+  // amounts. Square locks have to guess - there is no priceSource column, so
+  // equal prices are ambiguous and both must lock. A pass records the rule it
+  // was sold under, so these three are exact and no ambiguity case exists.
+  //
+  // "Confirmed" is the contribution being `confirmed` and unvoided: the same
+  // test boardTotals uses. A pending checkout locks nothing, or an abandoned
+  // one would freeze a host out of her own pricing.
+  //
+  // A VOIDED PASS STILL LOCKS. Its contribution is retained and confirmed;
+  // someone paid under those terms and the commercial fact does not unwind.
+  const entryPasses = await client.admissionPass.groupBy({
+    by: ["tier", "priceBasis"],
+    where: {
+      tier: { not: null },
+      supporter: { event: { boardId } },
+      square: null,
+    },
+    _count: true,
+  });
+  const soldEntry = (tier: string, basis: string) =>
+    entryPasses.some((g) => g.tier === tier && g.priceBasis === basis && g._count > 0);
+  const childLocked = soldEntry("CHILD", "FLAT");
+  const adultEarlyLocked = soldEntry("ADULT", "EARLY");
+  const adultRegularLocked = soldEntry("ADULT", "REGULAR");
+
   if (confirmed.length === 0) {
-    return { inventoryLocked: false, earlyBirdLocked: false, regularLocked: false };
+    return {
+      inventoryLocked: false,
+      earlyBirdLocked: false,
+      regularLocked: false,
+      // Entry Tickets take no inventory and lock no square price, but an
+      // early Adult sale still locks the shared cutoff.
+      cutoffLocked: adultEarlyLocked,
+      childLocked,
+      adultEarlyLocked,
+      adultRegularLocked,
+    };
   }
 
   // Equal prices make the comparison meaningless — lock both rather than guess.
   const ambiguous =
     board.earlyBirdPriceCents != null && board.earlyBirdPriceCents === board.squarePrice;
   if (ambiguous) {
-    return { inventoryLocked: true, earlyBirdLocked: true, regularLocked: true };
+    return {
+      inventoryLocked: true,
+      earlyBirdLocked: true,
+      regularLocked: true,
+      cutoffLocked: true,
+      childLocked,
+      adultEarlyLocked,
+      adultRegularLocked,
+    };
   }
 
   let earlyBirdLocked = false;
@@ -200,8 +279,27 @@ export async function pricingLocks(
     }
   }
 
-  return { inventoryLocked: true, earlyBirdLocked, regularLocked };
+  return {
+    inventoryLocked: true,
+    earlyBirdLocked,
+    regularLocked,
+    // EITHER product locks the shared deadline.
+    cutoffLocked: earlyBirdLocked || adultEarlyLocked,
+    childLocked,
+    adultEarlyLocked,
+    adultRegularLocked,
+  };
 }
+
+export const ENTRY_CHILD_LOCK_REASON =
+  "Locked because Child Entry Tickets have been bought at this price.";
+export const ENTRY_ADULT_EARLY_LOCK_REASON =
+  "Locked because Adult Entry Tickets have been bought at the early bird price.";
+export const ENTRY_ADULT_REGULAR_LOCK_REASON =
+  "Locked because Adult Entry Tickets have been bought at this price.";
+export const CUTOFF_LOCK_REASON =
+  "Locked because something has already sold at an early bird price. " +
+  "Moving the deadline would change the terms of a purchase already made.";
 
 /** Shown beside a disabled price field. */
 export const EARLY_BIRD_LOCK_REASON =

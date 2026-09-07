@@ -8,6 +8,13 @@
 // QUANTITY-BASED, ONE UNIT PER COUNTABLE THING. Three tickets count three; one
 // donation counts one, because a donation has no quantity to have.
 //
+// AN ENTRY TICKET PURCHASE COUNTS ONE, not one per pass, and that is a
+// deliberate exception to the sentence above. Passes are minted INSIDE the
+// confirmation transaction, so a purchase in checkout has no passes to count:
+// counting them would make one purchase read as 1 in IN CHECKOUT and 3 in
+// CONFIRMED, which looks like two different things happening rather than one
+// thing moving. The purchase is the unit that exists in every state.
+//
 // WHY NOT ONE-PER-PURCHASE, which is the other obvious reading of "count
 // contribution records": OPEN can only ever be inventory. If the other three
 // counted purchases while OPEN counted tickets, a 100-ticket board with a
@@ -28,10 +35,16 @@ export interface CounterSquare {
 }
 
 /**
- * A DONATION-ONLY contribution: `squareAmountCents = 0 AND
- * donationAmountCents > 0`. The caller must apply that filter — passing a
- * mixed purchase here would count it twice, once through its squares and again
- * as a donation.
+ * A contribution that holds NO SQUARES: `squareAmountCents = 0`. That is a
+ * donation-only purchase, a standalone Entry Ticket purchase, or one that is
+ * both.
+ *
+ * The caller must apply that filter — passing a mixed purchase here would
+ * count it twice, once through its squares and again here.
+ *
+ * The two kinds are not distinguished below because nothing in these four
+ * counters depends on which it is: both count one, and both move between the
+ * same three states by `status` and `paymentMethod`.
  */
 export interface CounterDonation {
   status: string;
@@ -54,7 +67,7 @@ export function boardCounters(
     squares.filter((s) => s.paymentStatus === status).length;
 
   // A void never changes `status`, so both halves are required. Counting on
-  // status alone would keep a reversed donation in CONFIRMED.
+  // status alone would keep a reversed contribution in CONFIRMED.
   const confirmedDonations = donations.filter(
     (d) => d.status === "confirmed" && d.voidedAt === null
   ).length;
@@ -69,8 +82,9 @@ export function boardCounters(
   // written before the Checkout Session ("row first, session second"), so it
   // exists from the moment the contributor submits.
   //
-  // KNOWN LIMIT, logged rather than papered over: a donation holds no
-  // inventory, so `holdExpiresAt` is null (invariant 64) and no sweep touches
+  // KNOWN LIMIT, logged rather than papered over: neither a donation nor an
+  // Entry Ticket purchase holds inventory, so `holdExpiresAt` is null
+  // (invariant 64 for donations, the same reading for entry) and no sweep touches
   // it. The only thing that releases it is checkout.session.expired. If that
   // webhook never arrives the row stays `pending` forever and stays in this
   // box forever. It never reaches `raised` — that reads confirmed only — so

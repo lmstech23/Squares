@@ -54,6 +54,28 @@ interface Props {
   inventoryLockReason: string;
   regularLockReason: string;
   earlyBirdLockReason: string;
+  /**
+   * THE CUTOFF DATE'S OWN LOCK, which is no longer `earlyBirdLocked`.
+   *
+   * One date drives two products - early-bird squares and early-priced Adult
+   * Entry Tickets - so it freezes when EITHER has sold under it. Disabling it
+   * on the square lock alone would let a host move a deadline that entry
+   * buyers had already paid against.
+   */
+  cutoffLocked: boolean;
+  cutoffLockReason: string;
+  /** Dollars, as typed. "" means the tier is NOT OFFERED. */
+  initialEntryChild: string;
+  initialEntryAdultEarly: string;
+  initialEntryAdultRegular: string;
+  /// One lock per tier price, on the same principle as invariant 76: a price
+  /// freezes when somebody has bought at it, and at nothing else.
+  childLocked: boolean;
+  adultEarlyLocked: boolean;
+  adultRegularLocked: boolean;
+  childLockReason: string;
+  adultEarlyLockReason: string;
+  adultRegularLockReason: string;
 }
 
 const ZONES = [
@@ -85,6 +107,10 @@ export default function EditFundraiserButton({
   initialVenmo, initialZelle, initialCashapp, initialPaypal,
   inventoryLocked, regularLocked, earlyBirdLocked,
   inventoryLockReason, regularLockReason, earlyBirdLockReason,
+  cutoffLocked, cutoffLockReason,
+  initialEntryChild, initialEntryAdultEarly, initialEntryAdultRegular,
+  childLocked, adultEarlyLocked, adultRegularLocked,
+  childLockReason, adultEarlyLockReason, adultRegularLockReason,
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -104,6 +130,11 @@ export default function EditFundraiserButton({
   const [earlyBirdOn, setEarlyBirdOn] = useState(initialEarlyBirdPrice !== "");
   const [earlyPrice, setEarlyPrice] = useState(initialEarlyBirdPrice);
   const [earlyEndsAt, setEarlyEndsAt] = useState(initialEarlyBirdEndsAt);
+  // ENTRY TICKET TIERS. "" means not offered, which is how a host turns a tier
+  // off — there is no separate flag, exactly as with the early bird price.
+  const [entryChild, setEntryChild] = useState(initialEntryChild);
+  const [entryAdultEarly, setEntryAdultEarly] = useState(initialEntryAdultEarly);
+  const [entryAdultRegular, setEntryAdultRegular] = useState(initialEntryAdultRegular);
   const [venmo, setVenmo] = useState(initialVenmo);
   const [zelle, setZelle] = useState(initialZelle);
   const [cashapp, setCashapp] = useState(initialCashapp);
@@ -151,6 +182,15 @@ export default function EditFundraiserButton({
   const nextCount = preview && preview.ok ? preview.count : null;
   const willResize = nextCount != null && nextCount !== currentTicketCount;
 
+  // Derived once, used by validation, the save body and the render.
+  const entryChildCents = entryChild.trim() === "" ? null : toCents(entryChild);
+  const entryEarlyCents = entryAdultEarly.trim() === "" ? null : toCents(entryAdultEarly);
+  const entryRegularCents =
+    entryAdultRegular.trim() === "" ? null : toCents(entryAdultRegular);
+  // The cutoff date is now needed by EITHER product, so the field is shown and
+  // required whenever either is on.
+  const needsCutoff = earlyBirdOn || entryEarlyCents != null;
+
   async function save() {
     // Same rules as the creation form, and the same rules the route enforces.
     // Checked here so the host is told before a round trip, NOT instead of the
@@ -164,14 +204,40 @@ export default function EditFundraiserButton({
         setError("Early bird price must be at least $1.");
         return;
       }
-      if (!earlyEndsAt) {
-        setError("Choose the date early bird pricing ends, or turn Early Bird off.");
-        return;
-      }
       if (priceCents != null && earlyCents >= priceCents) {
         setError("Early bird price must be below the ticket price.");
         return;
       }
+    }
+    // ENTRY TIERS. Each is independently optional; only the ADULT EARLY price
+    // has dependencies, which is what lets a child-only board exist.
+    for (const [cents, label, locked] of [
+      [entryChildCents, "Child entry ticket price", childLocked],
+      [entryEarlyCents, "Adult early bird entry price", adultEarlyLocked],
+      [entryRegularCents, "Adult entry ticket price", adultRegularLocked],
+    ] as const) {
+      if (locked || cents == null) continue;
+      if (cents < 100) {
+        setError(`${label} must be at least $1, or left blank.`);
+        return;
+      }
+    }
+    if (entryEarlyCents != null) {
+      if (entryRegularCents == null) {
+        setError(
+          "An adult early bird entry price needs an adult entry ticket price to be early against."
+        );
+        return;
+      }
+      if (entryEarlyCents >= entryRegularCents) {
+        setError("The adult early bird entry price must be below the adult entry ticket price.");
+        return;
+      }
+    }
+    // ONE DATE, EITHER PRODUCT. Asked for once, whichever turned it on.
+    if (needsCutoff && !cutoffLocked && !earlyEndsAt) {
+      setError("Choose the date early bird pricing ends, or turn early bird pricing off.");
+      return;
     }
     if (title.trim().length === 0) {
       setError("A campaign title is required.");
@@ -220,10 +286,22 @@ export default function EditFundraiserButton({
       if (!regularLocked) body.squarePrice = priceCents;
       if (!earlyBirdLocked) {
         body.earlyBirdPriceCents = earlyBirdOn ? earlyCents : null;
-        // Sent as `YYYY-MM-DD`; the route resolves it to 11:59:59 PM in the
-        // board's zone, the same rule creation and campaign close use.
-        body.earlyBirdEndsAt = earlyBirdOn ? earlyEndsAt : null;
       }
+      // THE CUTOFF IS SENT SEPARATELY, under its own lock, and is cleared only
+      // when NEITHER product needs it. Clearing it because the square early
+      // bird was switched off would break the entry pricing CHECK and reject
+      // the whole save.
+      //
+      // Sent as `YYYY-MM-DD`; the route resolves it to 11:59:59 PM in the
+      // board's zone, the same rule creation and campaign close use.
+      if (!cutoffLocked) {
+        body.earlyBirdEndsAt = needsCutoff ? earlyEndsAt : null;
+      }
+      // A LOCKED TIER IS NOT SENT AT ALL, for the reason a locked square price
+      // is not: the field is disabled and merely displaying a stored value.
+      if (!childLocked) body.entryChildPriceCents = entryChildCents;
+      if (!adultEarlyLocked) body.entryAdultEarlyPriceCents = entryEarlyCents;
+      if (!adultRegularLocked) body.entryAdultRegularPriceCents = entryRegularCents;
       if (showEventFields) {
         body.name = name;
         body.venue = venue;
@@ -421,22 +499,101 @@ export default function EditFundraiserButton({
               )}
             </div>
 
-            <div>
-              <label htmlFor="earlyEndsAt" className={labelClass}>Early bird ends</label>
-              <input
-                id="earlyEndsAt" type="date"
-                className={inputClass} value={earlyEndsAt} disabled={earlyBirdLocked}
-                onChange={(e) => setEarlyEndsAt(e.target.value)}
-              />
-              {!earlyBirdLocked && (
-                <p className="text-xs text-gray-600 mt-1">
-                  The early price applies through 11:59 PM Eastern on this date.
-                </p>
-              )}
-            </div>
           </>
         )}
+
+        {/* THE CUTOFF DATE, SHARED. It sits outside the early-bird square block
+            because it is no longer that block's field: the same instant flips
+            square pricing and Adult Entry Ticket pricing, so it is shown
+            whenever either is on and locked when either has sold under it. */}
+        {needsCutoff && (
+          <div>
+            <label htmlFor="earlyEndsAt" className={labelClass}>Early bird ends</label>
+            <input
+              id="earlyEndsAt" type="date"
+              className={inputClass} value={earlyEndsAt} disabled={cutoffLocked}
+              onChange={(e) => setEarlyEndsAt(e.target.value)}
+            />
+            {cutoffLocked ? (
+              <p className="text-xs text-amber-200/80 mt-1">{cutoffLockReason}</p>
+            ) : (
+              <p className="text-xs text-gray-600 mt-1">
+                The early price applies through 11:59 PM Eastern on this date.
+                {entryEarlyCents != null && earlyBirdOn
+                  ? " It sets both the ticket and the adult entry early price."
+                  : ""}
+              </p>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* --- Event entry tickets ----------------------------------------------
+          OPTIONAL, TIER BY TIER. A blank field means the tier is not offered,
+          and a board that leaves all three blank sells no entry at all and
+          shows contributors nothing about it. That optionality is the point:
+          this is a platform capability, not one event's requirements.
+
+          Only shown on a board that HAS an event. Admission with nothing to be
+          admitted to is not a thing to configure. -------------------------- */}
+      {showEventFields && (
+      <div className="space-y-4 rounded-lg border border-gray-800 p-3">
+        <p className="text-xs font-semibold text-gray-300">Event entry tickets</p>
+        <p className="text-xs text-gray-600 leading-relaxed">
+          Admission sold on its own, without claiming a spot on the board. Leave
+          a price blank and that ticket type is not offered.
+        </p>
+
+        <div>
+          <label htmlFor="entryChild" className={labelClass}>Child ticket price</label>
+          <input
+            id="entryChild" type="number" min="1" step="1" inputMode="decimal"
+            className={inputClass} value={entryChild} disabled={childLocked}
+            onChange={(e) => setEntryChild(e.target.value)}
+          />
+          {childLocked ? (
+            <p className="text-xs text-amber-200/80 mt-1">{childLockReason}</p>
+          ) : (
+            <p className="text-xs text-gray-600 mt-1">
+              One price, all the way through. Child tickets have no early bird.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="entryAdultRegular" className={labelClass}>
+            Adult ticket price
+          </label>
+          <input
+            id="entryAdultRegular" type="number" min="1" step="1" inputMode="decimal"
+            className={inputClass} value={entryAdultRegular} disabled={adultRegularLocked}
+            onChange={(e) => setEntryAdultRegular(e.target.value)}
+          />
+          {adultRegularLocked && (
+            <p className="text-xs text-amber-200/80 mt-1">{adultRegularLockReason}</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="entryAdultEarly" className={labelClass}>
+            Adult early bird price
+          </label>
+          <input
+            id="entryAdultEarly" type="number" min="1" step="1" inputMode="decimal"
+            className={inputClass} value={entryAdultEarly} disabled={adultEarlyLocked}
+            onChange={(e) => setEntryAdultEarly(e.target.value)}
+          />
+          {adultEarlyLocked ? (
+            <p className="text-xs text-amber-200/80 mt-1">{adultEarlyLockReason}</p>
+          ) : (
+            <p className="text-xs text-gray-600 mt-1">
+              Optional. Must be below the adult ticket price, and uses the same
+              early bird end date as tickets.
+            </p>
+          )}
+        </div>
+      </div>
+      )}
 
       {/* --- Direct payment handles ------------------------------------------
           NEVER LOCKED, at any point in the board's life. These were immutable

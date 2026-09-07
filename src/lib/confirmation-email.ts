@@ -269,6 +269,135 @@ async function sendDonationConfirmations(where: {
   return sent;
 }
 
+/**
+ * Standalone Entry Ticket confirmations.
+ *
+ * A SEPARATE CLAIM FROM THE DONATION SWEEP, and it has to be. That one requires
+ * `donationAmountCents > 0`, so an entry-only purchase is invisible to it and
+ * would otherwise never be mailed at all. The two claims are disjoint by
+ * construction: donations need donation money, this needs entry money, and a
+ * purchase carrying both is claimed by whichever runs first and mentions both.
+ *
+ * THE PASSES ARE IN THE EMAIL, not only behind a link. A gate is the worst
+ * place to discover you need signal to load a page, so every QR is embedded and
+ * the link is the durable copy for someone who deletes the message.
+ *
+ * Same atomic claim as everything else in this file: stamp first, send second,
+ * release the stamp on failure so the next sweep retries.
+ */
+async function sendEntryConfirmations(where: {
+  batchId?: string;
+  boardId?: string;
+}): Promise<number> {
+  // A standalone purchase has no square batch, so a batch-scoped call can
+  // never be about one. Board-scoped and global sweeps cover them.
+  if (where.batchId) return 0;
+
+  const claimed = await prisma.contribution.updateManyAndReturn({
+    where: {
+      status: "confirmed",
+      // A void never changes `status`. Both halves, for the same reason the
+      // donation claim needs both.
+      voidedAt: null,
+      confirmationEmailedAt: null,
+      squareAmountCents: 0,
+      entryAmountCents: { gt: 0 },
+      contributorEmail: { not: null },
+      ...(where.boardId ? { boardId: where.boardId } : {}),
+    },
+    data: { confirmationEmailedAt: new Date() },
+    select: {
+      id: true,
+      entryAmountCents: true,
+      donationAmountCents: true,
+      contributorEmail: true,
+      board: { select: { gameName: true } },
+    },
+  });
+
+  if (claimed.length === 0) return 0;
+  const base = emailBaseUrl();
+  let sent = 0;
+
+  for (const c of claimed) {
+    // The grant is the address of this purchase: unique on contributionId, and
+    // the key the passes screen now accepts alongside a square batch.
+    const grant = await prisma.admissionGrant.findUnique({
+      where: { contributionId: c.id },
+      select: { id: true, eventSupporterId: true },
+    });
+
+    // Ordinals count the supporter's CURRENT usable passes in sequence order,
+    // never sequenceNumber, which leaves gaps once anything is voided. This is
+    // the same rule the passes screen follows, so the two never disagree about
+    // what "Pass 2 of 3" means.
+    const passes = grant
+      ? await prisma.admissionPass.findMany({
+          where: {
+            eventSupporterId: grant.eventSupporterId,
+            status: { in: ["active", "used"] },
+          },
+          select: { token: true },
+          orderBy: { sequenceNumber: "asc" },
+        })
+      : [];
+
+    const boardName = c.board.gameName;
+    const subject = `Your ${passes.length === 1 ? "pass is" : "passes are"} ready — ${boardName}`;
+
+    // ONE PURCHASE, ONE EMAIL. A buyer who added a donation on top is told
+    // both amounts here rather than receiving a second message, because the
+    // donation sweep will never see this row again once it is stamped.
+    const donationLine =
+      c.donationAmountCents > 0
+        ? `<p style="margin:4px 0 0;font:14px system-ui,sans-serif;">
+             Plus a ${money(c.donationAmountCents)} donation. Thank you.
+           </p>`
+        : "";
+
+    const linkLine = grant
+      ? `<p style="margin:12px 0 0;font:14px system-ui,sans-serif;">
+           <a href="${base}/passes/${encodeURIComponent(grant.id)}" style="color:#166534;">
+             View your passes
+           </a>
+         </p>`
+      : "";
+
+    const html = `
+      <p style="margin:0;font:600 16px system-ui,sans-serif;">
+        You are on the list for ${esc(boardName)}.
+      </p>
+      <p style="margin:8px 0 0;font:14px system-ui,sans-serif;">
+        ${money(c.entryAmountCents)} received for
+        ${passes.length} ${passes.length === 1 ? "admission pass" : "admission passes"}.
+        Each admits one person — share one on its own and keep the rest.
+      </p>
+      ${donationLine}
+      ${linkLine}
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
+             style="margin-top:8px;">
+        ${ticketBlocks(passes.map((pp) => pp.token), base)}
+      </table>`;
+
+    try {
+      await sendEmail(c.contributorEmail!, subject, html);
+    } catch (err) {
+      console.warn(`Entry confirmation failed for contribution ${c.id}:`, err);
+      try {
+        await prisma.contribution.updateMany({
+          where: { id: c.id, confirmationEmailedAt: { not: null } },
+          data: { confirmationEmailedAt: null },
+        });
+      } catch (releaseErr) {
+        console.warn(`Failed to release entry email claim ${c.id}:`, releaseErr);
+      }
+      continue;
+    }
+    sent++;
+  }
+  return sent;
+}
+
 export async function sendPendingConfirmations(where: {
   batchId?: string;
   boardId?: string;
@@ -280,6 +409,11 @@ export async function sendPendingConfirmations(where: {
     // where no square was claimed this cycle. Putting them after the early
     // return below is how a donation-only board would never be mailed at all.
     result.emailsSent += await sendDonationConfirmations(where);
+
+    // Entry Tickets, and BEFORE the square sweep for the reason donations run
+    // before it: an entry-only board never claims a square this cycle, and
+    // anything after the early return below would never run there.
+    result.emailsSent += await sendEntryConfirmations(where);
 
     // ATOMIC CLAIM, BEFORE THE NETWORK CALL.
     //

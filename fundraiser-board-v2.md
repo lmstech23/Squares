@@ -75,6 +75,25 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `src/app/gate/[token]/page.tsx` | **NEW** — check-in surface — §6B |
 | `src/app/api/gate/[token]/checkin/route.ts` | **NEW** — scan, search, undo |
 
+**Standalone Entry Tickets — §19** (only on boards that price a tier):
+
+| File | Change |
+|------|--------|
+| `src/lib/entry-pricing.ts` | **NEW** — sole owner of tier pricing, and of the Stripe metadata codec |
+| `src/lib/entry-purchase.ts` | **NEW** — the confirmation, with the in-transaction sum assertion |
+| `src/app/api/board/[slug]/entry/route.ts` | **NEW** — card checkout, no inventory, no hold |
+| `src/app/board/[slug]/entry-sheet.tsx` | **NEW** — tier picker, no donate toggle, no payment picker |
+| `src/lib/confirm-square.ts` | `mintEntryPasses`, sharing the existing cursor lock |
+| `src/lib/board-lock.ts` | Three tier locks plus `cutoffLocked` |
+| `src/lib/contributions.ts` | `entryAmountCents` on the creator and on `BoardTotals` |
+| `src/lib/confirmation-email.ts` | Entry receipt, its own atomic claim |
+| `src/lib/ledger-row.ts` | Entry column, seven type labels |
+| `src/lib/board-counters.ts` | Squareless rather than donation-only |
+| `src/app/api/webhooks/stripe/route.ts` | Entry decided before donation in the zero-square branch |
+| `src/app/passes/[batch]/page.tsx` | Accepts a grant id as well as a square batch |
+| `src/app/api/host/boards/[id]/fundraiser-details/route.ts` | Tier prices, their locks, shared-cutoff coherence |
+| `src/app/host/boards/[id]/edit-fundraiser-button.tsx` | Entry tier fields; the cutoff moves under its own lock |
+
 ---
 
 ## 3. Schema
@@ -1004,6 +1023,251 @@ Slice 1 is where a mistake is expensive and silent. Review it before Slice 2 sta
 1. **Does the host see contributor identities before close?** Phase 1 exposes payout handles to the host. Fundraiser collects less. Assumed: name and contact yes, nothing more.
 2. **Share card image.** These links get pasted into group chats — an OG image showing the title and meter would carry the campaign. Not scoped here. Worth its own ticket.
 3. **What happens to a board that closes with zero contributions?** Assumed: closes normally, no draw, no results page.
+
+---
+
+---
+
+## 19. Standalone Entry Tickets
+
+Admission sold **on its own**, without claiming a spot on the board. A person
+who only wants to come to the event buys here; a person who wants to support the
+cause buys squares or donates. Both end up with passes when the board has an
+event; the difference is what they were buying.
+
+**This section owns invariants 110–112** — *Entry revenue is authoritative
+at the Contribution*, *Entry Pass prices reconcile at confirmation*, and
+*Standalone entry never donates admission*. The authoritative statements are in
+§19.12 below; `invariant-registry.md` indexes them and points back here. The
+sections in between describe where each rule is held, and cite them by name
+rather than by number.
+
+**This is a platform capability, not one event's requirements.** Every tier is
+independently optional. A board that prices none of them sells no entry, shows
+its contributors nothing about entry, and is untouched by every paragraph below.
+That is the ordinary case.
+
+### 19.1 The model
+
+```
+Board.entryChildPriceCents         null = Child not offered
+Board.entryAdultEarlyPriceCents    null = no early Adult window
+Board.entryAdultRegularPriceCents  null = Adult not offered
+```
+
+One rule decides a price, in `src/lib/entry-pricing.ts`, and nothing else may
+decide it:
+
+| Tier | Basis | When |
+|---|---|---|
+| CHILD | `FLAT` | always — a child ticket has never had two prices |
+| ADULT | `EARLY` | an early price exists and the cutoff has not passed |
+| ADULT | `REGULAR` | otherwise |
+
+**`FLAT` is not "no discount".** `REGULAR` means an early window closed;
+`FLAT` means there never was one. Confusing them would make the child price
+respond to a deadline that has nothing to do with it.
+
+**The cutoff is `Board.earlyBirdEndsAt` — the same instant, the same predicate,
+the same field that flips square pricing.** `entryEarlyBirdActive` delegates to
+`earlyBirdActive()` in `claim-price.ts` rather than re-implementing it, so the
+two products can never disagree about when the window closed.
+
+### 19.2 Where the money lives
+
+`Contribution.entryAmountCents`, a third amount column beside squares and
+donations. All three are structural, not filtered:
+
+```
+total_paid_cents = square_amount_cents + donation_amount_cents + entry_amount_cents
+prizeBasisCents  = Σ square_amount_cents          ← unchanged
+raisedCents      = Σ total_paid_cents             ← includes entry
+```
+
+**Entry money can never enter the prize basis**, because it lives in a different
+column. That is a property of the schema, not a filter anyone has to remember.
+
+**The contribution is the money truth** — *Entry revenue is authoritative at
+the Contribution*. `entryAmountCents` is the retained revenue for the purchase
+and does not change after confirmation; a pass going `void` later never rewrites
+it, which is why revenue is never recomputed from current pass state.
+Immutability is an application convention held by code paths and tests, not a
+database trigger. Invariant 110, stated in §19.12.
+
+### 19.3 The passes
+
+`AdmissionPass` gains `tier`, `priceBasis` and `pricePaidCents` — all three or
+none, enforced by `admission_passes_pricing_all_or_nothing`. A square-derived
+pass carries none of them and stays legal.
+
+The all-or-nothing CHECK is keyed to **the three pricing columns**, not to
+`squareId`. A future squareless priceless pass therefore remains representable.
+
+`squareId` stays null on a standalone pass, which the schema has always allowed.
+Sequence numbers come from the same `SELECT … FOR UPDATE` cursor the square path
+uses, so a supporter who holds square passes and then buys Entry Tickets gets one
+continuous run rather than two competing sequences.
+
+**The grant is `source = STANDALONE` and `donateAdmissions = false`, always** —
+*Standalone entry never donates admission*.
+`admission_grants_standalone_never_donates` makes any other value
+unrepresentable, and the confirmation path mints unconditionally so no stale
+`true` can reach it. There is no donate-admissions toggle on the purchase
+screen: buying your own admission and donating it back is not a thing anyone
+means to do, and a paid purchase minting zero passes is the failure the rule
+exists to prevent. Invariant 112, stated in §19.12.
+
+### 19.4 Buying
+
+`POST /api/board/[slug]/entry`. A separate route, for the reason `/donate` is
+separate: `/api/checkout` exists to lock squares and re-checks holds, caps and
+inventory at every step. Nothing here holds anything — no inventory moves, no
+countdown is returned, a sold-out board can still sell entry, and buying entry
+is not a drawing entry.
+
+**One quote, taken once.** The ledger amount, the Stripe line items and the
+passes minted on the way back all derive from a single `quoteEntry` call.
+
+**The priced passes travel in Stripe session metadata and are never re-quoted.**
+A checkout begun at 11:58pm and completed at 12:01am must still mint
+early-priced passes; re-pricing on the way back would reject a purchase the
+contributor made correctly. The encoding groups by (tier, basis, price), so it
+is a few dozen characters regardless of quantity and cannot approach Stripe's
+500-character metadata cap. A value that will not parse is refused: the webhook
+throws, the contribution stays `pending` and visible, and Stripe retries. A
+contributor holding a receipt and no pass is the outcome worth failing loudly to
+avoid.
+
+**Card only, deliberately.** A direct-payment reservation would have to remember
+the priced tier lines between reservation and the host confirming receipt, and
+there is nowhere to remember them — passes are minted only inside the
+confirmation transaction. Rather than invent a column, the payment picker is not
+offered on this screen and the direct-payment question stays open.
+
+### 19.5 Confirming
+
+Inside the webhook's zero-square branch, **entry is decided before donation**.
+An entry-only purchase has `squareAmountCents = 0` exactly as a donation does,
+so falling through would confirm the money, activate the supporter and mint
+nothing.
+
+*Entry Pass prices reconcile at confirmation.* `confirmEntryPurchase` asserts
+`Σ pass.pricePaidCents === entryAmountCents` **before any write**, inside the
+caller's transaction; money and passes commit together or not at all. After
+confirmation the two are independent facts. Invariant 111, stated in §19.12.
+
+### 19.6 The receipt
+
+A separate claim from the donation sweep, which requires donation money and
+would never see an entry-only row. Every QR is embedded in the email — a gate is
+the worst place to discover you need signal to load a page — and the durable
+link is `/passes/{grantId}`.
+
+**The passes screen now accepts two addresses**: a `squareBatchId` as before, or
+an `AdmissionGrant.id` for a standalone purchase, which has no batch. Both are
+unguessable server-generated UUIDs known at the moment the email is sent, so the
+credential model is unchanged, and the screen still shows every pass the
+**supporter** holds — one set, whichever door they came in by.
+
+Sent inline on confirmation rather than left to the five-minute cron, because a
+pass is a credential someone may already be standing at a gate holding.
+
+### 19.7 Locks
+
+Prices freeze when somebody has bought at them, and at nothing else — the
+principle of invariant 76, applied per tier. Entry locks are derived from the
+**stored `priceBasis`**, never by comparing amounts, so no ambiguity case exists
+(square locks must guess, and lock both when two prices are equal).
+
+| Field | Locked by |
+|---|---|
+| `entryChildPriceCents` | a confirmed CHILD / FLAT pass |
+| `entryAdultEarlyPriceCents` | a confirmed ADULT / EARLY pass |
+| `entryAdultRegularPriceCents` | a confirmed ADULT / REGULAR pass |
+| `earlyBirdEndsAt` | an early-bird **square** OR an early Adult pass |
+
+**The cutoff's lock changed.** It used to ride on `earlyBirdLocked` — the square
+early-bird price. It now has its own `cutoffLocked`, because one date drives two
+products: without the change a host could sell early-priced Entry Tickets and
+then move the deadline, since no early-bird *square* had sold, changing the terms
+under people who had already paid.
+
+**A voided pass still locks.** Its contribution is retained and confirmed;
+someone paid under those terms and the commercial fact does not unwind.
+
+**A pending checkout locks nothing**, or an abandoned one would freeze a host out
+of her own pricing.
+
+### 19.8 Coherence
+
+`boards_entry_pricing_coherent` — an Adult **early** price requires an Adult
+regular price, a cutoff date, and to be strictly below the regular price. That
+is the *only* dependency. A child-only board is legal; an adult-regular-only
+board is legal; a board with flat square pricing and early-bird entry is legal.
+
+`boards_entry_prices_positive` — any price present is greater than zero. The
+edit surface applies a stricter $1 floor, matching `squarePrice`, because a
+50-cent admission is far more likely a typo than an intent.
+
+### 19.9 Counters and the ledger
+
+The host counters count **one per entry purchase**, not one per pass. This is a
+deliberate exception to the quantity rule: passes are minted inside the
+confirmation transaction, so a purchase in checkout has none to count, and
+counting them would make one purchase read as 1 in IN CHECKOUT and 3 in
+CONFIRMED — one thing moving, presented as two things happening.
+
+The counter query's filter is now **squareless** (`squareAmountCents = 0`) rather
+than donation-only. With the old filter a standalone entry purchase matched
+nothing and moved no counter.
+
+The ledger gains an **Entry $** column and four more type labels, seven in all —
+enumerated rather than assembled from fragments, so the column never reads
+"Entry + tickets" on one row and "Tickets + entry" on the next. A cell is dashed
+when that kind of money is not part of the payment.
+
+### 19.10 What is deliberately absent
+
+- **No `Ticket` table, and no drawing ticket.** An Entry Ticket is admission.
+  Buying one is not a chance at anything.
+- **No admission column on `Board` or `Square`.** Prices live on `Board` because
+  they are *pricing*; nothing about admission state was added to either table.
+- **No database trigger** enforcing `entryAmountCents` immutability. It is an
+  application convention held by `entry-purchase.ts` and its tests; the schema
+  comment, the migration and the invariant all say so rather than implying a
+  guard that is not there.
+- **No deductibility language**, anywhere, exactly as with donations.
+
+### 19.11 Vocabulary
+
+A supporter buys **entry tickets**; what gets them through the gate is an
+admission **pass**. Both were briefly called "ticket", which reads fine at
+one-to-one and falls apart the moment someone holds 1 ticket and 0 tickets. That
+sentence must not be constructible.
+
+### 19.12 Invariants 110–112
+
+**This subsection is authoritative for the wording below.**
+`invariant-registry.md` allocates the numbers and points here; it does not
+restate them. Implementation comments cite these by NAME, never by number alone,
+because a number in a comment goes stale silently while a name does not.
+
+**110 — Entry revenue is authoritative at the Contribution.**
+`Contribution.entryAmountCents` is the authoritative retained revenue for a
+confirmed standalone Entry Ticket purchase. After confirmation, Pass lifecycle
+changes, including `void`, must never rewrite `entryAmountCents`,
+`totalPaidCents`, or `raised`.
+
+**111 — Entry Pass prices reconcile at confirmation.**
+At confirmation of a standalone Entry Ticket purchase, the sum of the purchased
+Pass `pricePaidCents` values must equal `Contribution.entryAmountCents`. After
+confirmation, Pass lifecycle changes do not recompute or restate Contribution
+revenue.
+
+**112 — Standalone entry never donates admission.**
+An `AdmissionGrant` with `source = STANDALONE` must have
+`donateAdmissions = false`. A stale or malformed donate flag must never suppress
+Pass minting for a paid standalone Entry Ticket purchase.
 
 ---
 

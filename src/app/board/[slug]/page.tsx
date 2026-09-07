@@ -4,6 +4,8 @@ import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
+import { entryPriceFor } from "@/lib/entry-pricing";
+import type { EntryTierOffer } from "./entry-sheet";
 import { donationReturnState } from "@/lib/donation-return";
 import { boardTotals } from "@/lib/contributions";
 import { issueSupporterAccessLink, mayClaim } from "@/lib/signups";
@@ -274,6 +276,36 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       earlyBirdEndsAt: board.earlyBirdEndsAt,
     });
 
+    // ENTRY TICKET TIERS, PRICED HERE. Whether the early-bird window is still
+    // open depends on the current time, which a render must not decide - the
+    // same rule publicPriceDisplay follows just above.
+    //
+    // A tier the board did not price returns null and simply is not offered.
+    // A board that priced none produces an empty array and the contributor
+    // sees nothing about entry at all: that is the ordinary case, not a
+    // degraded one.
+    const now = new Date();
+    const entryOffers: EntryTierOffer[] = (
+      [
+        ["CHILD", "Child"],
+        ["ADULT", "Adult"],
+      ] as const
+    ).flatMap(([tier, label]) => {
+      const priced = entryPriceFor(board, tier, now);
+      if (!priced) return [];
+      return [
+        {
+          tier: priced.tier,
+          label,
+          priceCents: priced.pricePaidCents,
+          // Said only when an early window is what set this price. FLAT means
+          // the tier has never had two prices, and calling that "regular"
+          // would imply a discount somebody missed.
+          note: priced.priceBasis === "EARLY" ? "early bird price" : null,
+        } satisfies EntryTierOffer,
+      ];
+    });
+
     return (
       <FundraiserView
         title={board.gameName}
@@ -294,6 +326,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         slug={board.slug}
         hasEvent={board.event != null}
         signupSheetExists={board.event?.signupSheet != null}
+        entryOffers={board.event != null ? entryOffers : []}
         cashModeEnabled={board.cashModeEnabled}
         stripeConnected={board.host.stripeChargesEnabled ?? false}
         hasPrize={board.prizePoolPercent > 0}

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ClaimSheet from "./claim-sheet";
 import DonateSheet from "./donate-sheet";
+import EntrySheet, { type EntryTierOffer } from "./entry-sheet";
 import HoldTimer from "./hold-timer";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
@@ -65,6 +66,16 @@ interface Props {
   /// A sign-up sheet exists on this board, so the helper checkbox has a
   /// destination. Sign-up addendum SS3.
   signupSheetExists: boolean;
+  /**
+   * Entry Ticket tiers this board offers, ALREADY PRICED BY THE SERVER at the
+   * moment the page rendered. An empty array is the normal case and the whole
+   * feature is invisible: no button, no sheet, nothing to explain.
+   *
+   * Priced on the server for the reason every other price on this page is —
+   * "is the early-bird window still open" depends on the current time, which
+   * is not a question a render may ask.
+   */
+  entryOffers?: EntryTierOffer[];
   /// open | closing | closed. A closed campaign shows its final total and
   /// stops offering the claim button.
   status: string;
@@ -118,12 +129,17 @@ export default function FundraiserView({
   stripeConnected,
   hasPrize,
   signupSheetExists,
+  entryOffers,
   status,
   handles,
   confirmation,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [donating, setDonating] = useState(false);
+  const [buyingEntry, setBuyingEntry] = useState(false);
+  // Defaulted once, here. Every read below is `offers`, so a board that sends
+  // nothing behaves identically to one that sends an empty list.
+  const offers = entryOffers ?? [];
   const [reclaim, setReclaim] = useState<string[] | undefined>(undefined);
   // Selection lives on the board, so the checkout button can say how many
   // tickets are being bought before the sheet opens.
@@ -626,6 +642,20 @@ export default function FundraiserView({
           >
             Donate instead
           </button>
+
+          {/* ENTRY TICKETS. Present only on a board that priced them, and
+              subordinate to both buttons above: someone who came here to
+              support the cause should be offered that first. Admission is what
+              they choose when supporting is not what they came for. */}
+          {offers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setBuyingEntry(true)}
+              className="mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
+            >
+              Buy entry tickets
+            </button>
+          )}
         </div>
         )}
 
@@ -647,6 +677,10 @@ export default function FundraiserView({
         <div className="mt-6">
         </div>
           </>
+        )}
+
+        {buyingEntry && offers.length > 0 && (
+          <EntrySheet slug={slug} offers={offers} onClose={() => setBuyingEntry(false)} />
         )}
 
         {donating && (

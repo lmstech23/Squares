@@ -57,7 +57,9 @@ export interface BoardTotals {
   squareCents: number;
   /** Confirmed donation money. Never reaches the prize basis. */
   donationCents: number;
-  /** squareCents + donationCents. The public number (invariant 51). */
+  /** Confirmed standalone Entry Ticket money. Never reaches the prize basis. */
+  entryCents: number;
+  /** square + donation + entry. The public number (invariant 51). */
   raisedCents: number;
   /** Alias of squareCents, named for the invariant that reads it. */
   prizeBasisCents: number;
@@ -73,15 +75,29 @@ export interface BoardTotals {
 export async function boardTotals(boardId: string): Promise<BoardTotals> {
   const agg = await prisma.contribution.aggregate({
     where: { boardId, ...countsTowardRaised },
-    _sum: { squareAmountCents: true, donationAmountCents: true, totalPaidCents: true },
+    _sum: {
+      squareAmountCents: true,
+      donationAmountCents: true,
+      entryAmountCents: true,
+      totalPaidCents: true,
+    },
     _count: true,
   });
   const squareCents = agg._sum.squareAmountCents ?? 0;
   const donationCents = agg._sum.donationAmountCents ?? 0;
+  const entryCents = agg._sum.entryAmountCents ?? 0;
   return {
     squareCents,
     donationCents,
+    entryCents,
+    // ENTRY REVENUE IS AUTHORITATIVE AT THE CONTRIBUTION, and this is where it
+    // is read from. Entry money reaches `raised` through totalPaidCents, which
+    // the three-term CHECK guarantees includes it. Nothing here consults pass
+    // state, so a voided pass moves no total.
     raisedCents: agg._sum.totalPaidCents ?? 0,
+    // SQUARE MONEY ONLY, unchanged. Entry revenue can never enter the prize
+    // basis because it lives in a different column - structural, not a filter
+    // anyone has to remember.
     prizeBasisCents: squareCents,
     contributionCount: agg._count,
   };
@@ -100,6 +116,9 @@ export async function createPendingCardContribution(
     boardId: string;
     squareAmountCents: number;
     donationAmountCents: number;
+    /// Standalone Entry Ticket money. Defaulted so every existing caller is
+    /// unchanged and still writes a row the three-term CHECK accepts.
+    entryAmountCents?: number;
     contributorName: string;
     contributorEmail: string;
     contributorPhone?: string | null;
@@ -108,7 +127,11 @@ export async function createPendingCardContribution(
     holdExpiresAt: Date | null;
   }
 ) {
-  const total = input.squareAmountCents + input.donationAmountCents;
+  const entryAmountCents = input.entryAmountCents ?? 0;
+  // The sum is computed here, in the one place that creates these rows, so it
+  // cannot disagree with contributions_amount_sum. A caller passing its own
+  // total is the shape that lets the two drift.
+  const total = input.squareAmountCents + input.donationAmountCents + entryAmountCents;
   return tx.contribution.create({
     data: {
       boardId: input.boardId,
@@ -116,6 +139,7 @@ export async function createPendingCardContribution(
       paymentMethod: "stripe",
       squareAmountCents: input.squareAmountCents,
       donationAmountCents: input.donationAmountCents,
+      entryAmountCents,
       totalPaidCents: total,
       contributorName: input.contributorName,
       contributorEmail: input.contributorEmail,

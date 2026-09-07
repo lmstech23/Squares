@@ -191,6 +191,19 @@ Statements are one-line summaries for lookup. **The owning document is authorita
 | 108 | Revocation never alters or deletes historical records; nothing cascades from a collaborator row |
 | 109 | `revoked` is terminal; re-granting creates a new row |
 
+### 110–112 · Fundraiser board v2 §19 — standalone Entry Tickets
+
+| # | Invariant | Authoritative statement |
+|---|---|---|
+| 110 | Entry revenue is authoritative at the Contribution | `fundraiser-board-v2.md` §19.12 |
+| 111 | Entry Pass prices reconcile at confirmation | `fundraiser-board-v2.md` §19.12 |
+| 112 | Standalone entry never donates admission | `fundraiser-board-v2.md` §19.12 |
+
+These three rows are an INDEX, not a summary. The wording lives in one place, in
+the owning document, so there is nothing here that can drift out of step with
+it. Implementation comments cite them by NAME rather than by number: a number in
+a comment goes stale silently, and this file has already had one renumbering.
+
 ---
 
 ## Environment invariants — E1–E5
@@ -220,4 +233,4 @@ Environment-blocked tests are marked `REQUIRED — ENVIRONMENT BLOCKED, NOT EXEC
 2. Add the row here and the full statement in the owning document, in one commit.
 3. Amending an existing invariant does not consume a new number — mark the row `**Amended (§X)**` and point at the amending document.
 
-*Next free number: **110**.*
+*Next free number: **113**.*

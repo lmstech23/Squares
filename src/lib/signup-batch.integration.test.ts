@@ -119,7 +119,18 @@ describe(
         data: { sheetId, name: "Chips", slotType: "ITEM", capacity: 5, unitLabel: "bag", sortOrder: 2 },
       })).id;
       shift = (await db.signupSlot.create({
-        data: { sheetId, name: "Kitchen", slotType: "SHIFT", capacity: 1, sortOrder: 3 },
+        // A SHIFT MUST CARRY A START TIME - signup_slots_shift_needs_start.
+        // A shift with no time is a row production cannot hold; the fixture
+        // wrote one and passed only because the test database used to be built
+        // by `db push`, which creates no CHECKs.
+        data: {
+          sheetId,
+          name: "Kitchen",
+          slotType: "SHIFT",
+          capacity: 1,
+          sortOrder: 3,
+          startsAt: new Date(Date.now() + 14 * 864e5),
+        },
       })).id;
 
       meId = await supporter("me@example.com");

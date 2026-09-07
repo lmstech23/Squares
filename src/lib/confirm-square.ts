@@ -133,6 +133,69 @@ export async function confirmSquares(
  *     the lock is ever circumvented, a double-mint collides and rolls back
  *     with its square, retryable — rather than silently issuing twice.
  */
+/**
+ * Mint N standalone Entry Ticket passes — no squares involved.
+ *
+ * SHARES THE EXISTING CURSOR LOCK. Sequence numbers stay monotonic and are
+ * never reused across BOTH kinds of pass, so a supporter who already holds
+ * square-derived passes and then buys Entry Tickets gets a continuous run. The
+ * lock is the same SELECT ... FOR UPDATE on the supporter row; nothing here is
+ * a second minting engine.
+ *
+ * `squareId` stays null, which the schema has always allowed - and the
+ * all-or-nothing pricing CHECK is keyed to the three pricing columns rather
+ * than to squareId, so a future priceless squareless pass remains legal.
+ *
+ * THE CALLER ASSERTS THE MONEY — ENTRY PASS PRICES RECONCILE AT
+ * CONFIRMATION. Σ pricePaidCents must equal the contribution's
+ * entryAmountCents, checked by confirmEntryPurchase inside this same
+ * transaction. This function does not re-check it: one assertion, in the one
+ * place that knows the authoritative amount.
+ */
+export async function mintEntryPasses(
+  tx: Prisma.TransactionClient,
+  supporterId: string,
+  passes: { tier: "CHILD" | "ADULT"; priceBasis: "FLAT" | "EARLY" | "REGULAR"; pricePaidCents: number }[]
+): Promise<number> {
+  if (passes.length === 0) return 0;
+
+  const locked = await tx.$queryRaw<
+    { pass_sequence_cursor: number; status: string }[]
+  >`SELECT pass_sequence_cursor, status
+      FROM event_supporters
+     WHERE id = ${supporterId}::uuid
+       FOR UPDATE`;
+  if (locked.length === 0) return 0;
+
+  const cursor = locked[0].pass_sequence_cursor;
+
+  // Same one-way latch the square path uses. A supporter who bought Entry
+  // Tickets is active on this event, whatever else they have or have not done.
+  await tx.eventSupporter.updateMany({
+    where: { id: supporterId, status: "pending" },
+    data: { status: "active", activatedAt: new Date() },
+  });
+
+  await tx.admissionPass.createMany({
+    data: passes.map((p, i) => ({
+      eventSupporterId: supporterId,
+      squareId: null,
+      tier: p.tier,
+      priceBasis: p.priceBasis,
+      pricePaidCents: p.pricePaidCents,
+      sequenceNumber: cursor + i + 1,
+      token: newPassToken(),
+    })),
+  });
+
+  await tx.eventSupporter.update({
+    where: { id: supporterId },
+    data: { passSequenceCursor: cursor + passes.length },
+  });
+
+  return passes.length;
+}
+
 export async function mintPasses(
   tx: Prisma.TransactionClient,
   supporterId: string,

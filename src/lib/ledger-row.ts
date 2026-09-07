@@ -8,11 +8,24 @@
 // Everything here is DERIVED FROM COLUMNS THE QUERY ALREADY SELECTS. No join,
 // no new field, no migration.
 
-export type LedgerType = "Ticket purchase" | "Donation" | "Tickets + donation";
+export type LedgerType =
+  | "Ticket purchase"
+  | "Donation"
+  | "Entry tickets"
+  | "Tickets + donation"
+  | "Tickets + entry"
+  | "Entry + donation"
+  | "Tickets + entry + donation";
 
 export interface LedgerAmounts {
   squareAmountCents: number;
   donationAmountCents: number;
+  /**
+   * Standalone Entry Ticket money. Defaulted at the CALL SITE rather than here
+   * so an older caller that has not been updated reads as zero entry money
+   * instead of NaN — the ledger must never print a number it cannot explain.
+   */
+  entryAmountCents?: number;
 }
 
 /**
@@ -25,9 +38,21 @@ export interface LedgerAmounts {
  */
 export function ledgerType(a: LedgerAmounts): LedgerType | null {
   const tickets = a.squareAmountCents > 0;
+  const entry = (a.entryAmountCents ?? 0) > 0;
   const donation = a.donationAmountCents > 0;
+
+  // SEVEN COMBINATIONS, ENUMERATED. Three money dimensions produce seven
+  // non-empty states and they are written out rather than assembled from
+  // fragments, because a host reads this column and a generated string would
+  // drift into things like "Entry + tickets" on one row and "Tickets + entry"
+  // on the next. The three pre-existing labels are byte-identical to what they
+  // have always been.
+  if (tickets && entry && donation) return "Tickets + entry + donation";
+  if (tickets && entry) return "Tickets + entry";
   if (tickets && donation) return "Tickets + donation";
+  if (entry && donation) return "Entry + donation";
   if (tickets) return "Ticket purchase";
+  if (entry) return "Entry tickets";
   if (donation) return "Donation";
   return null;
 }
@@ -37,6 +62,7 @@ export interface LedgerCells {
   /** `null` renders as an em dash: the field does not apply to this row. */
   tickets: number | null;
   ticketCents: number | null;
+  entryCents: number | null;
   donationCents: number | null;
 }
 
@@ -65,15 +91,26 @@ export function ledgerCells(a: LedgerAmounts, squareCount: number): LedgerCells 
       type: "—",
       tickets: squareCount,
       ticketCents: a.squareAmountCents,
+      entryCents: a.entryAmountCents ?? 0,
       donationCents: a.donationAmountCents,
     };
   }
 
+  // ONE RULE, PER DIMENSION: a cell is dashed when that kind of money is not
+  // part of this payment, and shows digits when it is. Reproduces the previous
+  // behaviour exactly on the three original types - a Ticket purchase still
+  // dashes donation, a Donation still dashes both ticket cells - and extends to
+  // entry without a seven-way branch to keep in step with the seven labels.
+  const hasSquares = a.squareAmountCents > 0;
+  const hasEntry = (a.entryAmountCents ?? 0) > 0;
+  const hasDonation = a.donationAmountCents > 0;
+
   return {
     type,
-    tickets: type === "Donation" ? null : squareCount,
-    ticketCents: type === "Donation" ? null : a.squareAmountCents,
-    donationCents: type === "Ticket purchase" ? null : a.donationAmountCents,
+    tickets: hasSquares ? squareCount : null,
+    ticketCents: hasSquares ? a.squareAmountCents : null,
+    entryCents: hasEntry ? (a.entryAmountCents ?? 0) : null,
+    donationCents: hasDonation ? a.donationAmountCents : null,
   };
 }
 

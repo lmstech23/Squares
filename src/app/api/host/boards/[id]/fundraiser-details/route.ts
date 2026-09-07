@@ -25,7 +25,12 @@
 //   timezone             until the first CONFIRMED contribution
 //   squarePrice          until the first confirmed REGULAR-price square
 //   earlyBirdPriceCents  until the first confirmed EARLY-BIRD square
-//   earlyBirdEndsAt      until the first confirmed EARLY-BIRD square
+//   earlyBirdEndsAt      until EITHER product has sold under it - an
+//                        early-bird square OR an early-priced Adult Entry
+//                        Ticket. One cutoff, two products.
+//   entryChildPriceCents        until the first confirmed CHILD Entry Ticket
+//   entryAdultEarlyPriceCents   until the first confirmed EARLY Adult Entry
+//   entryAdultRegularPriceCents until the first confirmed REGULAR Adult Entry
 //   hostVenmo / hostZelle / hostCashapp / hostPaypal
 //                        ALWAYS, including after the campaign closes, subject
 //                        only to at least one surviving
@@ -49,6 +54,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { ticketCountFor, validateTicketCount } from "@/lib/board-inventory";
+import { validateEntryPricing } from "@/lib/entry-pricing";
 import {
   hasConfirmedContribution,
   EVENT_FIELDS_LOCKED_AFTER_CONTRIBUTION,
@@ -56,6 +62,10 @@ import {
   pricingLocks,
   EARLY_BIRD_LOCK_REASON,
   REGULAR_LOCK_REASON,
+  CUTOFF_LOCK_REASON,
+  ENTRY_CHILD_LOCK_REASON,
+  ENTRY_ADULT_EARLY_LOCK_REASON,
+  ENTRY_ADULT_REGULAR_LOCK_REASON,
 } from "@/lib/board-lock";
 
 interface Props {
@@ -83,6 +93,12 @@ type Body = {
   squarePrice?: number;
   earlyBirdPriceCents?: number | null;
   earlyBirdEndsAt?: string | null;
+  /// Standalone Entry Ticket prices. Each independently optional: null means
+  /// the tier is NOT OFFERED, which is how a board opts out of the whole
+  /// feature by never touching these fields.
+  entryChildPriceCents?: number | null;
+  entryAdultEarlyPriceCents?: number | null;
+  entryAdultRegularPriceCents?: number | null;
   /// Direct-payment handles. NEVER LOCKED - see the block that applies them.
   hostVenmo?: string | null;
   hostZelle?: string | null;
@@ -124,6 +140,9 @@ export async function PATCH(request: Request, { params }: Props) {
         squarePrice: true,
         earlyBirdPriceCents: true,
         earlyBirdEndsAt: true,
+        entryChildPriceCents: true,
+        entryAdultEarlyPriceCents: true,
+        entryAdultRegularPriceCents: true,
         fundraisingGoalCents: true,
         causeDescription: true,
         hostVenmo: true,
@@ -189,8 +208,28 @@ export async function PATCH(request: Request, { params }: Props) {
     if ("squarePrice" in body && locks.regularLocked) {
       return NextResponse.json({ error: REGULAR_LOCK_REASON }, { status: 409 });
     }
-    if (("earlyBirdPriceCents" in body || "earlyBirdEndsAt" in body) && locks.earlyBirdLocked) {
+    if ("earlyBirdPriceCents" in body && locks.earlyBirdLocked) {
       return NextResponse.json({ error: EARLY_BIRD_LOCK_REASON }, { status: 409 });
+    }
+    // THE CUTOFF IS NO LONGER THE SQUARE PRICE'S LOCK. It is shared with Adult
+    // Entry Tickets, so it freezes when EITHER product has sold under it.
+    // Keeping it on earlyBirdLocked would have let a host sell early-priced
+    // Entry Tickets and then move the deadline, because no early-bird SQUARE
+    // had sold - changing the terms under people who had already paid.
+    if ("earlyBirdEndsAt" in body && locks.cutoffLocked) {
+      return NextResponse.json({ error: CUTOFF_LOCK_REASON }, { status: 409 });
+    }
+    // THREE INDEPENDENT ENTRY LOCKS, on the same principle as invariant 76: a
+    // price freezes when somebody has bought at it, and at nothing else. A
+    // sold-out early Adult tier does not freeze the child price.
+    if ("entryChildPriceCents" in body && locks.childLocked) {
+      return NextResponse.json({ error: ENTRY_CHILD_LOCK_REASON }, { status: 409 });
+    }
+    if ("entryAdultEarlyPriceCents" in body && locks.adultEarlyLocked) {
+      return NextResponse.json({ error: ENTRY_ADULT_EARLY_LOCK_REASON }, { status: 409 });
+    }
+    if ("entryAdultRegularPriceCents" in body && locks.adultRegularLocked) {
+      return NextResponse.json({ error: ENTRY_ADULT_REGULAR_LOCK_REASON }, { status: 409 });
     }
 
     const boardData: Record<string, unknown> = {};
@@ -236,6 +275,73 @@ export async function PATCH(request: Request, { params }: Props) {
       }
     }
 
+    // --- standalone Entry Ticket prices --------------------------------------
+    //
+    // OPTIONAL, EACH INDEPENDENTLY. null means the tier is not offered, and a
+    // board that never sends these fields is untouched by the whole feature.
+    // That optionality is the product decision, not a Hampton accommodation.
+    //
+    // The floor is $1, the same floor squarePrice uses. The database CHECK only
+    // requires a positive amount; this is the stricter of the two on purpose,
+    // because a 50-cent admission is far more likely a typo than an intent.
+    const ENTRY_FIELDS = [
+      "entryChildPriceCents",
+      "entryAdultEarlyPriceCents",
+      "entryAdultRegularPriceCents",
+    ] as const;
+
+    for (const field of ENTRY_FIELDS) {
+      if (!(field in body)) continue;
+      boardData[field] = body[field] ?? null;
+    }
+
+    // COHERENCE, checked against the values that will be STORED rather than the
+    // ones that arrived. A host clearing the adult regular price in the same
+    // save that leaves an early price behind would otherwise pass every
+    // field-level check and be rejected by boards_entry_pricing_coherent as a
+    // 500. The rule is one-directional: only an ADULT EARLY price has
+    // dependencies, which is what lets a child-only board exist.
+    const settled = <T,>(field: string, stored: T): T =>
+      field in boardData ? (boardData[field] as T) : stored;
+
+    const finalChild = settled<number | null>(
+      "entryChildPriceCents",
+      board.entryChildPriceCents
+    );
+    const finalAdultEarly = settled<number | null>(
+      "entryAdultEarlyPriceCents",
+      board.entryAdultEarlyPriceCents
+    );
+    const finalAdultRegular = settled<number | null>(
+      "entryAdultRegularPriceCents",
+      board.entryAdultRegularPriceCents
+    );
+    // ONE VALIDATOR, shared with the creation route - src/lib/entry-pricing.ts.
+    // These rules were written out three times and the copy that drifts is
+    // whichever gets tested least.
+    //
+    // `cutoffPresent` is whether a date will EXIST after this write, not
+    // whether one arrived in the body: a host editing only a price on a board
+    // that already has a cutoff supplies no date and must not be refused.
+    const finalCutoff =
+      "earlyBirdEndsAt" in boardData
+        ? (boardData.earlyBirdEndsAt as Date | null)
+        : board.earlyBirdEndsAt;
+
+    const entryCheck = validateEntryPricing({
+      childCents: finalChild,
+      adultEarlyCents: finalAdultEarly,
+      adultRegularCents: finalAdultRegular,
+      // An event may be being ADDED in the same save. `startsAt` is the
+      // proxy: the creatingEvent guard further down refuses to add one
+      // without it, so its presence is what "an event will exist" means here.
+      hasEvent: board.event != null || "startsAt" in body,
+      cutoffPresent: finalCutoff != null,
+    });
+    if (!entryCheck.ok) {
+      return NextResponse.json({ error: entryCheck.error }, { status: 400 });
+    }
+
     // A REAL MESSAGE, not a generic 400 — launch-readiness §1.4 is explicit:
     // "An 'early bird price' that isn't lower than the regular price is not an
     // early bird price, and the host has almost certainly typed the two into
@@ -255,8 +361,11 @@ export async function PATCH(request: Request, { params }: Props) {
         { status: 400 }
       );
     }
-    // The live CHECK also requires an end date whenever an early price exists.
-    if (finalEarly != null) {
+    // The live CHECKs require an end date whenever EITHER early price exists —
+    // boards_early_bird_coherent for squares, boards_entry_pricing_coherent for
+    // Adult Entry Tickets. One date serves both, so clearing it while either
+    // product still has an early price is refused here rather than by Postgres.
+    if (finalEarly != null || finalAdultEarly != null) {
       const finalEnds =
         "earlyBirdEndsAt" in boardData
           ? (boardData.earlyBirdEndsAt as Date | null)

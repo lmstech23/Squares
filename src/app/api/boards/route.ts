@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { validateTicketCount } from "@/lib/board-inventory";
 import { Prisma } from "@prisma/client";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
+import { validateEntryPricing } from "@/lib/entry-pricing";
 import { generateSlug } from "@/lib/slug";
 
 // ============================================================
@@ -84,6 +85,12 @@ interface CreateBoardBody {
   campaignEndsAt?: string;
   earlyBirdPriceCents?: number | null;
   earlyBirdEndsAt?: string | null;
+  /// Standalone Entry Ticket prices - fundraiser-board-v2.md §19.
+  /// Each independently optional; null or absent means the tier is NOT
+  /// OFFERED, which is how a board opts out of the whole feature.
+  entryChildPriceCents?: number | null;
+  entryAdultEarlyPriceCents?: number | null;
+  entryAdultRegularPriceCents?: number | null;
   cashHoldDays?: number;
   // Optional event block — v2 §5
   hasEvent?: boolean;
@@ -274,6 +281,43 @@ export async function POST(request: Request) {
         );
       }
 
+      // Entry Ticket tier prices, parsed BEFORE the early bird block because
+      // the cutoff date is shared: an adult early entry price requires the same
+      // `earlyBirdEndsAt` a square early bird price does, and the block below
+      // has to know whether either product wants one.
+      //
+      // OPTIONAL, TIER BY TIER. A board that sends none of these is untouched
+      // by the feature. The $1 floor matches squarePrice; the database CHECK
+      // only requires a positive amount, and this is the stricter of the two
+      // because a 50-cent admission is far more likely a typo than an intent.
+      const entry: Record<string, number | null> = {
+        entryChildPriceCents: null,
+        entryAdultEarlyPriceCents: null,
+        entryAdultRegularPriceCents: null,
+      };
+      for (const field of [
+        "entryChildPriceCents",
+        "entryAdultEarlyPriceCents",
+        "entryAdultRegularPriceCents",
+      ] as const) {
+        const v = body[field];
+        if (v != null) entry[field] = v;
+      }
+
+      // ONE VALIDATOR, shared with the edit route. The cutoff is resolved
+      // below, so `cutoffPresent` is whether one will EXIST after this write:
+      // a date was supplied, or a square early bird price is bringing one.
+      const entryCheck = validateEntryPricing({
+        childCents: entry.entryChildPriceCents,
+        adultEarlyCents: entry.entryAdultEarlyPriceCents,
+        adultRegularCents: entry.entryAdultRegularPriceCents,
+        hasEvent: Boolean(body.hasEvent),
+        cutoffPresent: Boolean(body.earlyBirdEndsAt),
+      });
+      if (!entryCheck.ok) {
+        return NextResponse.json({ error: entryCheck.error }, { status: 400 });
+      }
+
       // Early bird — money doc §8B. Optional; the end date is required only
       // when a price is set. No validation relates it to the other two dates.
       let earlyBirdPriceCents: number | null = null;
@@ -292,6 +336,15 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
+      }
+
+      // ONE CUTOFF, EITHER PRODUCT. `earlyBirdEndsAt` is resolved when a square
+      // early bird price OR an adult early entry price is set, because both
+      // CHECKs require it - boards_early_bird_coherent and
+      // boards_entry_pricing_coherent. Resolving it only inside the square
+      // branch above is what would let a board be created with early entry
+      // pricing and no date, which the database then refuses.
+      if (earlyBirdPriceCents != null || entry.entryAdultEarlyPriceCents != null) {
         // Date only, same end-of-day rule as campaign close.
         earlyBirdEndsAt = endOfDayZoned(body.earlyBirdEndsAt, timezone);
         if (!earlyBirdEndsAt) {
@@ -382,6 +435,7 @@ export async function POST(request: Request) {
         timezone,
         earlyBirdPriceCents,
         earlyBirdEndsAt,
+        ...entry,
         cashHoldDays,
         // Phase A: prizes are deferred and never accepted from the client.
         // prizePoolPercent stays at its 0 default — v2 §16.

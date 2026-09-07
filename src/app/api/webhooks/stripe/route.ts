@@ -20,6 +20,8 @@ import {
   activateDonorSupporter,
   releaseContributionBySession,
 } from "@/lib/contributions";
+import { decodeEntryPasses } from "@/lib/entry-pricing";
+import { confirmEntryPurchase } from "@/lib/entry-purchase";
 
 // Disable body parsing — we need the raw body for signature verification
 export const runtime = "nodejs";
@@ -138,6 +140,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       boardId: true,
       squareAmountCents: true,
       donationAmountCents: true,
+      entryAmountCents: true,
       totalPaidCents: true,
       contributorName: true,
       contributorEmail: true,
@@ -147,9 +150,20 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   });
 
   if (contribution && contribution.squareAmountCents === 0) {
-    // Donation-only. Nothing to flip, nothing to mint, no PaymentReference —
-    // that table hangs off a square and a donation has none. The ledger row
-    // IS the record of this money.
+    // ZERO SQUARES. Two different purchases land here, and they are told apart
+    // by which amount column carries the money, never by metadata:
+    //
+    //   entryAmountCents > 0   standalone Entry Tickets - passes ARE minted
+    //   otherwise              a donation - no grant, no pass
+    //
+    // The entry case must be decided before the donation case. An entry-only
+    // purchase has squareAmountCents = 0 like a donation does, so falling
+    // through would confirm the money, activate the supporter, and mint
+    // nothing - a contributor who paid for admission and got no pass.
+    //
+    // Nothing to flip either way, and no PaymentReference: that table hangs
+    // off a square and neither of these has one. The ledger row IS the record
+    // of this money.
     if (session.amount_total != null && session.amount_total !== contribution.totalPaidCents) {
       // Invariant 62: a mismatch does not confirm and does not release.
       console.error(
@@ -158,6 +172,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       );
       throw new Error("CONTRIBUTION_AMOUNT_MISMATCH");
     }
+
+    // Set inside the transaction, read after it commits. The email must not be
+    // sent from inside a transaction that can still roll back.
+    let mintedEntryPasses = false;
 
     await prisma.$transaction(async (tx) => {
       // Idempotent by conditional update on status = 'pending' (invariant 63).
@@ -168,6 +186,66 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       });
       if (count === 0) return;
 
+      // ------------------------------------------- STANDALONE ENTRY TICKETS --
+      if (contribution.entryAmountCents > 0) {
+        // The passes as PRICED AT PURCHASE, carried through the session rather
+        // than re-quoted here. A checkout begun before the early-bird cutoff
+        // and completed after it must still mint early-priced passes, or the
+        // sum assertion in confirmEntryPurchase would reject a purchase the
+        // contributor made correctly.
+        const passes = decodeEntryPasses(session.metadata?.entryPasses);
+        const entryBoard = await tx.board.findUnique({
+          where: { boardId: contribution.boardId },
+          select: { event: { select: { id: true } } },
+        });
+
+        // FAIL CLOSED. Throwing rolls back the status flip, so Stripe retries
+        // and the row stays `pending` and visible rather than confirming money
+        // for admission that was never minted. A contributor holding a receipt
+        // and no pass is the one outcome worth failing loudly to avoid.
+        if (!passes) {
+          console.error(
+            `checkout.session.completed: entry passes unreadable on contribution ` +
+              `${contribution.id}, session ${session.id}. Not confirmed.`
+          );
+          throw new Error("ENTRY_PASSES_UNREADABLE");
+        }
+        if (!entryBoard?.event) {
+          console.error(
+            `checkout.session.completed: no event for entry contribution ${contribution.id}.`
+          );
+          throw new Error("ENTRY_EVENT_MISSING");
+        }
+        if (!contribution.contributorEmail || !contribution.contributorPhone) {
+          console.error(
+            `checkout.session.completed: entry contribution ${contribution.id} lacks identity keys.`
+          );
+          throw new Error("ENTRY_IDENTITY_MISSING");
+        }
+
+        // ENTRY PASS PRICES RECONCILE AT CONFIRMATION, and confirmEntryPurchase
+        // makes that assertion before it writes anything. Money and passes
+        // commit together or not at all — the whole reason this runs inside
+        // the caller's transaction.
+        //
+        // STANDALONE ENTRY NEVER DONATES ADMISSION: the call below always
+        // mints. No branch here can confirm the money and skip the passes.
+        mintedEntryPasses = true;
+        await confirmEntryPurchase(tx, {
+          eventId: entryBoard.event.id,
+          contributionId: contribution.id,
+          entryAmountCents: contribution.entryAmountCents,
+          passes,
+          contact: {
+            name: contribution.contributorName,
+            email: contribution.contributorEmail,
+            phone: contribution.contributorPhone,
+          },
+        });
+        return;
+      }
+
+      // ---------------------------------------------------------- DONATION --
       // Supporter activation must also fire here — donations §9, amending
       // admission §5. Without it a donation-only contributor stays `pending`
       // forever and is silently ineligible for helper signups. Zero grants,
@@ -184,6 +262,18 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
         });
       }
     });
+
+    // INLINE, not left to the five-minute cron. A pass is a credential someone
+    // presents at a gate, and the buyer may already be standing at one. The
+    // donation path can wait for the sweep because a receipt is not needed to
+    // get through a door.
+    //
+    // Board-scoped rather than batch-scoped: a standalone purchase has no
+    // square batch. The atomic claim inside the sender is what keeps this and
+    // a concurrent cron run from both sending.
+    if (mintedEntryPasses) {
+      await sendPendingConfirmations({ boardId: contribution.boardId });
+    }
     return;
   }
 

@@ -68,6 +68,12 @@ describe(
           contributorEmail: email,
           confirmedAt: new Date(),
           voidedAt: opts.voided ? new Date() : null,
+          // A VOID NEEDS ITS AUTHOR. `contributions_void_fields_together`
+          // requires voided_at and voided_by_host_id to arrive together, so a
+          // row carrying only voided_at is one production cannot hold. The
+          // fixture used to write exactly that, and passed only because the
+          // test database was built by `db push`, which creates no CHECKs.
+          voidedByHostId: opts.voided ? hostId : null,
           confirmationEmailedAt: opts.emailed ? new Date() : null,
         },
       });

@@ -110,6 +110,20 @@ model Board {
   /// invariant 16 — a goal is aspirational, not a term of the deal. v2 §7.
   fundraisingGoalCents      Int?         @map("fundraising_goal_cents")
   // Early bird — money doc §8B. Null price = flat pricing.
+  /// STANDALONE ENTRY TICKET PRICING - all three nullable, and NULL MEANS THE
+  /// TIER IS NOT OFFERED. Standalone entry is an optional capability: a
+  /// donation-only or square-only fundraiser leaves all three null and is
+  /// unaffected by any of it.
+  ///
+  /// NO PLATFORM DEFAULTS. Hampton's $15 / $40 / $50 are Hampton's board data,
+  /// not values this schema knows about.
+  ///
+  /// Child is independent. Adult Regular is independently optional. Only Adult
+  /// EARLY has dependencies, because it needs a price to transition TO - see
+  /// boards_entry_pricing_coherent.
+  entryChildPriceCents        Int?      @map("entry_child_price_cents")
+  entryAdultEarlyPriceCents   Int?      @map("entry_adult_early_price_cents")
+  entryAdultRegularPriceCents Int?      @map("entry_adult_regular_price_cents")
   earlyBirdPriceCents       Int?         @map("early_bird_price_cents")
   earlyBirdEndsAt           DateTime?    @map("early_bird_ends_at") @db.Timestamptz(6)
 
@@ -310,6 +324,11 @@ model AdmissionGrant {
   source             AdmissionGrantSource @default(FUNDRAISER)
   /// True mints no passes for this purchase and excludes the supporter from
   /// the headcount — the "I'm not attending" checkbox. Addendum v2.0 §1.
+  ///
+  /// STANDALONE ENTRY NEVER DONATES ADMISSION: on a STANDALONE grant this is
+  /// always false, held by `admission_grants_standalone_never_donates` and by
+  /// the confirmation path, which mints unconditionally. Stated in
+  /// fundraiser-board-v2.md §19.12.
   donateAdmissions   Boolean              @default(false) @map("donate_admissions")
   /// Unused since v2.0 removed the declaration model. Retained, nullable.
   declaredAtPurchase Int?                 @map("declared_at_purchase")
@@ -341,6 +360,24 @@ model AdmissionPass {
   /// non-square sources (STANDALONE, GATE_ALLOWANCE, HOST_APPROVED) mint none.
   squareId                      String?             @map("square_id") @db.Uuid
   sequenceNumber                Int                 @map("sequence_number")
+  /// The three fields below describe a PRICED STANDALONE ENTRY TICKET and are
+  /// ONE LOGICAL UNIT: all three set, or all three null. A square-derived pass
+  /// leaves them null, and so may any future priceless pass - the constraint
+  /// is deliberately NOT keyed to `squareId`, which would accidentally
+  /// constrain a future priceless-and-squareless path.
+  ///
+  /// `tier` is WHO is entering; the gate cares about this.
+  tier                          PassTier?
+  /// `priceBasis` is WHICH PRICE RULE APPLIED; pricing and locking care.
+  /// STORED, not derived by comparing amounts - which is what lets the entry
+  /// price locks be exact where the square locks have to guess.
+  priceBasis                    PassPriceBasis?     @map("price_basis")
+  /// AUDIT AND DISPLAY ONLY. Never a revenue source: revenue is
+  /// Contribution.entryAmountCents. ENTRY PASS PRICES RECONCILE AT
+  /// CONFIRMATION - the sum of a purchase's passes equals that figure, asserted
+  /// inside the confirming transaction; afterwards the two are independent
+  /// historical facts and a void moves neither.
+  pricePaidCents                Int?                @map("price_paid_cents")
   token                         String              @unique
   label                         String?
   status                        AdmissionPassStatus @default(active)
@@ -537,6 +574,23 @@ model Contribution {
 
   squareAmountCents   Int                @default(0) @map("square_amount_cents")
   donationAmountCents Int                @default(0) @map("donation_amount_cents")
+  /// Standalone Entry Ticket revenue. ENTRY REVENUE IS AUTHORITATIVE AT THE
+  /// CONTRIBUTION - stated in fundraiser-board-v2.md §19.12.
+  ///
+  /// Reaches `raised` through `totalPaidCents`. NEVER reaches
+  /// `prizeBasisCents`, which is square money only - a different column, so
+  /// the separation holds by construction rather than by a filter someone has
+  /// to remember.
+  ///
+  /// MUST NOT CHANGE AFTER CONFIRMATION, and that is an APPLICATION
+  /// CONVENTION enforced by code paths and tests - NOT a database trigger.
+  /// The invariant says so explicitly rather than leaving a reader to assume
+  /// a guard exists here that does not.
+  /// This project has no trigger-based immutability model and the first one
+  /// does not belong inside a money migration. A Pass going `void` never
+  /// touches this, `totalPaidCents`, or `raised`: revenue comes from the
+  /// ledger, never from summing current Pass state.
+  entryAmountCents    Int                @default(0) @map("entry_amount_cents")
   totalPaidCents      Int                @map("total_paid_cents")
 
   checkoutSessionId   String?            @map("checkout_session_id")
@@ -654,6 +708,26 @@ enum SupporterStatus {
   active
 
   @@map("supporter_status")
+}
+
+/// WHO is entering. Hampton treats under-4 as free and unticketed; that is
+/// Hampton's event policy, not a platform rule, and no INFANT tier exists.
+enum PassTier {
+  CHILD
+  ADULT
+
+  @@map("pass_tier")
+}
+
+/// WHICH PRICE RULE a standalone Entry Ticket was sold under. FLAT is a tier
+/// with a single price (Child); EARLY and REGULAR are the two sides of the
+/// board's shared early-bird cutoff.
+enum PassPriceBasis {
+  FLAT
+  EARLY
+  REGULAR
+
+  @@map("pass_price_basis")
 }
 
 enum AdmissionGrantSource {

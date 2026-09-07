@@ -33,8 +33,29 @@ export const metadata: Metadata = {
 export default async function PassesPage({ params }: Props) {
   const { batch } = await params;
 
-  const grant = await prisma.admissionGrant.findUnique({
-    where: { squareBatchId: batch },
+  // TWO KINDS OF ADDRESS, one screen.
+  //
+  //   squareBatchId   a purchase that included squares - the original key
+  //   id              a STANDALONE Entry Ticket purchase, which has no batch
+  //
+  // Both are unguessable server-generated UUIDs known at the moment the email
+  // is sent, so the credential model is unchanged. What the screen shows is
+  // unchanged too: every pass the SUPPORTER currently holds, whichever door
+  // they came in by, so someone who bought squares in August and Entry Tickets
+  // in September sees one set rather than two.
+  //
+  // The id clause is added only when the value could BE a uuid. `id` is
+  // `@db.Uuid` and Prisma raises P2023 rather than matching nothing when the
+  // value will not cast, so an unconditional clause would turn every junk URL
+  // from a clean 404 into a 500. `squareBatchId` is plain text and needs no
+  // such guard.
+  const isUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batch);
+
+  const grant = await prisma.admissionGrant.findFirst({
+    where: {
+      OR: [{ squareBatchId: batch }, ...(isUuid ? [{ id: batch }] : [])],
+    },
     select: {
       eventSupporterId: true,
       event: {

@@ -110,6 +110,7 @@ export default async function DonationsPage({
       paymentMethod: true,
       squareAmountCents: true,
       donationAmountCents: true,
+      entryAmountCents: true,
       totalPaidCents: true,
       contributorName: true,
       contributorEmail: true,
@@ -179,6 +180,15 @@ export default async function DonationsPage({
               <dt className="text-gray-400">Square sales</dt>
               <dd className="tabular-nums">{money(totals.squareCents)}</dd>
             </div>
+            {/* SHOWN ONLY WHEN IT EXISTS. A board that never sold entry
+                would otherwise gain a permanent $0 line for a product it does
+                not offer - the same reason the prize basis is conditional. */}
+            {totals.entryCents > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-gray-400">Entry tickets</dt>
+                <dd className="tabular-nums">{money(totals.entryCents)}</dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="text-gray-400">Donations</dt>
               <dd className="tabular-nums">{money(totals.donationCents)}</dd>
@@ -274,6 +284,7 @@ export default async function DonationsPage({
                 <th className="py-2 pr-3 font-normal">Status</th>
                 <th className="py-2 pr-3 font-normal text-right">Tickets</th>
                 <th className="py-2 pr-3 font-normal text-right">Ticket $</th>
+                <th className="py-2 pr-3 font-normal text-right">Entry $</th>
                 <th className="py-2 pr-3 font-normal text-right">Donation $</th>
                 <th className="py-2 font-normal text-right">Total</th>
               </tr>
@@ -319,6 +330,12 @@ export default async function DonationsPage({
                       </td>
                       <td className="py-2 pr-3 text-right">
                         {money(r.ticketCents)}
+                      </td>
+                      {/* Entry and Donation, both inapplicable to a reserved
+                          ticket. Dashes, not zeros - a reservation is squares
+                          and nothing else. */}
+                      <td className="py-2 pr-3 text-right text-gray-700">
+                        {"—"}
                       </td>
                       <td className="py-2 pr-3 text-right text-gray-700">
                         {"—"}
@@ -394,6 +411,13 @@ export default async function DonationsPage({
                       <span className="text-gray-700">{"—"}</span>
                     ) : (
                       money(cells.ticketCents)
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
+                    {cells.entryCents === null ? (
+                      <span className="text-gray-700">{"—"}</span>
+                    ) : (
+                      money(cells.entryCents)
                     )}
                   </td>
                   <td className="py-2 pr-3 text-right">
