@@ -1,37 +1,16 @@
-# Hampton close procedure — manual
+# Close procedure — boards selling direct-payment entry tickets
 
-Board: `hr6uevwx` — QT'13 Homecoming 2026
-Campaign ends: **Friday, October 16, 2026, 11:59:59 PM America/New_York** — read from `Board.campaignEndsAt` on 2026-09-07
-Event date: October 3, 2026 — **see "Unresolved configuration" below; the board record disagrees**
-Close owner: **[TO BE ASSIGNED]**
-Reconciliation should begin before the campaign end time, not after.
+Applies to any pilot board that accepts direct-payment (Zelle, Venmo, Cash App, PayPal) entry ticket reservations.
 
----
+Close owner: _______________________
 
-## Unresolved configuration — settle before the link goes out
-
-Two fields on `hr6uevwx` do not agree with the event this procedure is written for. Both are read from the board record on 2026-09-07 and neither has been changed.
-
-| | Stored on the board | Stated for this pilot |
-|---|---|---|
-| Event start | **Sat Oct 24, 2026, 10:00 AM ET** | October 3, 2026 |
-| Campaign ends | Fri Oct 16, 2026, 11:59:59 PM ET | — |
-
-If the event is genuinely **October 3**, then the campaign end of **October 16** falls *thirteen days after the event* and the board would keep selling admission to something that already happened. Both fields need correcting together.
-
-If the event is genuinely **October 24**, the stored dates are internally consistent — campaign closes eight days ahead of the event — and it is this document's header that is wrong.
-
-**Do not guess.** Whoever owns the pilot settles which date is real.
-
-**There is a deadline on fixing it.** The event date locks at the first confirmed contribution. `hr6uevwx` currently has **zero** confirmed contributions, so it is still editable through the host edit panel. After the first ticket sells it is frozen and correcting it becomes a support exception.
-
-Also unset on this board: `Event.name` and `Event.venue` are both `NULL`. Not blocking — the board name is used as a fallback — but the venue is what a parent looks for on the pass.
+Reconciliation begins before the campaign end time, not after. The campaign end date lives on the board record; this document does not restate it, because a procedure that carries a date goes stale and then gets trusted anyway.
 
 ---
 
 ## Rule
 
-Do not rely on scheduled close for this pilot. The close owner closes the campaign by hand.
+Do not rely on scheduled close. The close owner closes the campaign by hand.
 
 Before finalizing:
 
@@ -73,7 +52,7 @@ A host-initiated close does tell them. It returns 409 with the blocking counts (
 
 ## Known gap, deliberately unbuilt
 
-Host notification on scheduled close. Not built for this pilot. Revisit before any pilot with a host who is not actively watching the dashboard.
+Host notification on scheduled close. Not built for the pilot. Revisit before any pilot with a host who is not actively watching the dashboard.
 
 ---
 
