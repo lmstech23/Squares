@@ -22,7 +22,11 @@ import { resolveHoldBatch } from "@/lib/checkout-holds";
 
 export type CloseOutcome =
   | { ok: true; status: "closed"; finalRaisedCents: number; alreadyFinal: boolean }
-  | { ok: true; status: "closing"; blockedBy: { pending: number; awaiting: number } }
+  | {
+      ok: true;
+      status: "closing";
+      blockedBy: { pending: number; awaiting: number; reservations: number };
+    }
   | { ok: false; reason: "not_fundraiser" | "not_found" | "wrong_status" };
 
 /**
@@ -120,12 +124,10 @@ export async function closeBoard(
   // the ones that were not, and only then does the board finalize.
   // HAMPTON-CLOSE-PROCEDURE.md is the operator-facing half of this rule.
   //
-  // NOT YET IMPLEMENTED: EntryReservation does not exist as of this comment,
-  // so there is nothing here to exclude yet. This is recorded at the release
-  // site rather than in a design document because the person most likely to
-  // get it wrong is whoever adds that table and reads this sweep as the
-  // pattern to copy. It is not. Add the block to step 3; do not add a release
-  // here.
+  // THE EXCLUSION IS THE ABSENCE OF CODE HERE. `EntryReservation` now exists,
+  // and this sweep deliberately does not touch it. Anyone adding a release for
+  // reservations to this block would be undoing the rule above; the block is in
+  // step 3.
   if (!opts.hostInitiated) {
     // Scheduled close: unresolved SQUARE reservations auto-release at the
     // cutoff. If money was not confirmed by close it does not count — no
@@ -146,13 +148,33 @@ export async function closeBoard(
   }
 
   // Step 3 — assert clean. If anything remains, CLOSING does not advance.
-  const [pending, awaiting] = await Promise.all([
+  //
+  // THE RESERVATION COUNT READS ITS OWN TABLE, NOT PENDING CONTRIBUTIONS.
+  //
+  // Under this model a reservation has NO Contribution until the host confirms
+  // it — the money row is created at confirmation, one per confirmed line. So a
+  // guard written against `contribution.status = 'pending'` finds nothing and
+  // the board finalizes with reservations outstanding. That is the exact
+  // failure this check exists to prevent, and it is why the query below is on
+  // `entryReservation` and cannot be "simplified" into the ledger.
+  //
+  // Survives the scheduled path. Step 2 released squares and deliberately left
+  // these alone, so on a scheduled close they arrive here unresolved and hold
+  // the board in `closing` until a host confirms or releases each one. That is
+  // the intended outcome, not a stuck state: the money may already be in the
+  // host's account and only they can say.
+  const [pending, awaiting, reservations] = await Promise.all([
     prisma.square.count({ where: { boardId, paymentStatus: "pending" } }),
     prisma.square.count({ where: { boardId, paymentStatus: "reserved_cash" } }),
+    prisma.entryReservation.count({ where: { boardId, status: "pending" } }),
   ]);
 
-  if (pending > 0 || awaiting > 0) {
-    return { ok: true, status: "closing", blockedBy: { pending, awaiting } };
+  if (pending > 0 || awaiting > 0 || reservations > 0) {
+    return {
+      ok: true,
+      status: "closing",
+      blockedBy: { pending, awaiting, reservations },
+    };
   }
 
   // Steps 4–8 — finalization, in one transaction.

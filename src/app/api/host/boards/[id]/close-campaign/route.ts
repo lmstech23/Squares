@@ -55,11 +55,22 @@ export async function POST(
     }
 
     if (outcome.status === "closing") {
-      const { pending, awaiting } = outcome.blockedBy;
+      const { pending, awaiting, reservations } = outcome.blockedBy;
       const parts: string[] = [];
       if (awaiting > 0) {
         parts.push(
           `${awaiting} ${awaiting === 1 ? "square is" : "squares are"} awaiting payment`
+        );
+      }
+      // NAMED SEPARATELY FROM SQUARES, because they are resolved somewhere
+      // else. A host told only that "3 squares are awaiting payment" goes
+      // looking on the board page and finds nothing to act on; ticket
+      // reservations are confirmed or released on the Contributions page.
+      if (reservations > 0) {
+        parts.push(
+          `${reservations} ticket ${
+            reservations === 1 ? "reservation is" : "reservations are"
+          } awaiting payment`
         );
       }
       if (pending > 0) {
@@ -72,7 +83,10 @@ export async function POST(
         {
           error:
             `Campaign is closed to new contributions, but ${parts.join(" and ")}. ` +
-            `Mark each as received or release it, then close again to finalize.`,
+            `Mark each as received or release it, then close again to finalize.` +
+            (reservations > 0
+              ? " Ticket reservations are resolved on the Contributions page."
+              : ""),
           status: "closing",
           blockedBy: outcome.blockedBy,
         },
