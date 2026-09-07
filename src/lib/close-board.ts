@@ -141,7 +141,7 @@ export async function closeBoard(
     // finalRaisedCents is write-once, so the donations were lost from the
     // number permanently, on the surface contributors read after close.
     //
-    // Still never count times price (invariant 43): this is a sum of
+    // Still never count times price (invariant 49): this is a sum of
     // totalPaidCents over confirmed, unvoided contributions - the same
     // definition boardTotals uses, filtered by the same `countsTowardRaised`.
     //

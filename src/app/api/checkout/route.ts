@@ -353,7 +353,7 @@ export async function POST(request: Request) {
       expiresAt = board.campaignEndsAt;
     }
 
-    // Price is fixed now, at claim, and never recomputed — invariant 42.
+    // Price is fixed now, at claim, and never recomputed — invariant 48.
     const claimPriceCents = isFundraiser
       ? currentPriceCents(board)
       : board.squarePrice;

@@ -288,7 +288,7 @@ Money doc §5 is the authority. Two consequences:
 
 `prizeBasisCents` is the **sum of `Square.pricePaidCents`** over confirmed squares. Never `count × price` — invariant 49, as amended by `fundraiser-donations-addendum.md` §3. `raisedCents` is the sum of `totalPaidCents` over confirmed contributions and includes donations; **prize math never reads it.**
 
-Price is fixed the moment a square leaves `open`, at claim or at cash reservation, and never recomputed — invariant 42. A cash square reserved at the early-bird price and confirmed a week later is still owed the early price, and the host's cash panel must show the amount that square was reserved at.
+Price is fixed the moment a square leaves `open`, at claim or at cash reservation, and never recomputed — invariant 48. A cash square reserved at the early-bird price and confirmed a week later is still owed the early price, and the host's cash panel must show the amount that square was reserved at.
 
 ---
 

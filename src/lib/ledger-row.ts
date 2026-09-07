@@ -171,7 +171,7 @@ export function groupReservations(squares: ReservedSquare[]): ReservationRow[] {
     }
     existing.tickets++;
     // The price each square was reserved AT, summed — never count times the
-    // board's current price (invariant 42).
+    // board's current price (invariant 48).
     existing.ticketCents += cents;
     // Earliest claim in the batch: when the reservation was made.
     if (sq.claimedAt && (!existing.at || sq.claimedAt < existing.at)) {

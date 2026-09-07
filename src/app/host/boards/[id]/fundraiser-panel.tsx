@@ -123,7 +123,7 @@ export default function FundraiserPanel({
       )}
 
       {/* Raised. Summed from pricePaidCents on confirmed squares — never a
-          count multiplied by a price (invariant 43). */}
+          count multiplied by a price (invariant 49). */}
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-2xl font-bold tabular-nums">
@@ -196,7 +196,7 @@ export default function FundraiserPanel({
                     {sq.playerName ?? "—"}
                   </span>
                   {/* The amount this square was reserved at, not the board's
-                      current price — invariant 42. An early-bird reservation
+                      current price — invariant 48. An early-bird reservation
                       confirmed a week later still owes the early price. */}
                   {sq.pricePaidCents != null && (
                     <span className="text-gray-500">

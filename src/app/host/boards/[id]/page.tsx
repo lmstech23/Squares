@@ -389,7 +389,7 @@ export default async function HostBoardPage({ params }: Props) {
           {priceScheduleLabel(board, new Date(), hostUnit.one)}
         </p>
         {/* Raised is the SUM of locked pricePaidCents over confirmed squares,
-            never price × count — invariant 43. With an early-bird window there
+            never price × count — invariant 49. With an early-bird window there
             is no single price to multiply by. This reuses the aggregate already
             computed above for FundraiserPanel; no extra query. */}
         <p className="text-sm text-gray-400 mt-0.5">

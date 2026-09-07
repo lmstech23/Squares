@@ -1,4 +1,4 @@
-// Contribution pricing — fundraiser-money-state-machine.md §8B, invariants 42–44.
+// Contribution pricing — fundraiser-money-state-machine.md §8B, invariants 48–50.
 //
 // Price is fixed the moment a square leaves `open` — at claim or at cash
 // reservation — and never recomputed. A cash square reserved at the early
@@ -16,7 +16,7 @@ interface PricedBoard {
 
 /**
  * The price in effect right now, in cents. Evaluated once per claim — never a
- * function of how many squares have sold (invariant 44).
+ * function of how many squares have sold (invariant 50).
  */
 export function currentPriceCents(board: PricedBoard, now: Date = new Date()): number {
   if (
@@ -50,7 +50,7 @@ export function earlyBirdActive(board: PricedBoard, now: Date = new Date()): boo
  * Returns the SCHEDULE, never a multiplication. There is no single price on a
  * board with an early-bird window — 20 squares at $1 and 80 at $2 is $180, and
  * neither $100 nor $200 describes it. Anything wanting a total must sum
- * `Square.pricePaidCents` over confirmed squares (invariant 43).
+ * `Square.pricePaidCents` over confirmed squares (invariant 49).
  *
  * A window that has already closed is not mentioned: "through Sep 15, then $30"
  * about a date in the past is noise.

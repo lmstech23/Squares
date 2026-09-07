@@ -132,7 +132,7 @@ All four are dormant against existing data — every Game Day row satisfies them
 | `checkoutSessionId` | String? | Needed to resolve/expire — invariant 18 |
 | `batchId` | String? | Groups a multi-square claim. **Retained and deprecated** — superseded by `contributionId` (donations §13). The A1 migration is additive and does not drop it; existing rows keep their values |
 | `isHostEntry` | Boolean | Default false. Funded, never eligible — invariant 15 |
-| `pricePaidCents` | Int? | Null while `open`. **Written when the square leaves `open`. Never recomputed** — invariant 42 |
+| `pricePaidCents` | Int? | Null while `open`. **Written when the square leaves `open`. Never recomputed** — invariant 48 |
 
 ### FreeEntry — new table
 
@@ -613,7 +613,7 @@ Search matches supporter name, email, and phone. A pass label, when one exists, 
 
 **Undo** is a check-in staff action. Misscans are the most common gate error and without undo the counter drifts until the host stops trusting it. Undo consumes nothing and creates nothing.
 
-**Deliberately absent:** any money, any square, any grid, any drawing, any host setting. Volunteers consume entitlement and never create it (admission invariant 33).
+**Deliberately absent:** any money, any square, any grid, any drawing, any host setting. Volunteers consume entitlement and never create it (admission invariant 32).
 
 ### QR mechanics
 
@@ -896,7 +896,9 @@ Game Day in every respect · Stripe Connect onboarding · payout coordination ·
 
 ## 16. Build order
 
-**Nothing in this document is built yet.** As of the admission review, the repo contains no `boardType`, no fundraiser columns, no `FreeEntry`. Everything below starts from zero.
+**Phase A is built and deployed.** Every row in the table below is shipped, with commit SHAs where they were recorded. This line previously read "Nothing in this document is built yet", written before any of it existed and left standing afterwards — and an implementation brief was subsequently written from it that asked for A1–A6 to be built from zero against a live board taking real money.
+
+**Verify build state by reading `prisma/schema.prisma`, never from this table or any other document.** That is the rule in `CLAUDE.md`, and this line is why it is there.
 
 ### Phase A — No-prize fundraiser + admission (Hampton)
 

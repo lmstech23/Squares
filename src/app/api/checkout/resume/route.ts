@@ -288,7 +288,7 @@ export async function POST(request: Request) {
       }
 
       // action === "cash". The SAME tickets, a different way to pay for them.
-      // Price is NOT recomputed — invariant 42 fixes it at claim, and a
+      // Price is NOT recomputed — invariant 48 fixes it at claim, and a
       // contributor who claimed at the early-bird price still owes that.
       //
       // THE POINTER GOES, AND THE OLD ROW IS RELEASED. This branch used to

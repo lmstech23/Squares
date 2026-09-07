@@ -23,7 +23,7 @@ import HoldTimer from "./hold-timer";
 // not read as the diminished version of a prize board.
 //
 // Nothing here computes money from square count. `raised` is summed from
-// pricePaidCents by the caller (invariant 43).
+// pricePaidCents by the caller (invariant 49).
 
 interface GridSquare {
   squareId: string;
@@ -408,7 +408,7 @@ export default function FundraiserView({
         )}
 
         {/* How's it going. `raised` is a sum of pricePaidCents, never a count
-            multiplied by a price — invariant 43. The qualifier matters: a bare
+            multiplied by a price — invariant 49. The qualifier matters: a bare
             number reads as final. */}
         <div className="mt-5">
           <div className="flex items-baseline justify-between gap-3">

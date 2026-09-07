@@ -144,7 +144,7 @@ export async function POST(
       }
     }
 
-    // Price is fixed now, at reservation, and never recomputed — invariant 42.
+    // Price is fixed now, at reservation, and never recomputed — invariant 48.
     // A square reserved at the early price and confirmed a week later is still
     // owed the early price, and the host's cash panel must show that amount.
     const claimPriceCents = isFundraiser
