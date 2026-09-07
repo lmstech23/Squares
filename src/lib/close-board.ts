@@ -100,10 +100,36 @@ export async function closeBoard(
   }
 
   // Step 2 — outstanding direct payments.
+  //
+  // SQUARES AUTO-RELEASE HERE. ENTRY TICKET RESERVATIONS MUST NOT, AND THE
+  // DIFFERENCE IS NOT AN INCONSISTENCY TO TIDY UP.
+  //
+  // A reserved square is inventory the platform itself handed out and can
+  // prove nothing was paid for: releasing it returns a position to the board
+  // and no money moved, by construction. That is why the sweep below is safe.
+  //
+  // A direct-payment entry reservation is the opposite. The contributor was
+  // told to send money through Zelle, Venmo, Cash App or PayPal — rails
+  // Daali cannot see. By the time this runs the money may already be sitting
+  // in the host's account. Auto-releasing it would silently discard a paid
+  // attendee's admission, and nothing in this process could know it had
+  // happened. Only the host can say whether that money arrived.
+  //
+  // So entry reservations BLOCK in step 3 instead, on BOTH paths — scheduled
+  // and host-initiated. The host confirms the ones that were paid and releases
+  // the ones that were not, and only then does the board finalize.
+  // HAMPTON-CLOSE-PROCEDURE.md is the operator-facing half of this rule.
+  //
+  // NOT YET IMPLEMENTED: EntryReservation does not exist as of this comment,
+  // so there is nothing here to exclude yet. This is recorded at the release
+  // site rather than in a design document because the person most likely to
+  // get it wrong is whoever adds that table and reads this sweep as the
+  // pattern to copy. It is not. Add the block to step 3; do not add a release
+  // here.
   if (!opts.hostInitiated) {
-    // Scheduled close: unresolved reservations auto-release at the cutoff. If
-    // money was not confirmed by close it does not count — no ticket, no
-    // dollars, the square releases (money doc §4).
+    // Scheduled close: unresolved SQUARE reservations auto-release at the
+    // cutoff. If money was not confirmed by close it does not count — no
+    // ticket, no dollars, the square releases (money doc §4).
     await prisma.square.updateMany({
       where: { boardId, paymentStatus: "reserved_cash" },
       data: {

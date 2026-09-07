@@ -151,6 +151,7 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 | `slice-1-handoff.md` | Admission Slice 1 (A8) build brief. Derives from the three above. **Numbering corrected to 23–33** |
 | `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
+| `HAMPTON-CLOSE-PROCEDURE.md` | **Operator runbook, not a spec.** How the Hampton pilot board is closed by hand, and why scheduled close is not relied on. Carries an unresolved event-date discrepancy that must be settled before the contributor link goes out |
 
 ### The frozen package, and what supersedes it
 
