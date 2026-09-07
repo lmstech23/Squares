@@ -6,7 +6,13 @@ import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
 import { entryPriceFor } from "@/lib/entry-pricing";
 import { squareProductFor } from "@/lib/square-product";
-import { acceptsCard, acceptedHandles, acceptsAnyDirect } from "@/lib/accepted-payments";
+import {
+  acceptsCard,
+  acceptedHandles,
+  acceptsAnyDirect,
+  acceptedRails,
+  RAIL_LABEL,
+} from "@/lib/accepted-payments";
 import type { EntryTierOffer } from "./entry-sheet";
 import { donationReturnState } from "@/lib/donation-return";
 import { boardTotals } from "@/lib/contributions";
@@ -327,6 +333,10 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         hasEvent={board.event != null}
         signupSheetExists={board.event?.signupSheet != null}
         entryOffers={board.event != null ? entryOffers : []}
+        entryRails={acceptedRails(board).map((rail) => ({
+          rail,
+          label: RAIL_LABEL[rail],
+        }))}
         cashModeEnabled={
           // NARROWED AT THE BOUNDARY, the same rule the square product
           // follows. A method the board does not accept never reaches the

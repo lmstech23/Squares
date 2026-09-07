@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import ClaimSheet from "./claim-sheet";
 import DonateSheet from "./donate-sheet";
 import EntrySheet, { type EntryTierOffer } from "./entry-sheet";
+import PurchasePanel, { type PanelRail } from "./purchase-panel";
 import HoldTimer from "./hold-timer";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
@@ -92,6 +93,12 @@ interface Props {
    * is not a question a render may ask.
    */
   entryOffers?: EntryTierOffer[];
+  /**
+   * Direct-payment rails for entry tickets, ALREADY NARROWED by the server
+   * through `acceptedRails` - the board lists it AND the handle exists. Empty
+   * means this board takes no direct payment for tickets.
+   */
+  entryRails?: PanelRail[];
   /// open | closing | closed. A closed campaign shows its final total and
   /// stops offering the claim button.
   status: string;
@@ -144,6 +151,7 @@ export default function FundraiserView({
   hasPrize,
   signupSheetExists,
   entryOffers,
+  entryRails,
   status,
   handles,
   confirmation,
@@ -154,6 +162,16 @@ export default function FundraiserView({
   // Defaulted once, here. Every read below is `offers`, so a board that sends
   // nothing behaves identically to one that sends an empty list.
   const offers = entryOffers ?? [];
+  const rails = entryRails ?? [];
+  // WHICH SHEET THE ENTRY CTA OPENS.
+  //
+  // Card wins where the board accepts it, so no board that takes card today
+  // loses it: that path is a Stripe session with immediate passes, and the
+  // panel reserves instead. A board with no card and at least one rail gets
+  // the panel. A board with neither cannot sell entry at all and the CTA is
+  // already hidden by `offers.length`.
+  const entryByCard = stripeConnected;
+  const entryByReservation = !entryByCard && rails.length > 0;
   // The square product, read once. Every square-derived value below comes from
   // here and nowhere else, so `raffle off` is a single null check rather than a
   // condition repeated at seven render sites.
@@ -693,7 +711,7 @@ export default function FundraiserView({
               subordinate to both buttons above: someone who came here to
               support the cause should be offered that first. Admission is what
               they choose when supporting is not what they came for. */}
-          {offers.length > 0 && (
+          {offers.length > 0 && (entryByCard || entryByReservation) && (
             <button
               type="button"
               onClick={() => setBuyingEntry(true)}
@@ -725,8 +743,22 @@ export default function FundraiserView({
           </>
         )}
 
-        {buyingEntry && offers.length > 0 && (
+        {buyingEntry && offers.length > 0 && entryByCard && (
           <EntrySheet slug={slug} offers={offers} onClose={() => setBuyingEntry(false)} />
+        )}
+
+        {buyingEntry && offers.length > 0 && entryByReservation && (
+          <PurchasePanel
+            slug={slug}
+            tiers={offers.map((o) => ({
+              tier: o.tier,
+              label: o.label,
+              priceCents: o.priceCents,
+              note: o.note,
+            }))}
+            rails={rails}
+            onClose={() => setBuyingEntry(false)}
+          />
         )}
 
         {donating && (
