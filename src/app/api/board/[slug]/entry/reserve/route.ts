@@ -168,6 +168,17 @@ export async function POST(
       return NextResponse.json({ error: quote.error }, { status: 400 });
     }
 
+    // THE EXPANSION SEAM, flagged here because this is where it is created.
+    //
+    // Confirmation has to turn these grouped lines BACK into per-pass prices
+    // and counts before calling confirmEntryPurchase, which asserts that the
+    // passes sum to the contribution amount. A grouped line that expands to the
+    // wrong quantity, or to the right quantity at today's price instead of
+    // `unitPriceCents`, mints the wrong passes and the assertion either fires
+    // on a correct purchase or passes on an incorrect one. When the host
+    // confirmation path is built it needs explicit regression coverage of that
+    // expansion, not just of the confirmation.
+    //
     // Grouped into tier lines — the resolution unit (invariant 114). `quoteEntry`
     // returns one entry PER PASS because the card path stores a price per pass;
     // a reservation stores a price per line and a quantity, because the host
