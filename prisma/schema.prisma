@@ -25,6 +25,11 @@ model Host {
   boards                 Board[]
   creditTransactions     CreditTransaction[]
   invite_codes           InviteCode[]
+  /// Grants this host holds. `boards` above is ownership by `Board.hostId` and
+  /// is NOT the authorization source once commit 3 lands - see BoardCollaborator.
+  collaborations         BoardCollaborator[] @relation("CollaboratorHost")
+  invitesSent            BoardCollaborator[] @relation("CollaboratorInvitedBy")
+  revocationsPerformed   BoardCollaborator[] @relation("CollaboratorRevokedBy")
 
   paymentPreference         String?             @map("payment_preference")
 
@@ -172,6 +177,7 @@ model Board {
   creditTransactions        CreditTransaction[]
   contributions             Contribution[]
   entryReservations         EntryReservation[]
+  collaborators             BoardCollaborator[]
 
   /// Two PARTIAL indexes exist on this table and are deliberately NOT
   /// declared here: idx_boards_pending_expiry (WHERE status = pending_payment)
@@ -1076,6 +1082,73 @@ model NotificationDelivery {
   /// The retry cron claim query scans exactly these two columns every run.
   @@index([status, nextAttemptAt], map: "idx_notification_deliveries_claim")
   @@map("notification_deliveries")
+}
+
+/// Who may act on a board, and in what role — collaborators addendum v2.2 §9.
+///
+/// THE AUTHORIZATION SOURCE, replacing `Board.hostId` as the question "may this
+/// person act here?" — invariant 91. `Board.hostId` remains as the record of who
+/// created the board and whose Stripe account money settles to; it stops being
+/// an authorization check.
+///
+/// NOTHING READS THIS YET. It is created and backfilled in its own commit, and
+/// `requireBoardAccess` arrives in the next one. A backfill that is wrong is
+/// recoverable while nothing depends on it.
+///
+/// READ LIVE ON EVERY REQUEST — invariant 93. No role in a JWT, no session cache,
+/// no client-side memo. That single property is what makes revocation immediate,
+/// and it is the thing most likely to be optimised away by someone counting
+/// database round-trips.
+model BoardCollaborator {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  boardId         String              @map("board_id") @db.Uuid
+  hostId          String              @map("host_id") @db.Uuid
+  role            BoardRole
+  status          CollaboratorStatus
+  /// Null for backfilled owners: nobody invited them, they created the board.
+  invitedByHostId String?             @map("invited_by_host_id") @db.Uuid
+  /// Set once, in the transaction that creates the row — invariant 97. On a
+  /// backfilled owner it is the board's own createdAt: their access began when
+  /// the board did, and today's date would claim they accepted an invitation.
+  acceptedAt      DateTime?           @map("accepted_at") @db.Timestamptz(6)
+  /// `revoked` is TERMINAL — invariant 109. Re-granting creates a new row; the
+  /// partial unique index below is what allows that while still permitting only
+  /// one live grant per person per board.
+  revokedAt       DateTime?           @map("revoked_at") @db.Timestamptz(6)
+  revokedByHostId String?             @map("revoked_by_host_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  board     Board @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
+  host      Host  @relation("CollaboratorHost", fields: [hostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  invitedBy Host? @relation("CollaboratorInvitedBy", fields: [invitedByHostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  revokedBy Host? @relation("CollaboratorRevokedBy", fields: [revokedByHostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// BOTH UNIQUES ARE PARTIAL and neither is expressible in Prisma's `@@unique`,
+  /// which has no WHERE clause. They live in the migration and are asserted from
+  /// `pg_index` by its gate — this schema file cannot see them, and
+  /// `migrate diff` reports no drift whether or not they exist:
+  ///
+  ///   (board_id, host_id) WHERE status <> 'revoked'          one live grant
+  ///   (board_id) WHERE role = 'OWNER' AND status = 'active'  one owner, inv 92
+  @@index([hostId, status], map: "idx_board_collaborators_host_status")
+  @@map("board_collaborators")
+}
+
+enum BoardRole {
+  OWNER
+  MANAGER
+
+  @@map("board_role")
+}
+
+/// `invited` exists before any invite flow does. Adding a value later means an
+/// ALTER TYPE on a table authorization depends on; unused it costs nothing.
+enum CollaboratorStatus {
+  invited
+  active
+  revoked
+
+  @@map("collaborator_status")
 }
 
 enum SlotType {
