@@ -57,7 +57,7 @@ import {
 } from "@/lib/accepted-payments";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { requireBoardAccess } from "@/lib/board-access";
+import { requireBoardAccess, roleHas } from "@/lib/board-access";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { ticketCountFor, validateTicketCount } from "@/lib/board-inventory";
 import { validateEntryPricing } from "@/lib/entry-pricing";
@@ -180,6 +180,73 @@ export async function PATCH(request: Request, { params }: Props) {
     }
 
     const body = (await request.json()) as Body;
+
+    // --- per-field authority, BEFORE anything is read or written -------------
+    //
+    // THE ROUTE IS ENTERED UNDER `board.edit`, WHICH A MANAGER HOLDS. Four of
+    // its nineteen writable fields are genuinely hers: the goal, the cause, and
+    // the event's name and venue. The other fifteen are governed by capabilities
+    // she does not hold, and they only ended up reachable because they share one
+    // endpoint. Sharing an endpoint is not a grant.
+    //
+    // KEY PRESENCE, NOT VALUE. The edit panel deliberately OMITS a field it is
+    // not offering — a locked price is disabled and its value is never sent,
+    // precisely so a stale tab cannot echo back a value it merely displayed. So
+    // `"squarePrice" in body` is an intent to write, and `body.squarePrice ===
+    // board.squarePrice` is not a safe substitute: an unchanged value still
+    // means the caller asked.
+    //
+    // IF A FUTURE CLIENT STARTS SENDING A FULL OBJECT, THIS LOGIC MUST BE
+    // REVISITED RATHER THAN WEAKENED. The tempting fix — compare each value
+    // against what is stored and ignore the ones that match — turns
+    // authorization into a diff, and a diff cannot tell "she did not ask" from
+    // "she asked for exactly what is already there". The correct response is to
+    // stop sending fields the user cannot edit.
+    //
+    // WHOLE REQUEST, NOT A SUBSET. A body mixing the goal with a price is
+    // refused entirely. Applying the permitted half would leave a host believing
+    // both landed, and the one that silently did not is a price.
+    const TERMS_FIELDS = [
+      "squarePrice",
+      "earlyBirdPriceCents",
+      "earlyBirdEndsAt",
+      "entryChildPriceCents",
+      "entryAdultEarlyPriceCents",
+      "entryAdultRegularPriceCents",
+      "startsAt",
+      "endsAt",
+      "timezone",
+    ] as const;
+    const PAYOUT_FIELDS = [
+      "acceptedPaymentMethods",
+      "hostVenmo",
+      "hostZelle",
+      "hostCashapp",
+      "hostPaypal",
+    ] as const;
+
+    const submittedTerms = TERMS_FIELDS.filter((f) => f in body);
+    const submittedPayout = PAYOUT_FIELDS.filter((f) => f in body);
+
+    const overreach = [
+      ...(submittedTerms.length && !roleHas(access.role, "terms.set") ? submittedTerms : []),
+      ...(submittedPayout.length && !roleHas(access.role, "payout.configure")
+        ? submittedPayout
+        : []),
+    ];
+    if (overreach.length > 0) {
+      // NAMES THE FIELDS. "You do not have permission" on a form with nineteen
+      // inputs tells a manager nothing about which one to leave alone.
+      return NextResponse.json(
+        {
+          error:
+            `These require the board owner: ${overreach.join(", ")}. ` +
+            `Nothing was saved.`,
+          fields: overreach,
+        },
+        { status: 403 }
+      );
+    }
 
     // --- the goal, which is never locked ------------------------------------
     let goalCents: number | null | undefined;

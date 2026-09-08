@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { requireBoardAccess } from "@/lib/board-access";
 import { stripe } from "@/lib/stripe";
 
 // Launch pricing: $9 for 1 credit, $24 for 3 credits
@@ -52,21 +51,32 @@ export async function POST(request: Request) {
         where: { boardId: body.boardId },
       });
 
-      // `payout.configure` — OWNER only. This pays to ACTIVATE a board, which
-      // is an ownership act, not board management: it runs only while the board
-      // is `pending_payment`, a state that exists before anyone could have been
-      // invited to manage it.
+      // AN OWNERSHIP CHECK, AND AN INTENTIONAL EXCEPTION TO THE GREP RULE.
       //
-      // The model has no "buy the board" capability and one was NOT invented to
-      // satisfy a grep. `payout.configure` is the owner-only money capability
-      // and is the closest true statement available. FLAGGED FOR A RULING: if
-      // board purchase deserves its own capability it belongs in the model, not
-      // decided here.
-      const access = await requireBoardAccess(body.boardId, "payout.configure");
-      if (!access.ok) {
-        return NextResponse.json({ error: "Invalid pending board." }, { status: 400 });
-      }
-      if (!board || board.status !== "pending_payment") {
+      // THIS ROUTE IS ACCOUNT-SCOPED, NOT BOARD-SCOPED. It sells the signed-in
+      // host platform credits for their own account: the Stripe session is
+      // platform-level with no connected account, `metadata.hostId` is this
+      // host, and the webhook increments THEIR `boardCredits`. It runs perfectly
+      // well with no `boardId` at all — that is the ordinary path, from the Buy
+      // Credits button.
+      //
+      // `boardId` is an OPTIONAL TARGET, present only so the webhook can
+      // auto-activate a board that is waiting to be paid for. The question it
+      // asks is therefore literally ownership: "is this pending board mine?" It
+      // is not "may this person act on this board", and a capability answer
+      // would be the wrong kind of answer to the right question.
+      //
+      // It was briefly gated on `payout.configure`, which was wrong twice over:
+      // that capability means where a board's CONTRIBUTIONS settle, and the
+      // check sat inside `if (body.boardId)` — so it protected the rarer path
+      // and left the common one ungated. Corrected 2026-09-08 by ruling.
+      //
+      // THE COLLABORATOR GREP RULE READS: no `Board.hostId` comparison may be
+      // used as a SUBSTITUTE FOR BOARD CAPABILITY AUTHORIZATION. It does not
+      // forbid an ownership check whose domain rule is ownership itself. A
+      // future grep-to-zero pass must not replace this one; see
+      // board-collaborators-addendum.md §3.
+      if (!board || board.hostId !== host.id || board.status !== "pending_payment") {
         return NextResponse.json(
           { error: "Invalid pending board." },
           { status: 400 }

@@ -292,6 +292,37 @@ add rather than overlap. The 28th comparison is the second one inside
 `check-in-staff-handlers.ts`, which carries **two comparisons behind two public
 endpoints**: `check-in-staff` and `volunteer-access` both delegate into it.
 
+### What the grep rule actually says — v2.2
+
+> **No `Board.hostId` comparison may be used as a substitute for board
+> capability authorization.**
+
+It does not prohibit an ownership check whose domain rule is ownership itself.
+Two things were being conflated, and the distinction is the difference between a
+clean sweep and a mechanical one:
+
+| | |
+|---|---|
+| **Board authorization** | "may this person act on this board?" — always a capability, never `Board.hostId` |
+| **Ownership as a domain fact** | "is this board mine?" — a legitimate question with a legitimate answer |
+
+**One documented exception exists.** `POST /api/host/credits/checkout` is
+ACCOUNT-scoped: it sells the signed-in host platform credits for their own
+account through a platform-level Stripe session, credits their own
+`boardCredits`, and works with no board at all. Its optional `boardId` exists
+only so the webhook can auto-activate a board waiting to be paid for, and the
+question it asks is literally *"is this pending board mine?"*
+
+It was briefly gated on `payout.configure`, which was wrong twice: that
+capability means where a board's CONTRIBUTIONS settle, and the check sat inside
+`if (body.boardId)` — protecting the rarer path while leaving the common one
+ungated. **Ruled 2026-09-08: restore the ownership comparison.** Buying credits
+requires no `BoardCollaborator` capability, and no capability was invented to
+satisfy a grep.
+
+The route carries a comment saying so. **A future grep-to-zero pass must not
+replace it.**
+
 **A route that still contains that comparison after this lands is a bug**, and
 it is checked by grep in review, not by memory. **But grep counts files, and one
 file here hides two comparisons behind two endpoints** — so both public

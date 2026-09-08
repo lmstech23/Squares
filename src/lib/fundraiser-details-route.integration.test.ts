@@ -508,6 +508,162 @@ describe(
     });
 
     // ====================================================================
+    // PER-FIELD AUTHORITY.
+    //
+    // The route is entered under `board.edit`, which a MANAGER holds. Four of
+    // its nineteen writable fields are hers; the other fifteen are governed by
+    // `terms.set` and `payout.configure`, both OWNER-only, and were reachable
+    // only because they share one endpoint. Sharing an endpoint is not a grant.
+    //
+    // The fixture's collaborator row is an OWNER, so these tests demote it and
+    // put it back — the same host, a different grant.
+    // ====================================================================
+
+    /** Re-grant this host on this board with the given role. */
+    async function asRole(role: "OWNER" | "MANAGER") {
+      await db.boardCollaborator.deleteMany({ where: { boardId } });
+      await db.boardCollaborator.create({
+        data: { boardId, hostId, role, status: "active", acceptedAt: new Date() },
+      });
+    }
+
+    test("a MANAGER may edit the goal, cause, event name and venue", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      status200(
+        await call({
+          fundraisingGoalCents: 50_000,
+          causeDescription: "New cause",
+          name: "Tailgate",
+          venue: "Lot C",
+        })
+      );
+      const b = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(b.fundraisingGoalCents, 50_000);
+      assert.equal(b.causeDescription, "New cause");
+    });
+
+    // THE GAP THIS CLOSES. `board.edit` let a manager set a price.
+    test("a MANAGER is refused a terms.set field, by name", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      const before = await db.board.findUniqueOrThrow({ where: { boardId } });
+
+      const r = await call({ squarePrice: 999 });
+      assert.equal(r.status, 403);
+      assert.match(r.json.error!, /board owner/i);
+      assert.match(r.json.error!, /squarePrice/);
+
+      const after = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(after.squarePrice, before.squarePrice, "nothing moved");
+    });
+
+    test("a MANAGER is refused a payout.configure field, by name", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      const r = await call({ hostZelle: "new@example.com" });
+      assert.equal(r.status, 403);
+      assert.match(r.json.error!, /hostZelle/);
+      assert.equal((await handles()).hostZelle, "555-0100", "unchanged");
+    });
+
+    // EVERY ONE OF THE FIFTEEN, individually, so a future regrouping cannot
+    // quietly let one through.
+    test("all nine terms fields and all five payout fields are refused", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      const cases: Record<string, unknown>[] = [
+        { squarePrice: 999 },
+        { earlyBirdPriceCents: 100 },
+        { earlyBirdEndsAt: "2026-10-01" },
+        { entryChildPriceCents: 100 },
+        { entryAdultEarlyPriceCents: 100 },
+        { entryAdultRegularPriceCents: 100 },
+        { startsAt: "2026-10-24T15:00" },
+        { endsAt: "2026-10-24T18:00" },
+        { timezone: "America/Chicago" },
+        { acceptedPaymentMethods: ["zelle"] },
+        { hostVenmo: "@x" },
+        { hostZelle: "x@example.com" },
+        { hostCashapp: "$x" },
+        { hostPaypal: "x@example.com" },
+      ];
+      for (const c of cases) {
+        const r = await call(c);
+        assert.equal(r.status, 403, Object.keys(c)[0] + " should be 403");
+      }
+    });
+
+    // WHOLE REQUEST, NOT A SUBSET. Applying the permitted half would leave the
+    // host believing both landed, and the one that silently did not is a price.
+    test("a mixed request fails whole — the allowed field is not applied", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      const before = await db.board.findUniqueOrThrow({ where: { boardId } });
+
+      const r = await call({ fundraisingGoalCents: 77_000, squarePrice: 999 });
+      assert.equal(r.status, 403);
+      assert.match(r.json.error!, /Nothing was saved/);
+
+      const after = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(after.fundraisingGoalCents, before.fundraisingGoalCents,
+        "the permitted half was NOT applied");
+      assert.equal(after.squarePrice, before.squarePrice);
+    });
+
+    test("the 403 names every offending field, not just the first", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      const r = await call({ squarePrice: 999, hostZelle: "x@example.com" });
+      assert.equal(r.status, 403);
+      assert.match(r.json.error!, /squarePrice/);
+      assert.match(r.json.error!, /hostZelle/);
+    });
+
+    // KEY PRESENCE, NOT VALUE. Submitting the stored value is still a write
+    // request, and treating it as a no-op would turn authorization into a diff.
+    test("an unchanged value is still a request, and still refused", async () => {
+      await seedBoard();
+      await asRole("MANAGER");
+      const b = await db.board.findUniqueOrThrow({ where: { boardId } });
+      const r = await call({ squarePrice: b.squarePrice });
+      assert.equal(r.status, 403, "asking for what is already there is still asking");
+    });
+
+    // THE OWNER IS UNAFFECTED, which is the other half of the fix.
+    test("an OWNER may still set every one of those fields", async () => {
+      await seedBoard();
+      await asRole("OWNER");
+      status200(await call({ squarePrice: 300 }));
+      status200(await call({ hostZelle: "owner@example.com" }));
+      const b = await db.board.findUniqueOrThrow({ where: { boardId } });
+      assert.equal(b.squarePrice, 300);
+      assert.equal(b.hostZelle, "owner@example.com");
+    });
+
+    // THE LOCKS ARE UNTOUCHED AND STILL RUN. Capability is asked first, so an
+    // owner hitting a locked field still gets the LOCK's 409, not a 403: the
+    // two guards answer different questions and neither absorbed the other.
+    test("an OWNER still meets the price lock, not a capability error", async () => {
+      await seedBoard();
+      await asRole("OWNER");
+      const first = await db.square.findFirstOrThrow({ where: { boardId } });
+      await db.square.update({
+        where: { squareId: first.squareId },
+        data: {
+          paymentStatus: "paid",
+          // The REGULAR price, which is what makes `regularLocked` true:
+          // pricingLocks derives the lock from what was actually paid, not
+          // from a priceSource column - there is none.
+          pricePaidCents: PRICE,
+          batchId: randomUUID(),
+        },
+      });
+      const r = await call({ squarePrice: 999 });
+      assert.equal(r.status, 409, "the lock, not the capability");
+    });
+
+    // ====================================================================
     // ACCEPTED PAYMENT METHODS — through the real route, real transaction.
     //
     // Before this, `acceptedPaymentMethods` was written in exactly one place:
