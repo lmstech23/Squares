@@ -423,6 +423,16 @@ async function sendEntryConfirmations(where: {
     // transaction stamped the grant, and this is where they are actually shown
     // where to go. Same helper the square receipt uses, so the eligibility
     // rule cannot differ between a square buyer and a ticket buyer.
+    //
+    // ABOVE THE PASSES, matching the square receipt exactly. It was appended
+    // last, which put it under four QR codes — nobody scrolls past their own
+    // tickets, and this is the only thing in the email with a deadline on it.
+    // The passes will still be here on event day; the slots will not. Sign-up
+    // addendum §4 is explicit that forty minutes can cost someone a shift.
+    //
+    // The summary line and "View your passes" stay above it, so the passes are
+    // still announced first — the reader is told what they bought before being
+    // asked for anything.
     const signupHtml = grant
       ? await signupBlockFor(grant.eventSupporterId, grant.eventId, base)
       : "";
@@ -446,11 +456,11 @@ async function sendEntryConfirmations(where: {
       </p>
       ${donationLine}
       ${linkLine}
+      ${signupHtml}
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
              style="margin-top:8px;">
         ${ticketBlocks(passes.map((pp) => pp.token), base)}
-      </table>
-      ${signupHtml}`;
+      </table>`;
 
     try {
       await sendEmail(c.contributorEmail!, subject, html);

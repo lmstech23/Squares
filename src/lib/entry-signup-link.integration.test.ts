@@ -247,6 +247,37 @@ describe(
       assert.match(mail.html, /Volunteer sign-up/);
     });
 
+    // POSITION, NOT PRESENCE. The block was appended last, which put it under
+    // four QR codes. Nobody scrolls past their own tickets, and this is the one
+    // thing in the email with a deadline on it: the passes will still be there
+    // on event day, the slots will not. Asserted by INDEX so a future edit that
+    // moves it back below the codes fails here rather than in someone inbox.
+    test("the sign-up block sits ABOVE the QR codes", async () => {
+      await seed();
+      await entryPurchase(true);
+      await sendPendingConfirmations({ boardId });
+
+      const html = receipt().html;
+      const signup = html.indexOf("Volunteer sign-up");
+      const firstQr = html.indexOf("/api/tickets/");
+      assert.ok(signup > -1 && firstQr > -1, "both present");
+      assert.ok(signup < firstQr, "the volunteer block comes first");
+    });
+
+    // But not above the receipt itself. The reader is told what they bought
+    // before being asked for anything, which is why the summary line and
+    // "View your passes" stay above the block on both receipts.
+    test("the amount and the passes link still come before it", async () => {
+      await seed();
+      await entryPurchase(true);
+      await sendPendingConfirmations({ boardId });
+
+      const html = receipt().html;
+      const signup = html.indexOf("Volunteer sign-up");
+      assert.ok(html.indexOf("You are on the list for") < signup);
+      assert.ok(html.indexOf("View your passes") < signup);
+    });
+
     // INTEREST IS A ONE-WAY OR ACROSS GRANTS — sign-up addendum §4. A second
     // purchase that opts in makes the person interested; this is the rule the
     // shared helper exists to keep identical on both paths.
