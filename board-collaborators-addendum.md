@@ -132,32 +132,64 @@ That backfill matters more than it looks. The alternative is `hostId === host.id
 
 Roles are not checked at call sites. **Capabilities are**, and roles map to capability sets in one place. A third role later becomes a row in a table rather than a search for every `role === 'MANAGER'` in the codebase.
 
+Grouped by **domain**, so a reader extending one can see which they are in
+rather than scanning 24 undifferentiated rows. The groups are documentation, not
+a second axis of authorization: **the check is always the capability**, never the
+group, and a capability's role column is the whole of its meaning.
+
+#### Board and reporting
+
 | Capability | OWNER | MANAGER |
 |---|---|---|
 | `board.view` — dashboard, grid, status | ✅ | ✅ |
 | `contributors.view` — contributor and donor list, contact details | ✅ | ✅ |
 | `payments.view` — per-contribution payment status | ✅ | ✅ |
 | `reporting.view` — totals, breakdown, operational reporting | ✅ | ✅ |
+| `board.edit` — title, description, contact details, goal | ✅ | ✅ |
+| `board.close` — trigger `CLOSING` and finalization | ✅ | ❌ |
+| `board.dismiss` — hide a board from the host dashboard | ✅ | ❌ |
+| `board.delete` | ✅ | ❌ |
+| `terms.set` — prices, prize percent, dates, and the invariant 16 list | ✅ | ❌ |
+| `payout.configure` — Stripe destination, payment handles | ✅ | ❌ |
+
+#### Money
+
+| Capability | OWNER | MANAGER |
+|---|---|---|
 | `cash.confirm` — confirm receipt of an existing reservation | ✅ | ✅ |
 | `cash.record` — record a new walk-up contribution | ✅ | ✅ |
 | `cash.release` — release an unpaid reservation | ✅ | ✅ |
 | `cash.void` — void a mis-keyed cash donation *(donations §7)* | ✅ | ✅ |
+
+#### Event: admission and volunteers
+
+| Capability | OWNER | MANAGER |
+|---|---|---|
 | `attendee.manage` — roster, passes, dietary, donate-admissions flag | ✅ | ✅ |
 | `volunteer.view` — volunteer-interest responses | ✅ | ✅ |
 | `volunteer.manage` — sheets, slots, signups, when built | ✅ | ✅ |
-| `board.edit` — title, description, contact details, goal | ✅ | ✅ |
 | `staff.manage` — issue and revoke check-in staff links | ✅ | ✅ |
+
+#### Game Day outcome — added v2.2
+
+| Capability | OWNER | MANAGER |
+|---|---|---|
 | `scores.enter` — enter or correct Game Day period scores | ✅ | ✅ |
-| `winner.resend` — resend a winner SMS to the pinned recipient | ✅ | ✅ |
-| `board.close` — trigger `CLOSING` and finalization | ✅ | ❌ |
+| `winner.resend` — resend a winner SMS to the pinned recipient *(invariant 117)* | ✅ | ✅ |
 | `winner.notify` — determine a period winner and send the first SMS | ✅ | ❌ |
-| `board.dismiss` — hide a board from the host dashboard | ✅ | ❌ |
 | `draw.run` | ✅ | ❌ |
-| `payout.configure` — Stripe destination, payment handles | ✅ | ❌ |
-| `terms.set` — prices, prize percent, dates, and the invariant 16 list | ✅ | ❌ |
-| `board.delete` | ✅ | ❌ |
+
+#### Delegation
+
+| Capability | OWNER | MANAGER |
+|---|---|---|
 | `collaborators.manage` — invite, revoke, change roles | ✅ | ❌ |
 | `ownership.transfer` | ✅ | ❌ |
+
+**24 capabilities across five groups.** `board.dismiss` sits under Board rather
+than beside `board.delete` in a "destructive" group, because it is recoverable
+(dismiss addendum K10); it is owner-only on adjacency to delete, which §"The
+four capabilities added in v2.2" states outright.
 
 ### The four capabilities added in v2.2
 
@@ -534,9 +566,9 @@ is an enum value with no endpoint behind it, for anyone: `signup-rules.ts:296`
 says so, and `signups.ts:319` is the only writer, reached only through paths a
 supporter drives. Nobody can remove a helper today.
 
-**The requirement is bound to the endpoint, not to a date.** Whoever builds the
-removal route adds a persistent actor id in the same change. **Shipping that
-endpoint without one is a defect**, not a follow-up.
+**The requirement is bound to the endpoint, not to a date — invariant 118.**
+Whoever builds the removal route adds a persistent actor id in the same change.
+**Shipping that endpoint without one is a defect**, not a follow-up.
 
 **Extending `ActorType` to `OWNER | MANAGER` is not the fix.** §8 names the
 human, not the role — a role is what someone held at a moment, and the audit
@@ -648,7 +680,7 @@ send to whatever number the square currently holds.**
 
 - `notify-winner` writes both atomically as the notification record.
 - `resend-winner-sms` requires an existing record, sends **only** to the stored
-  phone, and **never re-reads `playerPhone` as the destination**.
+  phone, and **never re-reads `playerPhone` as the destination** — invariant 117.
 - Existing winner-lock semantics are preserved, including the un-notified-period
   guard: no record → 400, use the notify endpoint first.
 - The map is not otherwise redesigned.
@@ -665,6 +697,19 @@ fall back to reading the square** — that fallback is the behaviour being
 removed, and a guard that restores it under an error condition would reinstate
 it precisely when something is already wrong.
 
+**The shape itself is implementation-defined and is deliberately not frozen
+here.** The binding requirement is only that the stored value carries, at
+minimum, the locked `squareId` and the phone used for the initial notification.
+An implementation may add fields later — a send timestamp, a provider message id
+— without another product amendment. Freezing an object schema in this document
+would make a routine addition a spec change.
+
+**After the structured notification shape lands, `notify-winner` and
+`resend-winner-sms` are the authoritative writer/reader pair for that shape.
+Neither route may continue treating the stored value as the former string-only
+`squareId` form.** There is no dual-read period and no compatibility shim,
+because production holds no rows in the old form: 22 boards, 22 empty maps.
+
 **Both routes consume the same map, so they change together**, and this ships as
 its own correctness commit rather than inside the authorization switch. A shape
 change buried in a 27-site refactor is one nobody can review.
@@ -679,27 +724,34 @@ OWNER.
 
 ## 10. Invariants
 
-**91–109.** Registered in `invariant-registry.md`.
+**91–109, and 117–118.** Registered in `invariant-registry.md`.
 
 **v2.2 amends 106** — its denial list gains `winner.notify` and `board.dismiss`,
 the two capabilities added in §2 that resolve to OWNER. Per the registry's own
 rule, amending an invariant consumes no new number; the registry row is marked
 **Amended (§2)** and points here.
 
-**No new invariant numbers were allocated by this amendment**, and that is
-deliberate rather than an omission. Numbering is allocated by
-`invariant-registry.md`, not by whoever writes next, and this ruling allocated
-none. Two rules introduced here are candidates and are flagged rather than
-numbered:
+**Two new invariants were allocated on 2026-09-08**, from the next free number,
+with nothing renumbered:
 
-- §9.1's pinning — *a winner resend sends only to the number the first
-  notification used*.
-- §8's — *a helper-removal record names the human who acted*, which is bound to
-  an endpoint that does not exist yet.
+**Winner SMS**
 
-Both are stated as product rules in their sections and are binding as written.
-Whether either earns a number is a numbering decision, and the next free number
-is **117**.
+117. A winner resend sends only to the phone number recorded at the time of the
+     initial notification. The destination is fixed at first notification and is
+     never re-read from the square. §9.1.
+
+**Sign-up audit**
+
+118. A `HOST_REMOVED` helper-removal audit record identifies the person who
+     performed the action. Recording only the actor role does not satisfy this.
+     §8.
+
+**118 is binding on an endpoint that does not exist yet.** `HOST_REMOVED` has no
+route for any role, so nothing violates it today — and nothing may ship that
+removal route without satisfying it. An invariant with no current call site is
+not dormant; it is a condition on the next person to write one.
+
+Next free number: **119**.
 
 **Authorization**
 

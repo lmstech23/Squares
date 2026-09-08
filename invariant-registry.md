@@ -222,6 +222,18 @@ An INDEX, as above. §20.1 of the same document carries the amended wording for
 
 ---
 
+### 117–118 · Board collaborators addendum — v2.2
+
+| # | Invariant | Authoritative statement |
+|---|---|---|
+| 117 | Winner resend destination is pinned | `board-collaborators-addendum.md` §9.1 |
+| 118 | Helper removal records the human actor | `board-collaborators-addendum.md` §8 |
+
+An INDEX, as above. Both were introduced by the v2.2 amendment and allocated
+2026-09-08 from the next free number; nothing was renumbered. **118 is bound to
+an endpoint that does not exist yet** — `HOST_REMOVED` has no route for any
+role — and is binding on whoever builds it rather than on a date.
+
 ## Environment invariants — E1–E5
 
 **Not product invariants. They consume no number from the registry above and are never cited as invariant N.** They constrain how the repository is operated, and they are recorded here because this is the file every implementer reads first.
@@ -249,4 +261,4 @@ Environment-blocked tests are marked `REQUIRED — ENVIRONMENT BLOCKED, NOT EXEC
 2. Add the row here and the full statement in the owning document, in one commit.
 3. Amending an existing invariant does not consume a new number — mark the row `**Amended (§X)**` and point at the amending document.
 
-*Next free number: **117**.*
+*Next free number: **119**.*
