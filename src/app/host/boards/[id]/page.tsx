@@ -297,36 +297,20 @@ export default async function HostBoardPage({ params }: Props) {
         createdAt: true,
         entryAmountCents: true,
         donationAmountCents: true,
+        // THE PURCHASE-SIDE QUANTITY. Null on card entry purchases made before
+        // the column existed; the roster says "$80 in tickets" for those rather
+        // than counting passes, which would move when a pass is voided.
+        entryTicketCount: true,
       },
     });
 
-    // TICKET COUNT FOR ENTRY PURCHASES, and nothing else - the money stays on
-    // the ledger row above. A Contribution records what a purchase was worth
-    // but not how many tickets it bought, and passes carry no contributionId,
-    // so counting passes per person is the only way to answer it.
-    //
-    // `squareId: null` keeps square-minted passes out, or a square would count
-    // twice. Voided passes are excluded: a void is terminal and the gate
-    // refuses them, so they are not tickets anyone holds.
-    const entryPasses = board.event
-      ? await prisma.admissionPass.findMany({
-          where: {
-            supporter: { eventId: board.event.id },
-            squareId: null,
-            status: { in: ["active", "used"] },
-          },
-          select: { supporter: { select: { email: true, phone: true } } },
-        })
-      : [];
+    // NO PASS QUERY. The count came from minted passes until
+    // `entryTicketCount` existed, which made this roster a view of ADMISSION
+    // STATE labelled as purchase history: voiding a pass reduced a purchase
+    // that had already happened. Passes answer what someone HOLDS; the ledger
+    // answers what they BOUGHT, and this list asks the second question.
 
-    const contributors = contributorRows(
-      claimed,
-      contributions,
-      entryPasses.map((p) => ({
-        supporterEmail: p.supporter.email,
-        supporterPhone: p.supporter.phone,
-      }))
-    );
+    const contributors = contributorRows(claimed, contributions);
 
     // THE TOP COUNTERS. SQUARELESS rows - `squareAmountCents = 0` - because a
     // mixed purchase is already counted through its squares and counting it

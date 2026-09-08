@@ -38,6 +38,15 @@ export interface ContributorRow {
   ticketCents: number;
   /** Donation money, from the stored `donationAmountCents`. */
   donationCents: number;
+  /**
+   * False when any ticket money on this row has no known quantity behind it.
+   *
+   * WHAT THE ROSTER SHOWS DEPENDS ON THIS, not on `tickets === 0`. A card entry
+   * purchase made before `entryTicketCount` existed carries money and no count,
+   * and the row must say "$80 in tickets" rather than a bare "$80" that reads
+   * as a donation, or an inferred number that would be a guess.
+   */
+  ticketCountComplete: boolean;
   /** Earliest activity, ISO. Null on old square rows that predate claimedAt. */
   claimedAt: string | null;
   status: "CONFIRMED" | "AWAITING" | "MIXED";
@@ -72,28 +81,26 @@ export interface ContributionInput {
   entryAmountCents: number;
   /** Zero on an entry-only row. */
   donationAmountCents: number;
+  /**
+   * How many tickets this purchase bought. NULL means not known.
+   *
+   * THE PURCHASE-SIDE QUANTITY, and the only source the roster uses. It is not
+   * derived from passes: a pass going `void` changes what someone HOLDS and
+   * must never change what they BOUGHT. Card entry purchases from before the
+   * column existed are null, and stay null - their quantity was only ever in
+   * Stripe metadata and inventing one would be worse than saying so.
+   */
+  entryTicketCount: number | null;
 }
 
-/**
- * One minted admission pass, for its COUNT only.
- *
- * WHY COUNT COMES FROM HERE AND MONEY DOES NOT. A `Contribution` records what
- * an entry purchase was worth but not how many tickets it bought — there is no
- * quantity column, and passes carry no `contributionId`, so a per-purchase
- * count is not derivable from the ledger alone. Passes are the tickets, so
- * counting them per person answers it.
- *
- * Taking the money from here as well would double-count it against
- * `entryAmountCents`. The amount stays on the ledger row; only the count comes
- * from here.
- *
- * SQUARE-MINTED PASSES ARE EXCLUDED BY THE CALLER (`squareId: null`), or a
- * square would be counted twice — once as a square and once as its pass.
- */
-export interface PassInput {
-  supporterEmail: string | null;
-  supporterPhone: string | null;
-}
+// PASSES NO LONGER FEED THIS LIST, and `PassInput` is gone with them.
+//
+// The count came from minted passes because no ledger column held a quantity.
+// That made the roster a view of ADMISSION STATE wearing the label of purchase
+// history: voiding a pass reduced a purchase that had already happened, and a
+// supporter who donated their admissions would have read as having bought
+// nothing. `Contribution.entryTicketCount` is the purchase-side answer, and it
+// is now the only one this file reads.
 
 /**
  * Fold one settled/outstanding item into the row for its email.
@@ -109,8 +116,16 @@ function fold(
   name: string,
   settled: boolean,
   iso: string | null,
-  /** What this item adds. Amounts are STORED values, never recomputed. */
-  add: { tickets: number; ticketCents: number; donationCents: number }
+  /**
+   * What this item adds. Amounts are STORED values, never recomputed, and
+   * `known` says whether a quantity backs this item's ticket money.
+   */
+  add: {
+    tickets: number;
+    ticketCents: number;
+    donationCents: number;
+    known: boolean;
+  }
 ) {
   // Email first, then phone - the shared precedence. A row with no phone
   // simply has no second key to match on; it is NEVER dropped and never
@@ -129,6 +144,7 @@ function fold(
       donated: add.donationCents > 0,
       ticketCents: add.ticketCents,
       donationCents: add.donationCents,
+      ticketCountComplete: add.known,
       claimedAt: iso,
       status: settled ? "CONFIRMED" : "AWAITING",
     };
@@ -143,6 +159,10 @@ function fold(
   existing.tickets += add.tickets;
   existing.ticketCents += add.ticketCents;
   existing.donationCents += add.donationCents;
+  // ONE UNKNOWN MAKES THE ROW UNKNOWN. Someone with a counted purchase and a
+  // legacy one has ticket money the number does not fully account for, and a
+  // partial count shown as a whole one would be wrong rather than incomplete.
+  if (!add.known) existing.ticketCountComplete = false;
   if (add.donationCents > 0) existing.donated = true;
   // A NEW ADDRESS ON A KNOWN PHONE now points at this row too, so a third
   // contribution on either key finds the same person.
@@ -170,9 +190,7 @@ interface RowIndex {
  */
 export function contributorRows(
   squares: SquareInput[],
-  contributions: ContributionInput[],
-  /** Entry passes, for their count. Empty on a board with no event. */
-  passes: PassInput[] = []
+  contributions: ContributionInput[]
 ): ContributorRow[] {
   const index: RowIndex = { rows: [], byEmail: new Map(), byPhone: new Map() };
 
@@ -199,7 +217,9 @@ export function contributorRows(
       // THE PRICE THIS SQUARE WAS SOLD AT, not today's. Null on rows that
       // predate the column: they still count as a ticket and add no money,
       // which is the same choice `claimedAt` already makes for old rows.
-      { tickets: 1, ticketCents: sq.pricePaidCents ?? 0, donationCents: 0 }
+      //
+      // A square is always ONE ticket, so its quantity is never unknown.
+      { tickets: 1, ticketCents: sq.pricePaidCents ?? 0, donationCents: 0, known: true }
     );
   }
 
@@ -213,33 +233,18 @@ export function contributorRows(
       c.contributorName,
       c.status === "confirmed",
       c.createdAt.toISOString(),
-      // NO TICKET COUNT HERE, and no square money either. The count comes from
-      // passes below; `squareAmountCents` is deliberately not read, because
-      // that same money is already on the square rows above and adding it here
-      // would double it.
+      // `squareAmountCents` is deliberately not read: that money is already on
+      // the square rows above and adding it here would double it.
+      //
+      // `known` is false only when there IS entry money and no count behind it.
+      // A donation-only row has no ticket quantity to be missing, so it must
+      // not mark the person incomplete and push their row into the fallback.
       {
-        tickets: 0,
+        tickets: c.entryTicketCount ?? 0,
         ticketCents: c.entryAmountCents,
         donationCents: c.donationAmountCents,
+        known: c.entryAmountCents === 0 || c.entryTicketCount != null,
       }
-    );
-  }
-
-  // COUNT ONLY, and last. A pass always belongs to a confirmed purchase whose
-  // ledger row was folded above, so this never creates a row on its own - and
-  // `settled: true` matches that row's status rather than flipping it to MIXED.
-  // `null` for the date leaves the earliest activity where the purchase put it.
-  for (const p of passes) {
-    const emailKey = normalizeEmail(p.supporterEmail);
-    if (!emailKey) continue;
-    fold(
-      index,
-      emailKey,
-      normalizePhone(p.supporterPhone),
-      "—",
-      true,
-      null,
-      { tickets: 1, ticketCents: 0, donationCents: 0 }
     );
   }
 

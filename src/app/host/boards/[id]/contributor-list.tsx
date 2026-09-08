@@ -132,7 +132,10 @@ export default function ContributorList({
       [
         esc(r.name),
         esc(r.email),
-        String(r.tickets),
+        // BLANK, NOT ZERO, when the quantity is unknown. A 0 in a spreadsheet
+        // column is a claim that nothing was bought; an empty cell is the
+        // truth, and it sorts and filters as missing rather than as none.
+        r.ticketCountComplete ? String(r.tickets) : "",
         dollars(r.ticketCents),
         r.donated ? "yes" : "no",
         dollars(r.donationCents),
@@ -242,7 +245,12 @@ export default function ContributorList({
                     "0 tickets" - which says they got nothing rather than that
                     they gave. The marker replaces the count where there is
                     none, and sits beside it where there is. */}
-                {/* TICKET MONEY AND DONATION MONEY STAY DISTINCT. Someone who
+                {/* WHAT WAS PURCHASED, not what is currently held. The count
+                    comes from `Contribution.entryTicketCount` and from square
+                    rows - never from minted passes, so voiding a pass cannot
+                    reduce a purchase that already happened.
+
+                    TICKET MONEY AND DONATION MONEY STAY DISTINCT. Someone who
                     bought a ticket and added a gift reads
                     "1 ticket - $40 - $25 donation", never a single $65 they
                     cannot reconcile against what they chose. Same reason the
@@ -253,13 +261,14 @@ export default function ContributorList({
                     `Contribution.entryAmountCents` - so an early-bird ticket
                     bought at $40 still reads $40 after the board moves to $50.
 
-                    TWO ASYMMETRIES ARE DELIBERATE. A count with no money: a
-                    square from before `pricePaidCents` existed. Money with no
-                    count: a card entry purchase that has not confirmed has no
-                    passes yet, so there is nothing to count. Both render what
-                    is known rather than a zero that reads as a fact. */}
+                    "$80 IN TICKETS" WHEN THE COUNT IS UNKNOWN. Card entry
+                    purchases from before `entryTicketCount` existed carry money
+                    and no quantity, and their number cannot be proven from
+                    anything here. A bare "$80" would read as a donation and an
+                    inferred count would be a guess, so the noun carries the
+                    meaning instead. */}
                 <span className="text-xs text-gray-400 tabular-nums">
-                  {r.tickets > 0 && (
+                  {r.ticketCountComplete && r.tickets > 0 && (
                     <>
                       {r.tickets} {r.tickets === 1 ? u.one : u.many}
                       {r.ticketCents > 0 && (
@@ -270,12 +279,16 @@ export default function ContributorList({
                       )}
                     </>
                   )}
-                  {r.tickets === 0 && r.ticketCents > 0 && (
-                    <span className="text-gray-500">${dollars(r.ticketCents)}</span>
+                  {!r.ticketCountComplete && r.ticketCents > 0 && (
+                    <span className="text-gray-500">
+                      ${dollars(r.ticketCents)} in {u.many}
+                    </span>
                   )}
                   {r.donationCents > 0 && (
                     <span className="text-gray-500">
-                      {r.tickets > 0 || r.ticketCents > 0 ? " \u00b7 " : ""}
+                      {(r.ticketCountComplete ? r.tickets > 0 : r.ticketCents > 0)
+                        ? " \u00b7 "
+                        : ""}
                       {"$"}
                       {dollars(r.donationCents)} donation
                     </span>

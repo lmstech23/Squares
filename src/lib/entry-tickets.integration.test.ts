@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { boardTotals } from "./contributions.ts";
 import { pricingLocks } from "./board-lock.ts";
+import { createPendingCardContribution } from "./contributions.ts";
 import { quoteEntry } from "./entry-pricing.ts";
 import { confirmEntryPurchase, EntryAmountMismatch } from "./entry-purchase.ts";
 import { mintPasses } from "./confirm-square.ts";
@@ -552,6 +553,89 @@ describe(
       const locks = await pricingLocks(boardId);
       assert.equal(locks.adultEarlyLocked, false);
       assert.equal(locks.cutoffLocked, false);
+    });
+
+    // THE CARD PATH'S DURABLE QUANTITY. `createPendingCardContribution` writes
+    // it in the same INSERT as the money, from the same `quote.passes` the
+    // Stripe metadata is built from - the ledger row and the session cannot
+    // share a transaction, since one is an external API call, but they can and
+    // do share a source.
+    test("the pending card contribution records how many tickets it is for", async () => {
+      await seedBoard();
+      const board = await db.board.findUniqueOrThrow({ where: { boardId } });
+      const quote = quoteEntry(board, [{ tier: "ADULT", quantity: 2 }], BEFORE);
+      assert.ok(quote.ok);
+      const c = await db.$transaction((tx) =>
+        createPendingCardContribution(tx, {
+          boardId,
+          squareAmountCents: 0,
+          donationAmountCents: 0,
+          entryAmountCents: quote.totalCents,
+          entryTicketCount: quote.passes.length,
+          contributorName: "Card Buyer",
+          contributorEmail: "card@example.com",
+          contributorPhone: "6785550777",
+          holdExpiresAt: null,
+        })
+      );
+      assert.equal(c.entryTicketCount, 2);
+      assert.equal(c.entryTicketCount, quote.passes.length, "one source, not two");
+      assert.equal(c.status, "pending", "known before any pass exists");
+    });
+
+    // A donation carries no ticket count. The CHECK refuses one, and the
+    // helper must not invent it from an unrelated field.
+    test("a donation-only contribution stores no ticket count", async () => {
+      await seedBoard();
+      const c = await db.$transaction((tx) =>
+        createPendingCardContribution(tx, {
+          boardId,
+          squareAmountCents: 0,
+          donationAmountCents: 2500,
+          contributorName: "Donor",
+          contributorEmail: "donoronly@example.com",
+          contributorPhone: "6785550778",
+          holdExpiresAt: null,
+        })
+      );
+      assert.equal(c.entryTicketCount, null);
+    });
+
+    // NULL, NOT ZERO. The column has no default for exactly this reason: a 0
+    // would read as a known quantity and claim nothing was bought.
+    test("a zero count is refused by the database", async () => {
+      await seedBoard();
+      await assert.rejects(
+        () =>
+          db.contribution.create({
+            data: {
+              boardId, status: "confirmed", paymentMethod: "cash",
+              squareAmountCents: 0, donationAmountCents: 0, entryAmountCents: 4000,
+              totalPaidCents: 4000, entryTicketCount: 0,
+              contributorName: "Zero", contributorEmail: "zero@example.com",
+              contributorPhone: "6785550779", confirmedAt: new Date(),
+            },
+          }),
+        /constraint/i
+      );
+    });
+
+    // And a count with no entry money is the other contradiction.
+    test("a count with no entry money is refused by the database", async () => {
+      await seedBoard();
+      await assert.rejects(
+        () =>
+          db.contribution.create({
+            data: {
+              boardId, status: "confirmed", paymentMethod: "cash",
+              squareAmountCents: 0, donationAmountCents: 2500, entryAmountCents: 0,
+              totalPaidCents: 2500, entryTicketCount: 2,
+              contributorName: "Bad", contributorEmail: "bad@example.com",
+              contributorPhone: "6785550780", confirmedAt: new Date(),
+            },
+          }),
+        /constraint/i
+      );
     });
   }
 );

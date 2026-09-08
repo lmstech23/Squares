@@ -463,6 +463,70 @@ describe(
       assert.equal(r.wantsToHelp, true, "retained for the audit record");
     });
 
+    // THE DURABLE PURCHASE QUANTITY. `entry_reservation_lines.quantity` has
+    // always held it; confirm now carries it onto the ledger row so the
+    // contributor roster can read what was BOUGHT without counting passes,
+    // which move when one is voided.
+    test("confirm records the purchased ticket count on the contribution", async () => {
+      await seed();
+      const id = await reserve();
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
+      // 2 adult + 1 child.
+      assert.equal(c.entryTicketCount, 3);
+      assert.equal(
+        c.entryTicketCount,
+        await db.admissionPass.count({ where: { supporter: { eventId } } }),
+        "and it agrees with what was minted, at this moment"
+      );
+    });
+
+    // The agreement above is a coincidence of timing, not a dependency. Void
+    // every pass and the purchase quantity must not move.
+    test("voiding the passes does not change the recorded count", async () => {
+      await seed();
+      const id = await reserve();
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      await db.admissionPass.updateMany({
+        where: { supporter: { eventId } },
+        data: { status: "void" },
+      });
+      const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
+      assert.equal(c.entryTicketCount, 3);
+    });
+
+    test("a single-tier reservation records its own quantity", async () => {
+      await seed();
+      const id = await reserve([
+        { tier: "CHILD" as const, priceBasis: "FLAT" as const, unitPriceCents: 1500, quantity: 4 },
+      ]);
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
+      assert.equal(c.entryTicketCount, 4);
+    });
+
+    // A donation rides along but buys no ticket, so it must not inflate the
+    // count - the same separation the amount columns already keep.
+    test("a donation on the reservation does not inflate the count", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({
+        where: { id },
+        data: { donationAmountCents: 2500 },
+      });
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
+      assert.equal(c.entryTicketCount, 3);
+      assert.equal(c.donationAmountCents, 2500);
+    });
     test("a single-tier reservation confirms cleanly", async () => {
       await seed();
       const id = await reserve([

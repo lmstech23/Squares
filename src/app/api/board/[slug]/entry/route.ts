@@ -167,6 +167,17 @@ export async function POST(
         squareAmountCents: 0,
         donationAmountCents: 0,
         entryAmountCents: quote.totalCents,
+        // THE SAME `quote.passes` THE STRIPE METADATA IS BUILT FROM, two dozen
+        // lines below. The ledger row and the session cannot share a
+        // transaction - one is a database write, the other an external API call
+        // - but they can share a SOURCE, and one array taken once is what stops
+        // them disagreeing about how many tickets were bought.
+        //
+        // Recorded because nothing else here does. The direct-payment path has
+        // always had `entry_reservation_lines.quantity`; this path carried its
+        // quantity only in Stripe metadata, which the webhook decoded straight
+        // into passes and this database never kept.
+        entryTicketCount: quote.passes.length,
         contributorName: name,
         contributorEmail: email,
         contributorPhone: phone,

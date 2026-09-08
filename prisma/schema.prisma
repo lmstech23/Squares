@@ -631,6 +631,24 @@ model Contribution {
   /// touches this, `totalPaidCents`, or `raised`: revenue comes from the
   /// ledger, never from summing current Pass state.
   entryAmountCents    Int                @default(0) @map("entry_amount_cents")
+  /// How many standalone Entry Tickets this purchase bought.
+  ///
+  /// PURCHASE HISTORY, NOT ADMISSION STATE. AdmissionPass answers how many
+  /// passes someone holds NOW and moves as passes are used or voided; this
+  /// answers how many they BOUGHT and never changes. The contributor roster
+  /// needs the second and was reading the first, so voiding a pass quietly
+  /// reduced a purchase that had already happened.
+  ///
+  /// NULL MEANS NOT KNOWN, and is not the same as zero. Card entry purchases
+  /// made before this column existed carry their quantity only in Stripe
+  /// session metadata, which this database never recorded - those rows stay
+  /// null and the roster says "$80 in tickets" rather than inventing a count.
+  /// There is no default for the same reason: a 0 would read as a known
+  /// quantity and bypass that fallback.
+  ///
+  /// A TOTAL, NOT A LINE MODEL. Per-tier detail lives on
+  /// EntryReservationLine and on the passes, and stays authoritative there.
+  entryTicketCount    Int?               @map("entry_ticket_count")
   totalPaidCents      Int                @map("total_paid_cents")
 
   checkoutSessionId   String?            @map("checkout_session_id")

@@ -73,24 +73,11 @@ describe(
           createdAt: true,
           entryAmountCents: true,
           donationAmountCents: true,
+          entryTicketCount: true,
         },
       });
-      const passes = await db.admissionPass.findMany({
-        where: {
-          supporter: { event: { boardId } },
-          squareId: null,
-          status: { in: ["active", "used"] },
-        },
-        select: { supporter: { select: { email: true, phone: true } } },
-      });
-      return contributorRows(
-        claimed,
-        contributions,
-        passes.map((x) => ({
-          supporterEmail: x.supporter.email,
-          supporterPhone: x.supporter.phone,
-        }))
-      );
+      // NO PASS QUERY, mirroring the page. Quantity is purchase history.
+      return contributorRows(claimed, contributions);
     }
 
     // A DISTINCT PHONE PER EMAIL BY DEFAULT. Sharing one across fixtures would
@@ -241,7 +228,14 @@ describe(
       name: string,
       entryAmountCents: number,
       passPrices: number[],
-      opts: { status?: string; donationCents?: number; phone?: string } = {}
+      opts: {
+        status?: string;
+        donationCents?: number;
+        phone?: string;
+        /** Omit the durable quantity, as a card purchase from before the
+            column existed did. Null is "not known", never zero. */
+        legacyNoQuantity?: boolean;
+      } = {}
     ) {
       const status = opts.status ?? "confirmed";
       const donationCents = opts.donationCents ?? 0;
@@ -254,6 +248,16 @@ describe(
           squareAmountCents: 0,
           donationAmountCents: donationCents,
           entryAmountCents,
+          // THE PURCHASE-SIDE QUANTITY, written as both real paths write it:
+          // the card route from `quote.passes.length`, the reservation confirm
+          // from the sum of its line quantities. Passed independently of
+          // `passPrices` so a fixture cannot hide the two disagreeing.
+          // ZERO IS NOT A COUNT. contributions_entry_ticket_count_positive
+          // refuses it, correctly: entry money that bought no tickets is a
+          // contradiction, not a smaller purchase. No passes means the
+          // fixture is describing an unknown quantity, so it stores NULL.
+          entryTicketCount:
+            opts.legacyNoQuantity || passPrices.length === 0 ? null : passPrices.length,
           totalPaidCents: entryAmountCents + donationCents,
           contributorName: name,
           contributorEmail: email,
@@ -309,6 +313,96 @@ describe(
     }
 
     // ====================================================================
+    // PURCHASE QUANTITY IS HISTORY, NOT ADMISSION STATE.
+    //
+    // The count came from minted passes, so voiding one reduced a purchase that
+    // had already happened. `Contribution.entryTicketCount` is the purchase-side
+    // record and is now the only source. Null means NOT KNOWN - card purchases
+    // from before the column carry their quantity only in Stripe metadata, and
+    // the roster says so rather than inventing a number.
+    // ====================================================================
+
+    // THE RULING, as its own assertion. Voiding every pass must not move it.
+    test("voided passes do not reduce the purchased ticket count", async () => {
+      await entryPurchase("voided@example.com", "Voided", 8000, [4000, 4000]);
+      const before = find(await rows(), "voided@example.com")!;
+      assert.equal(before.tickets, 2);
+
+      await db.admissionPass.updateMany({
+        where: { supporter: { emailKey: "voided@example.com" } },
+        data: { status: "void" },
+      });
+
+      const after = find(await rows(), "voided@example.com")!;
+      assert.equal(after.tickets, 2, "still what they bought");
+      assert.equal(after.ticketCents, 8000);
+      assert.equal(after.ticketCountComplete, true);
+    });
+
+    // Deleting the passes outright is the same question one step further: the
+    // roster must not depend on their existence at all.
+    test("the count survives the passes being gone entirely", async () => {
+      await entryPurchase("nopass@example.com", "No Pass", 4000, [4000]);
+      await db.admissionPass.deleteMany({
+        where: { supporter: { emailKey: "nopass@example.com" } },
+      });
+      const r = find(await rows(), "nopass@example.com")!;
+      assert.equal(r.tickets, 1);
+      assert.equal(r.ticketCountComplete, true);
+    });
+
+    // LEGACY. A card entry purchase from before the column: money, no quantity.
+    // The row must be marked incomplete so the UI says "$80 in tickets".
+    test("a legacy entry contribution with no quantity is marked unknown", async () => {
+      await entryPurchase("legacy@example.com", "Legacy", 8000, [4000, 4000], {
+        legacyNoQuantity: true,
+      });
+      const r = find(await rows(), "legacy@example.com")!;
+      assert.equal(r.ticketCents, 8000, "the money is known");
+      assert.equal(r.ticketCountComplete, false, "the count is not");
+      assert.equal(r.tickets, 0, "and is never inferred");
+    });
+
+    // A donation has no ticket quantity to be missing. It must not be dragged
+    // into the fallback by a check that only asks "is the count zero".
+    test("a donation-only row is complete, not unknown", async () => {
+      await donation("cleandonor@example.com", "Clean Donor");
+      const r = find(await rows(), "cleandonor@example.com")!;
+      assert.equal(r.ticketCountComplete, true);
+      assert.equal(r.ticketCents, 0);
+    });
+
+    // One counted purchase and one legacy one. The number no longer accounts
+    // for all the money, so the whole row falls back rather than showing a
+    // partial count as if it were whole.
+    test("one unknown purchase makes the whole row unknown", async () => {
+      await entryPurchase("part@example.com", "Partial", 4000, [4000]);
+      await entryPurchase("part@example.com", "Partial", 4000, [4000], {
+        legacyNoQuantity: true,
+      });
+      const r = find(await rows(), "part@example.com")!;
+      assert.equal(r.ticketCents, 8000);
+      assert.equal(r.ticketCountComplete, false);
+    });
+
+    // A pending purchase now HAS its quantity - the card route writes it when
+    // the pending ledger row is created, before Stripe is ever called.
+    test("a pending card purchase carries its quantity before confirmation", async () => {
+      await entryPurchase("pend2@example.com", "Pending Two", 8000, [4000, 4000], {
+        status: "pending",
+      });
+      const r = find(await rows(), "pend2@example.com")!;
+      assert.equal(r.status, "AWAITING");
+      assert.equal(r.tickets, 2, "known at purchase, not at minting");
+      assert.equal(r.ticketCountComplete, true);
+      assert.equal(
+        await db.admissionPass.count({ where: { supporter: { emailKey: "pend2@example.com" } } }),
+        0,
+        "and no pass exists yet"
+      );
+    });
+
+    // ====================================================================
     // ENTRY TICKETS. The regression: an entry purchase creates no Square and
     // carries its money in `entryAmountCents`, so the roster query - which
     // asked only for squares and `donationAmountCents > 0` - returned nothing
@@ -358,17 +452,21 @@ describe(
       assert.notEqual(r.ticketCents + r.donationCents, r.ticketCents, "not collapsed");
     });
 
-    // AWAITING. A pending purchase mints no passes, so there is money and no
-    // count - deliberately rendered as the amount alone rather than "0 tickets".
-    test("an awaiting direct-payment purchaser shows money and no count", async () => {
-      await entryPurchase("awaiting@example.com", "Awaiting", 8000, [], {
+    // AWAITING. This used to assert "money and no count", because the count
+    // came from minted passes and a pending purchase has none. That premise is
+    // gone: the card route writes `entryTicketCount` when it creates the
+    // pending ledger row, before Stripe is called at all. A purchase now knows
+    // how many tickets it is for from the moment it exists.
+    test("an awaiting purchaser shows both the money and the count", async () => {
+      await entryPurchase("awaiting@example.com", "Awaiting", 8000, [4000, 4000], {
         status: "pending",
       });
       const r = find(await rows(), "awaiting@example.com");
       assert.ok(r);
       assert.equal(r.status, "AWAITING");
-      assert.equal(r.ticketCents, 8000, "the money is known");
-      assert.equal(r.tickets, 0, "the count is not, until passes are minted");
+      assert.equal(r.ticketCents, 8000);
+      assert.equal(r.tickets, 2);
+      assert.equal(r.ticketCountComplete, true);
     });
 
     test("multiple entry purchases by one person accumulate into one row", async () => {

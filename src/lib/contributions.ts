@@ -119,6 +119,17 @@ export async function createPendingCardContribution(
     /// Standalone Entry Ticket money. Defaulted so every existing caller is
     /// unchanged and still writes a row the three-term CHECK accepts.
     entryAmountCents?: number;
+    /**
+     * How many entry tickets this purchase bought.
+     *
+     * PURCHASE HISTORY. Written here, in the same INSERT as the money, from
+     * the same quote that becomes the Stripe metadata - so the count and the
+     * passes that metadata mints cannot disagree about how many were bought.
+     *
+     * Undefined means not applicable (a donation, a square purchase) and
+     * stores NULL. Null is "not known", never zero.
+     */
+    entryTicketCount?: number;
     contributorName: string;
     contributorEmail: string;
     contributorPhone?: string | null;
@@ -140,6 +151,9 @@ export async function createPendingCardContribution(
       squareAmountCents: input.squareAmountCents,
       donationAmountCents: input.donationAmountCents,
       entryAmountCents,
+      // Only where there is entry money, matching
+      // contributions_entry_ticket_count_needs_entry.
+      entryTicketCount: entryAmountCents > 0 ? input.entryTicketCount ?? null : null,
       totalPaidCents: total,
       contributorName: input.contributorName,
       contributorEmail: input.contributorEmail,

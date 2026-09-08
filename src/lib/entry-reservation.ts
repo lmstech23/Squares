@@ -147,6 +147,16 @@ export async function confirmEntryReservation(
   // in different columns of one Contribution, which is what keeps donation
   // money out of the prize basis structurally rather than by a filter.
   const ticketCents = reservationTotalCents(lines);
+  // THE COUNT THIS CONFIRMATION IS ABOUT TO WRITE, which is why it reads
+  // `quantity` rather than `quantityConfirmed`: the loop below sets
+  // `quantityConfirmed = line.quantity` for every line, and until it runs the
+  // stored value is still 0. Reading the column here would record a purchase
+  // of nothing.
+  //
+  // Confirm means EVERY line on this release, so the two are the same number.
+  // When partial confirmation gets a surface this has to follow what was
+  // actually confirmed - and it is one expression, in one place, to change.
+  const ticketCount = reservation.lines.reduce((n, l) => n + l.quantity, 0);
   const donationCents = reservation.donationAmountCents;
   const passes = expandReservationLines(lines);
 
@@ -163,6 +173,11 @@ export async function confirmEntryReservation(
       squareAmountCents: 0,
       donationAmountCents: donationCents,
       entryAmountCents: ticketCents,
+      // The durable purchase quantity, carried across from the reservation
+      // lines. Everything downstream of this row - the roster included - reads
+      // it rather than counting passes, so voiding a pass later cannot reduce
+      // a purchase that already happened.
+      entryTicketCount: ticketCount > 0 ? ticketCount : null,
       // The three-term CHECK sums these. The donation reaches `raised` and
       // never the prize basis, because it is in a different column.
       totalPaidCents: ticketCents + donationCents,
