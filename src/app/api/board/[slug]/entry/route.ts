@@ -49,6 +49,9 @@ interface EntryBody {
   buyerName: string;
   buyerEmail: string;
   buyerPhone?: string | null;
+  /// The help checkbox. Absent on a board with no sign-up sheet, where the
+  /// sheet does not render it.
+  wantsToHelp?: boolean;
 }
 
 const TIER_LABEL: Record<EntryTier, string> = {
@@ -167,6 +170,12 @@ export async function POST(
         contributorName: name,
         contributorEmail: email,
         contributorPhone: phone,
+        // THE PENDING LEDGER ROW IS THE STORAGE. Unlike a reservation, this
+        // path needs no new column: the contribution already carries
+        // `wantsToHelp`, it is created here, and the webhook reads it back to
+        // stamp the grant. Anything but an explicit `true` is false — an
+        // unasked question and a declined one store the same value.
+        wantsToHelp: body.wantsToHelp === true,
         // Nothing is held, so nothing expires — the donation reading exactly.
         holdExpiresAt: null,
       })

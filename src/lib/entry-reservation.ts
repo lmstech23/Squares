@@ -110,6 +110,7 @@ export async function confirmEntryReservation(
       contributorEmail: true,
       contributorPhone: true,
       donationAmountCents: true,
+      wantsToHelp: true,
       lines: {
         select: { id: true, tier: true, priceBasis: true, unitPriceCents: true, quantity: true },
       },
@@ -168,6 +169,9 @@ export async function confirmEntryReservation(
       contributorName: reservation.contributorName,
       contributorEmail: reservation.contributorEmail,
       contributorPhone: reservation.contributorPhone,
+      // The ledger's own copy of the answer, beside the grant's. Both columns
+      // are written from the one place the contributor gave it.
+      wantsToHelp: reservation.wantsToHelp,
       confirmedAt: new Date(),
       // Attributed to whoever confirmed. The contributor declared it; the host
       // is the one asserting the money arrived.
@@ -193,6 +197,10 @@ export async function confirmEntryReservation(
       email: reservation.contributorEmail,
       phone: reservation.contributorPhone,
     },
+    // Carried from the reservation, where it has been waiting since the
+    // contributor ticked the box. This is the whole reason the column exists:
+    // the grant is created HERE, days after the answer was given.
+    wantsToHelp: reservation.wantsToHelp,
   });
 
   for (const line of reservation.lines) {

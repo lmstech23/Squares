@@ -145,6 +145,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       contributorName: true,
       contributorEmail: true,
       contributorPhone: true,
+      wantsToHelp: true,
       status: true,
     },
   });
@@ -241,6 +242,11 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
             email: contribution.contributorEmail,
             phone: contribution.contributorPhone,
           },
+          // Answered at checkout and parked on the pending ledger row, because
+          // the grant that carries it does not exist until this transaction.
+          // The reservation path stores it on the reservation for the same
+          // reason; both end up on the grant here.
+          wantsToHelp: contribution.wantsToHelp,
         });
         return;
       }

@@ -48,6 +48,9 @@ interface ReserveBody {
   paymentRail: string;
   /// Optional donation on top, sent in the same transfer. Not a tier line.
   donationAmountCents?: number;
+  /// The help checkbox. Absent on a board with no sign-up sheet, where the
+  /// panel does not render it.
+  wantsToHelp?: boolean;
 }
 
 const RAILS: Rail[] = ["zelle", "cashapp", "venmo", "paypal"];
@@ -107,6 +110,13 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // COERCED, NOT VALIDATED. Anything other than an explicit `true` is false.
+    // There is nothing to reject here: an absent answer and a declined one are
+    // the same stored value, exactly as they are on the grant and the ledger.
+    // Interest claims nothing (invariant 36), so a spoofed `true` reserves no
+    // slot and grants no authority — it shows one person a sign-up link.
+    const wantsToHelp = body.wantsToHelp === true;
 
     const rawLines = Array.isArray(body.lines) ? body.lines : [];
     const lines: EntryLine[] = [];
@@ -236,6 +246,9 @@ export async function POST(
               contributorPhone: phone,
               paymentRail: rail,
               donationAmountCents,
+              // Held here until confirmation, which is where the grant that
+              // actually carries it is created.
+              wantsToHelp,
               // `pending` until the host confirms or releases. Nothing else may
               // move it, and no sweep will.
               status: "pending",

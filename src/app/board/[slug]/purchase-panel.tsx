@@ -53,11 +53,14 @@ export default function PurchasePanel({
   slug,
   tiers,
   rails,
+  signupSheetExists,
   onClose,
 }: {
   slug: string;
   tiers: PanelTier[];
   rails: PanelRail[];
+  /** Whether this event has a sign-up sheet for the help checkbox to lead to. */
+  signupSheetExists: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -69,6 +72,7 @@ export default function PurchasePanel({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [wantsToHelp, setWantsToHelp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -123,6 +127,7 @@ export default function PurchasePanel({
           buyerEmail: email.trim(),
           buyerPhone: phone.trim(),
           paymentRail: rail,
+          wantsToHelp,
         }),
       });
       const data = await res.json();
@@ -310,6 +315,39 @@ export default function PurchasePanel({
             />
           </div>
         </div>
+
+
+        {/* THE HELP CHECKBOX — sign-up addendum SS4, invariant 36.
+
+            Asked at purchase because that is the one moment the buyer is
+            already thinking about the event; asking later means an email
+            nobody opens. Word for word the claim sheet's, because a ticket
+            buyer and a square buyer are answering the same question.
+
+            IT CLAIMS NOTHING. Ticking it puts nobody on the host's volunteer
+            list - that list is HelperSignup rows, actual commitments. This
+            decides whether the sign-up link is put in front of this person.
+
+            Gated on the sheet existing: with no sheet there is nowhere for the
+            link to go, so the question would be a promise Daali cannot keep. */}
+        {signupSheetExists && (
+          <label className="flex items-start gap-2.5 cursor-pointer mt-4">
+            <input
+              type="checkbox"
+              checked={wantsToHelp}
+              onChange={(e) => setWantsToHelp(e.target.checked)}
+              className="mt-0.5 accent-green-500"
+            />
+            <span>
+              <span className="block text-sm">
+                I&apos;d like to help with the event
+              </span>
+              <span className="block text-xs text-gray-600 mt-0.5">
+                We&apos;ll take you to the sign-up sheet right after you pay.
+              </span>
+            </span>
+          </label>
+        )}
 
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 

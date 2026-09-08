@@ -380,6 +380,89 @@ describe(
       assert.equal(r.donationAmountCents, 2500, "retained for the audit record");
     });
 
+
+    // ---- the help checkbox --------------------------------------------------
+    //
+    // THE FLAG HAS TO SURVIVE THE GAP. A contributor ticks the box at reserve
+    // time; the AdmissionGrant that actually carries interest is created days
+    // later at confirm. Before the column existed the answer was collected and
+    // thrown away, and worse than thrown away: the grant recorded a definite
+    // `false` for someone who had said yes.
+    //
+    // INTENT ONLY - invariant 36. Nothing below asserts a HelperSignup, because
+    // ticking the box creates none. It decides whether the person is shown the
+    // sign-up link, and they reach the host's volunteer list by claiming a slot.
+
+    test("an opted-in reservation stamps the grant and the ledger row", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({ where: { id }, data: { wantsToHelp: true } });
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+
+      const grant = await db.admissionGrant.findFirstOrThrow({ where: { eventId } });
+      assert.equal(grant.wantsToHelp, true, "the column interest is READ from");
+      const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
+      assert.equal(c.wantsToHelp, true, "and the ledger's second source");
+    });
+
+    test("an opt-in claims no slot — interest is not a signup", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({ where: { id }, data: { wantsToHelp: true } });
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      assert.equal(
+        await db.helperSignup.count({ where: { supporter: { eventId } } }),
+        0,
+        "the host volunteer list is HelperSignup rows and stays empty"
+      );
+    });
+
+    test("not opting in leaves the grant false, and that is the default", async () => {
+      await seed();
+      const id = await reserve();
+      const r = await db.entryReservation.findUniqueOrThrow({ where: { id } });
+      assert.equal(r.wantsToHelp, false, "defaulted at reserve, never null");
+
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: id, hostId })
+      );
+      const grant = await db.admissionGrant.findFirstOrThrow({ where: { eventId } });
+      assert.equal(grant.wantsToHelp, false);
+    });
+
+    // The regression itself, stated as a test. `confirmEntryPurchase` hardcoded
+    // `wantsToHelp: false`, so this assertion failed for every opted-in buyer
+    // on both entry paths regardless of what they had answered.
+    test("the grant does NOT hardcode false", async () => {
+      await seed();
+      const yes = await reserve();
+      await db.entryReservation.update({ where: { id: yes }, data: { wantsToHelp: true } });
+      await db.$transaction((tx) =>
+        confirmEntryReservation(tx, { reservationId: yes, hostId })
+      );
+      const grants = await db.admissionGrant.findMany({ where: { eventId } });
+      assert.equal(grants.length, 1);
+      assert.notEqual(grants[0].wantsToHelp, false);
+    });
+
+    // Released means nothing happened. The answer is retained on the row for
+    // the same audit reason the prices and the donation are.
+    test("releasing an opted-in reservation creates no grant and keeps the answer", async () => {
+      await seed();
+      const id = await reserve();
+      await db.entryReservation.update({ where: { id }, data: { wantsToHelp: true } });
+      await db.$transaction((tx) =>
+        releaseEntryReservation(tx, { reservationId: id, reason: "never arrived" })
+      );
+      assert.equal(await db.admissionGrant.count({ where: { eventId } }), 0);
+      const r = await db.entryReservation.findUniqueOrThrow({ where: { id } });
+      assert.equal(r.wantsToHelp, true, "retained for the audit record");
+    });
+
     test("a single-tier reservation confirms cleanly", async () => {
       await seed();
       const id = await reserve([

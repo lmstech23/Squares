@@ -1160,6 +1160,17 @@ model EntryReservation {
   /// reconciliation only — no money moves through Daali on any of them.
   paymentRail      PaymentRail            @map("payment_rail")
 
+  /// The help checkbox, held between reserve and confirm.
+  ///
+  /// `AdmissionGrant.wantsToHelp` is where interest is READ from, and that row
+  /// does not exist until the host confirms. This column is where the answer
+  /// waits — the contributor ticks the box days before the money is marked as
+  /// arrived, and without somewhere to keep it the answer is discarded.
+  /// Copied onto the grant at confirmation and never read directly.
+  ///
+  /// INTENT ONLY — invariant 36, same as the grant column. It claims no slot.
+  wantsToHelp      Boolean                @default(false) @map("wants_to_help")
+
   /// `resolved` means every line was dispositioned, not that every line was
   /// paid. A reservation with one line confirmed and one released is resolved.
   status           EntryReservationStatus @default(pending)

@@ -270,6 +270,69 @@ async function sendDonationConfirmations(where: {
 }
 
 /**
+ * The volunteer sign-up block for one supporter's receipt, or "" if they are
+ * not eligible for it.
+ *
+ * EXTRACTED SO BOTH PURCHASE PATHS SHARE IT. This block used to live inline in
+ * the square sweep, gated on `batchId` — so a standalone Entry Ticket purchase,
+ * which has no square batch, could never receive the link no matter what the
+ * buyer had answered. The checkbox was restored on both entry paths and would
+ * have led nowhere.
+ *
+ * ONE ELIGIBILITY RULE, NOT TWO. Every condition below is the square path's,
+ * unchanged: interest is a ONE-WAY OR ACROSS GRANTS (sign-up addendum §4) so
+ * someone who ticks the box on their second purchase gets the link on the
+ * receipt for their first; `mayClaim` gates on the supporter being active,
+ * which is DERIVED and never stored; and the sheet must exist. Two copies of
+ * this rule would drift, and the one that drifts is whichever is tested less.
+ *
+ * IT ISSUES A LINK, NOT A SLOT. Interest claims nothing — invariant 36. This
+ * puts nobody on the host's volunteer list; that list is HelperSignup rows,
+ * and the person reaches it by following this link and choosing something.
+ */
+async function signupBlockFor(
+  supporterId: string,
+  eventId: string,
+  base: string
+): Promise<string> {
+  const [grants, supporter, sheet] = await Promise.all([
+    prisma.admissionGrant.findMany({
+      where: { eventSupporterId: supporterId, eventId },
+      select: { wantsToHelp: true },
+    }),
+    prisma.eventSupporter.findUnique({
+      where: { id: supporterId },
+      select: { status: true },
+    }),
+    prisma.signupSheet.findUnique({
+      where: { eventId },
+      select: { isOpen: true },
+    }),
+  ]);
+
+  if (!wantsToHelp(grants) || !supporter || !mayClaim(supporter.status) || !sheet) {
+    return "";
+  }
+
+  // No "we already sent you one" branch. That copy could only fire when a
+  // token existed whose raw value was unrecoverable, so it pointed at a link
+  // that did not exist and never could.
+  const issued = sheet.isOpen === false ? null : await issueSupporterAccessLink(supporterId);
+  const body = issued
+    ? `<a href="${base}/signup/${encodeURIComponent(issued.token)}"
+          style="color:#166534;">Choose what you'll bring or a shift you'll work</a>
+       — this link is yours, don't forward it.`
+    : `Sign-ups for this event are closed for now. The host will be in touch if that changes.`;
+
+  return `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
+      <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
+        <p style="margin:0;font:600 14px system-ui,sans-serif;">Volunteer sign-up</p>
+        <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#444;">${body}</p>
+      </td></tr>
+    </table>`;
+}
+
+/**
  * Standalone Entry Ticket confirmations.
  *
  * A SEPARATE CLAIM FROM THE DONATION SWEEP, and it has to be. That one requires
@@ -324,7 +387,7 @@ async function sendEntryConfirmations(where: {
     // the key the passes screen now accepts alongside a square batch.
     const grant = await prisma.admissionGrant.findUnique({
       where: { contributionId: c.id },
-      select: { id: true, eventSupporterId: true },
+      select: { id: true, eventSupporterId: true, eventId: true },
     });
 
     // Ordinals count the supporter's CURRENT usable passes in sequence order,
@@ -355,6 +418,15 @@ async function sendEntryConfirmations(where: {
            </p>`
         : "";
 
+    // THE SIGN-UP LINK, on the standalone entry receipt. This is the mechanism
+    // the help checkbox drives: the buyer ticked the box, the confirming
+    // transaction stamped the grant, and this is where they are actually shown
+    // where to go. Same helper the square receipt uses, so the eligibility
+    // rule cannot differ between a square buyer and a ticket buyer.
+    const signupHtml = grant
+      ? await signupBlockFor(grant.eventSupporterId, grant.eventId, base)
+      : "";
+
     const linkLine = grant
       ? `<p style="margin:12px 0 0;font:14px system-ui,sans-serif;">
            <a href="${base}/passes/${encodeURIComponent(grant.id)}" style="color:#166534;">
@@ -377,7 +449,8 @@ async function sendEntryConfirmations(where: {
       <table role="presentation" cellpadding="0" cellspacing="0" width="100%"
              style="margin-top:8px;">
         ${ticketBlocks(passes.map((pp) => pp.token), base)}
-      </table>`;
+      </table>
+      ${signupHtml}`;
 
     try {
       await sendEmail(c.contributorEmail!, subject, html);
@@ -603,58 +676,27 @@ export async function sendPendingConfirmations(where: {
       //
       // The reorder above removes that block entirely, and the pass wrapper is
       // deliberately given different attributes so the twin is not recreated.
+      //
+      // The same block, from the same helper the standalone entry receipt
+      // uses. It was inline here and gated on `batchId`, which meant an entry
+      // purchase — which has no square batch — could never receive the link.
+      //
+      // The eligibility rule is unchanged and now lives in one place: interest
+      // is a ONE-WAY OR ACROSS GRANTS (sign-up addendum §4), so someone who
+      // ticks the box on their second purchase gets the link on the receipt for
+      // their first. Keying on a single grant's `wantsToHelp` was the bug that
+      // rule was written to fix — a supporter on 67ri0sk7 who had asked twice,
+      // was active, and had an open sheet with two slots received a
+      // confirmation with no link at all, because the batch being mailed
+      // happened to predate the checkbox.
       let signupHtml = "";
       if (batchId) {
         const grant = await prisma.admissionGrant.findUnique({
           where: { squareBatchId: batchId },
-          select: {
-            event: { select: { id: true, signupSheet: { select: { isOpen: true } } } },
-            supporter: { select: { id: true, status: true } },
-          },
+          select: { eventId: true, eventSupporterId: true },
         });
-
-        // INTEREST IS A ONE-WAY OR ACROSS GRANTS, NEVER A SINGLE BATCH —
-        // sign-up addendum §4, and signup-rules.ts says so in the helper this
-        // now uses. Someone who ticks the box on their second purchase is
-        // interested; the receipt for their FIRST purchase must still carry
-        // the link. Keying on `grant.wantsToHelp` was the bug: a supporter on
-        // 67ri0sk7 who had asked twice, was active, and had an open sheet with
-        // two slots received a confirmation with no link at all, because the
-        // batch being mailed happened to predate the checkbox.
-        const grants = grant?.supporter
-          ? await prisma.admissionGrant.findMany({
-              where: {
-                eventSupporterId: grant.supporter.id,
-                eventId: grant.event.id,
-              },
-              select: { wantsToHelp: true },
-            })
-          : [];
-
-        // Eligibility is DERIVED, never stored: `active` is the gate, and it
-        // is set inside the confirmation transaction this sweep follows.
-        if (
-          wantsToHelp(grants) &&
-          grant?.supporter &&
-          mayClaim(grant.supporter.status) &&
-          grant.event.signupSheet
-        ) {
-          const sheetClosed = grant.event.signupSheet.isOpen === false;
-          // No "we already sent you one" branch any more. That copy could only
-          // fire when a token existed whose raw value was unrecoverable, so it
-          // pointed at a link that did not exist and never could.
-          const issued = sheetClosed ? null : await issueSupporterAccessLink(grant.supporter.id);
-          const body = issued
-            ? `<a href="${base}/signup/${encodeURIComponent(issued.token)}"
-                  style="color:#166534;">Choose what you'll bring or a shift you'll work</a>
-               — this link is yours, don't forward it.`
-            : `Sign-ups for this event are closed for now. The host will be in touch if that changes.`;
-          signupHtml = `<table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
-              <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
-                <p style="margin:0;font:600 14px system-ui,sans-serif;">Volunteer sign-up</p>
-                <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#444;">${body}</p>
-              </td></tr>
-            </table>`;
+        if (grant) {
+          signupHtml = await signupBlockFor(grant.eventSupporterId, grant.eventId, base);
         }
       }
 

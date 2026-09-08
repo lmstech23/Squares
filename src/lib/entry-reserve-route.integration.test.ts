@@ -194,6 +194,51 @@ describe(
       assert.equal(await db.entryReservation.count({ where: { boardId } }), 2);
     });
 
+    // ---- the help checkbox --------------------------------------------------
+    //
+    // The route's only job here is to keep the answer. It is read at CONFIRM,
+    // where it is copied onto the AdmissionGrant — without this column the box
+    // is ticked and the answer discarded, which is how both entry paths came to
+    // record a definite "not interested" for people who had said yes.
+
+    test("an opted-in reservation keeps the answer", async () => {
+      await seedBoard();
+      const res = await call(goodBody({ wantsToHelp: true }));
+      assert.equal(res.status, 200);
+      const r = await db.entryReservation.findFirstOrThrow({ where: { boardId } });
+      assert.equal(r.wantsToHelp, true);
+    });
+
+    // AN ABSENT ANSWER AND A DECLINED ONE ARE THE SAME STORED VALUE, exactly as
+    // they are on the grant and the ledger. A board with no sign-up sheet does
+    // not render the checkbox and sends no field; that is not an error.
+    test("an absent or false answer stores false, and is not an error", async () => {
+      await seedBoard();
+      assert.equal((await call(goodBody())).status, 200);
+      const absent = await db.entryReservation.findFirstOrThrow({ where: { boardId } });
+      assert.equal(absent.wantsToHelp, false);
+
+      assert.equal(
+        (await call(goodBody({ buyerEmail: "b@example.com", wantsToHelp: false }))).status,
+        200
+      );
+      const explicit = await db.entryReservation.findFirstOrThrow({
+        where: { boardId, contributorEmail: "b@example.com" },
+      });
+      assert.equal(explicit.wantsToHelp, false);
+    });
+
+    // COERCED, NOT VALIDATED. Anything but an explicit `true` is false, and
+    // nothing is rejected: interest claims nothing (invariant 36), so a junk
+    // value can only ever fail to show someone a sign-up link.
+    test("a non-boolean answer is coerced to false, not rejected", async () => {
+      await seedBoard();
+      const res = await call(goodBody({ wantsToHelp: "yes please" }));
+      assert.equal(res.status, 200);
+      const r = await db.entryReservation.findFirstOrThrow({ where: { boardId } });
+      assert.equal(r.wantsToHelp, false);
+    });
+
     // ---- pricing ------------------------------------------------------------
 
     test("after the cutoff the adult line locks at the regular price", async () => {

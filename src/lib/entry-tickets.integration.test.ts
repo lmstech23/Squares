@@ -78,7 +78,8 @@ describe(
     async function buyEntry(
       lines: { tier: "CHILD" | "ADULT"; quantity: number }[],
       now: Date = BEFORE,
-      contact = CONTACT
+      contact = CONTACT,
+      wantsToHelp = false
     ) {
       const board = await db.board.findUniqueOrThrow({ where: { boardId } });
       const quote = quoteEntry(board, lines, now);
@@ -96,6 +97,7 @@ describe(
             contributorName: contact.name,
             contributorEmail: contact.email,
             contributorPhone: contact.phone,
+            wantsToHelp,
             confirmedAt: new Date(),
           },
         });
@@ -105,6 +107,7 @@ describe(
           entryAmountCents: quote.totalCents,
           passes: quote.passes,
           contact,
+          wantsToHelp,
         });
         return { contribution: c, ...r };
       });
@@ -492,6 +495,7 @@ describe(
               entryAmountCents: 9999,
               passes: [{ tier: "CHILD", priceBasis: "FLAT", pricePaidCents: 1500 }],
               contact: CONTACT,
+              wantsToHelp: false,
             })
           ),
         EntryAmountMismatch

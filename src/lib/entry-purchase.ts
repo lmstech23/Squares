@@ -59,6 +59,19 @@ export async function confirmEntryPurchase(
     entryAmountCents: number;
     passes: EntryPrice[];
     contact: { name: string; email: string; phone: string };
+    /**
+     * The help checkbox, as the contributor answered it at purchase.
+     *
+     * INTENT ONLY — invariant 36. It claims no slot and puts nobody on the
+     * host's volunteer list; it decides whether this person is shown the
+     * sign-up link on their receipt and confirmation screen. `HelperSignup`
+     * remains the only record of an actual commitment.
+     *
+     * REQUIRED, not defaulted. It was a hardcoded `false` here, which is how
+     * both entry paths silently recorded "not interested" for people who were
+     * never asked. A caller that has no answer must say `false` on purpose.
+     */
+    wantsToHelp: boolean;
   }
 ): Promise<{ supporterId: string; grantId: string; passesMinted: number }> {
   // ENTRY PASS PRICES RECONCILE AT CONFIRMATION — the assertion, before
@@ -84,7 +97,10 @@ export async function confirmEntryPurchase(
       // STANDALONE ENTRY NEVER DONATES ADMISSION. Stated rather than defaulted
       // so the rule is visible at the write, not only in the schema.
       donateAdmissions: false,
-      wantsToHelp: false,
+      // Interest is a one-way OR across grants, read as EXISTS(grant WHERE
+      // wantsToHelp) — sign-up addendum §4. Writing the buyer's own answer
+      // here is what puts the sign-up link on their receipt.
+      wantsToHelp: input.wantsToHelp,
     },
   });
 

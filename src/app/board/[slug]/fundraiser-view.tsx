@@ -752,7 +752,12 @@ export default function FundraiserView({
         )}
 
         {buyingEntry && offers.length > 0 && entryByCard && (
-          <EntrySheet slug={slug} offers={offers} onClose={() => setBuyingEntry(false)} />
+          <EntrySheet
+            slug={slug}
+            offers={offers}
+            signupSheetExists={signupSheetExists}
+            onClose={() => setBuyingEntry(false)}
+          />
         )}
 
         {buyingEntry && offers.length > 0 && entryByReservation && (
@@ -765,6 +770,7 @@ export default function FundraiserView({
               note: o.note,
             }))}
             rails={rails}
+            signupSheetExists={signupSheetExists}
             onClose={() => setBuyingEntry(false)}
           />
         )}
