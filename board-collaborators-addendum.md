@@ -147,7 +147,7 @@ group, and a capability's role column is the whole of its meaning.
 | `reporting.view` — totals, breakdown, operational reporting | ✅ | ✅ |
 | `board.edit` — title, description, contact details, goal | ✅ | ✅ |
 | `board.close` — trigger `CLOSING` and finalization | ✅ | ❌ |
-| `board.dismiss` — hide a board from the host dashboard | ✅ | ❌ |
+| `board.dismiss` — hide a board from the host dashboard **(new in v2.2)** | ✅ | ❌ |
 | `board.delete` | ✅ | ❌ |
 | `terms.set` — prices, prize percent, dates, and the invariant 16 list | ✅ | ❌ |
 | `payout.configure` — Stripe destination, payment handles | ✅ | ❌ |
@@ -170,13 +170,13 @@ group, and a capability's role column is the whole of its meaning.
 | `volunteer.manage` — sheets, slots, signups, when built | ✅ | ✅ |
 | `staff.manage` — issue and revoke check-in staff links | ✅ | ✅ |
 
-#### Game Day outcome — added v2.2
+#### Game Day outcome
 
 | Capability | OWNER | MANAGER |
 |---|---|---|
-| `scores.enter` — enter or correct Game Day period scores | ✅ | ✅ |
-| `winner.resend` — resend a winner SMS to the pinned recipient *(invariant 117)* | ✅ | ✅ |
-| `winner.notify` — determine a period winner and send the first SMS | ✅ | ❌ |
+| `scores.enter` — enter or correct Game Day period scores **(new in v2.2)** | ✅ | ✅ |
+| `winner.resend` — resend a winner SMS to the pinned recipient *(invariant 117)* **(new in v2.2)** | ✅ | ✅ |
+| `winner.notify` — determine a period winner and send the first SMS **(new in v2.2)** | ✅ | ❌ |
 | `draw.run` | ✅ | ❌ |
 
 #### Delegation
@@ -185,6 +185,15 @@ group, and a capability's role column is the whole of its meaning.
 |---|---|---|
 | `collaborators.manage` — invite, revoke, change roles | ✅ | ❌ |
 | `ownership.transfer` | ✅ | ❌ |
+
+**24 capabilities across five groups: the 20 from v2.1, plus the four marked
+(new in v2.2).** `draw.run` sits in the Game Day group and is NOT new — it was
+in v2.1 and was only regrouped here. **Grouping is by domain, not by
+provenance:** `board.dismiss` is one of the four new capabilities but belongs
+under Board rather than Game Day, so the marker is on the row rather than the
+heading. A heading that implied a whole group was new would misdescribe
+`draw.run`, and one that grouped the new four together would put a dashboard
+action beside three scoring ones.
 
 **24 capabilities across five groups.** `board.dismiss` sits under Board rather
 than beside `board.delete` in a "destructive" group, because it is recoverable
