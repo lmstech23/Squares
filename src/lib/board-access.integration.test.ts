@@ -122,6 +122,76 @@ describe(
       await db.$disconnect();
     });
 
+    // ====================================================================
+    // THE BOARD LIST — /host/boards.
+    //
+    // Board access is worthless if the manager cannot find the board. The page
+    // used to query `where: { hostId: host.id }`, which is ownership. These run
+    // the query the page now runs, against real rows.
+    // ====================================================================
+
+    /** Exactly the page's query. */
+    const listFor = (hostId: string) =>
+      db.board.findMany({
+        where: { collaborators: { some: { hostId, status: "active" } } },
+        include: { collaborators: { where: { hostId, status: "active" }, select: { role: true } } },
+      });
+
+    // 8. owner still sees owned boards.
+    test("L1. an owner sees the board they own, badged OWNER", async () => {
+      await grant(ownerId, "OWNER");
+      const list = await listFor(ownerId);
+      assert.equal(list.filter((b) => b.boardId === boardId).length, 1);
+      assert.equal(list.find((b) => b.boardId === boardId)!.collaborators[0].role, "OWNER");
+    });
+
+    // 7. manager sees a managed board THROUGH the collaborator relationship —
+    // note this board's `hostId` is the owner's, so ownership cannot explain it.
+    test("L2. a manager sees a board they do not own", async () => {
+      await grant(ownerId, "OWNER");
+      await grant(managerId, "MANAGER");
+
+      const list = await listFor(managerId);
+      const row = list.find((b) => b.boardId === boardId);
+      assert.ok(row, "the managed board is on her list");
+      assert.equal(row.hostId, ownerId, "and it is not hers");
+      assert.equal(row.collaborators[0].role, "MANAGER");
+    });
+
+    test("L3. a stranger sees nothing, and a revoked manager stops seeing it", async () => {
+      await grant(ownerId, "OWNER");
+      const g = await grant(managerId, "MANAGER");
+      assert.equal((await listFor(strangerId)).some((b) => b.boardId === boardId), false);
+
+      await db.boardCollaborator.update({
+        where: { id: g.id },
+        data: { status: "revoked", revokedAt: new Date() },
+      });
+      assert.equal(
+        (await listFor(managerId)).some((b) => b.boardId === boardId),
+        false,
+        "revocation removes it from the list too, not just from the board"
+      );
+    });
+
+    // 6. A MANAGER WITH NO PAYMENT PREFERENCE OF HER OWN REACHES THE LIST.
+    //
+    // The page redirected to /host/payment-setup whenever the SESSION host had
+    // no preference. A manager invited to someone else's board has no reason to
+    // have set one, so she was bounced before the list rendered and could never
+    // open a board she held a valid grant on. The gate now lives on board
+    // CREATION, where knowing how you get paid is genuinely a precondition.
+    test("L4. a manager with paymentPreference = null still gets her list", async () => {
+      await grant(ownerId, "OWNER");
+      await grant(managerId, "MANAGER");
+
+      const mgr = await db.host.findUniqueOrThrow({ where: { id: managerId } });
+      assert.equal(mgr.paymentPreference, null, "she has never set one");
+
+      const list = await listFor(managerId);
+      assert.equal(list.some((b) => b.boardId === boardId), true);
+    });
+
     // ---- 1. active OWNER + owner capability --------------------------------
 
     test("1. an active OWNER holds an owner-only capability", async () => {
@@ -254,20 +324,19 @@ describe(
       assert.equal(!r.ok && r.status, 404, "and it grants them nothing");
     });
 
-    // NO SESSION REDIRECTS, IT DOES NOT RETURN 401. `getHost()` calls
-    // `redirect("/login")`, which throws NEXT_REDIRECT, so the helper never
-    // reaches its own 401 arm — and neither does any of the 21 existing routes
-    // that carry the same dead check. Asserted as it BEHAVES rather than as the
-    // helper is written, because the difference matters at the switch: an
-    // unauthenticated API call is redirected, not answered.
-    test("5c. no session redirects rather than returning 401", async () => {
+    // 401, NOT A REDIRECT — the ruling of 2026-09-08, and the reason
+    // `getHostOrNull` exists. An API caller must be told 401 and left to decide;
+    // a redirect to an HTML login page is an answer no client can use, and
+    // `fetch` follows it silently and returns a 200 full of markup.
+    //
+    // Pages keep the redirect: they call `getHost()` themselves before reaching
+    // this helper. The two surfaces differ in exactly one place.
+    test("5c. no session is 401, not a redirect", async () => {
       await grant(ownerId, "OWNER");
       signInAs(null);
-      await assert.rejects(
-        () => requireBoardAccess(boardId, "board.view"),
-        /NEXT_REDIRECT/,
-        "getHost redirects; the 401 arm is unreachable today"
-      );
+      const r = await requireBoardAccess(boardId, "board.view");
+      assert.equal(r.ok, false);
+      assert.equal(!r.ok && r.status, 401);
     });
 
     // ---- 6. nonexistent / deleted board -------------------------------------

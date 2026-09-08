@@ -9,16 +9,40 @@ import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
 export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
-  if (!host.paymentPreference) redirect("/host/payment-setup");
 
+  // THE PAYMENT-PREFERENCE GATE IS GONE FROM HERE, and its removal is the
+  // point rather than a side effect.
+  //
+  // It redirected to /host/payment-setup whenever the SESSION host had no
+  // preference of their own. A manager invited to someone else's board has no
+  // reason to have set one — she has never created a board — so she would have
+  // been bounced away from this list and could never reach a board she holds a
+  // valid grant on. Her own account state gated access to another person's
+  // board.
+  //
+  // Knowing how you get paid is a precondition for CREATING a board, not for
+  // viewing one you were invited to manage. `/host/boards/new/page.tsx` still
+  // enforces it there, unchanged. Collaborators v2.2 §4.
+
+  // OWNER OR MANAGER, through the grant — invariant 91. This was
+  // `where: { hostId: host.id }`, which is ownership and no longer the question.
+  // Uniform for both roles, because owners have collaborator rows too.
   const boards = await prisma.board.findMany({
-    where: { hostId: host.id },
+    where: {
+      collaborators: { some: { hostId: host.id, status: "active" } },
+    },
     orderBy: { createdAt: "desc" },
     include: {
       _count: {
         select: {
           squares: { where: { paymentStatus: "paid" } },
         },
+      },
+      // The viewer's own grant on each board, for the role badge. Scoped to
+      // this host so a board with several collaborators still yields one row.
+      collaborators: {
+        where: { hostId: host.id, status: "active" },
+        select: { role: true },
       },
     },
   });

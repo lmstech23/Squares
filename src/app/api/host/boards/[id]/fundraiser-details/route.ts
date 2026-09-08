@@ -57,6 +57,7 @@ import {
 } from "@/lib/accepted-payments";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { ticketCountFor, validateTicketCount } from "@/lib/board-inventory";
 import { validateEntryPricing } from "@/lib/entry-pricing";
@@ -164,8 +165,12 @@ export async function PATCH(request: Request, { params }: Props) {
         event: { select: { id: true, timezone: true, startsAt: true, endsAt: true } },
       },
     });
-    if (!board || board.hostId !== host.id) {
-      return NextResponse.json({ error: "Board not found" }, { status: 404 });
+    const access = await requireBoardAccess(id, "board.edit");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
+      return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
     if (board.boardType !== "fundraiser") {
       return NextResponse.json(

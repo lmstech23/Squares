@@ -2,15 +2,31 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-export async function getHost() {
+// TWO SURFACES, TWO ANSWERS TO "you are not signed in".
+//
+// A browser landing on a host page should be taken to the login screen. An API
+// caller should be told 401 and left to decide what that means; sending it a
+// redirect to an HTML login page is an answer no client can use, and `fetch`
+// follows it silently and hands back a 200 full of markup.
+//
+// Both resolve the SAME identity by the same route: Supabase authenticated user
+// -> `Host.supabaseUserId`, the only unique column on the table. The split is
+// about what happens when there is no user, and nothing else.
+
+/**
+ * The authenticated host, or null. NEVER redirects.
+ *
+ * For API routes and for `requireBoardAccess`, which has to be able to RETURN
+ * 401 rather than throw a navigation. `getHost()` below is this function plus a
+ * redirect, so there is one identity path and one lazy-upsert, not two.
+ */
+export async function getHostOrNull() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect("/login");
-  }
+  if (!user) return null;
 
   let host = await prisma.host.findUnique({
     where: { supabaseUserId: user.id },
@@ -43,5 +59,20 @@ export async function getHost() {
     }
   }
 
+  return host;
+}
+
+/**
+ * The authenticated host, redirecting to /login when there is none.
+ *
+ * FOR PAGES. Its return type is non-null because the redirect throws, which is
+ * why every `if (!host)` guard in a route that calls this has always been dead
+ * code — the reason API routes now use `getHostOrNull` instead.
+ */
+export async function getHost() {
+  const host = await getHostOrNull();
+  if (!host) {
+    redirect("/login");
+  }
   return host;
 }

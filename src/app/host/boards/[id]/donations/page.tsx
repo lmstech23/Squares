@@ -18,6 +18,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 import { getHost } from "@/lib/auth";
 import { boardTotals } from "@/lib/contributions";
 import CashDonationForm from "./cash-donation-form";
@@ -95,7 +96,12 @@ export default async function DonationsPage({
     },
   });
 
-  if (!board || board.hostId !== host.id) notFound();
+  // `getHost()` above already redirected an unauthenticated browser to /login,
+  // so a session exists here and the 401 arm cannot be taken — pages redirect,
+  // API routes answer 401. Both refusals below become notFound(), which is what
+  // invariant 94 asks for on a page: no grant and no such board look identical.
+  const access = await requireBoardAccess(board?.boardId ?? id, "payments.view");
+  if (!access.ok || !board) notFound();
   // Game Day never accumulates donation money — donations §5.
   if (board.boardType !== "fundraiser") notFound();
 

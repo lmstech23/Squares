@@ -75,6 +75,20 @@ describe(
             : { teamCol: "Hampton", teamRow: "Howard" }),
         },
       });
+      // THE OWNER GRANT. Since the authorization switch, `Board.hostId` is
+      // the record of who created a board and NOT the answer to "may they
+      // act" — that is the collaborator row. Board creation writes one in the
+      // same transaction, so a board without it is a board no host can
+      // create, and a fixture lacking it tests a state that cannot exist.
+      await db.boardCollaborator.create({
+        data: {
+          boardId: board.boardId,
+          hostId: ownerId,
+          role: "OWNER",
+          status: "active",
+          acceptedAt: new Date(),
+        },
+      });
       boardId = board.boardId;
       await db.square.createMany({
         data: Array.from({ length: 4 }, (_, i) => ({
@@ -145,6 +159,10 @@ describe(
       // Squares carry a contribution FK, and contributions carry a board FK.
       await db.square.deleteMany({ where: { boardId } });
       await db.contribution.deleteMany({ where: { boardId } });
+      // Collaborator rows hold a Restrict reference to the board, so they
+      // go first — otherwise the board delete fails and the failure
+      // surfaces in the NEXT test's beforeEach rather than here.
+      await db.boardCollaborator.deleteMany({ where: { boardId } });
       await db.board.deleteMany({ where: { boardId } });
       boardId = "";
     });
@@ -153,7 +171,11 @@ describe(
       if (boardId) {
         await db.square.deleteMany({ where: { boardId } });
         await db.contribution.deleteMany({ where: { boardId } });
-        await db.board.deleteMany({ where: { boardId } });
+      // Collaborator rows hold a Restrict reference to the board, so they
+      // go first — otherwise the board delete fails and the failure
+      // surfaces in the NEXT test's beforeEach rather than here.
+      await db.boardCollaborator.deleteMany({ where: { boardId } });
+      await db.board.deleteMany({ where: { boardId } });
       }
       await db.host.deleteMany({ where: { id: { in: [ownerId, strangerId] } } });
       await db.$disconnect();

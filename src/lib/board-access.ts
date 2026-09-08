@@ -25,7 +25,7 @@
 // account money settles to. It stops being an answer to "may they act". This
 // file never reads it, and that is asserted by a test rather than by intent.
 
-import { getHost } from "@/lib/auth";
+import { getHostOrNull } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -182,18 +182,15 @@ export async function requireBoardAccess(
     return { ok: false, status: 500, error: "Something went wrong." };
   }
 
-  // `getHost()` DOES NOT RETURN NULL TODAY — it calls `redirect("/login")`, which
-  // throws NEXT_REDIRECT. So this arm is unreachable as written, and it is kept
-  // rather than deleted for two reasons: the addendum specifies "no session ->
-  // redirect OR 401", and every existing host route already carries the same
-  // dead `if (!host) return 401`. Deleting it here while 21 routes keep theirs
-  // would make this file the odd one out and hide the fact from whoever changes
-  // getHost later.
+  // `getHostOrNull`, NOT `getHost` — this must be able to RETURN 401, not throw a
+  // navigation. `getHost()` redirects to /login, which is right for a browser
+  // on a host page and useless to an API caller: `fetch` follows the redirect
+  // silently and hands back a 200 full of login markup.
   //
-  // NOTE FOR THE SWITCH: an unauthenticated API call is therefore REDIRECTED,
-  // not answered 401 — pre-existing behaviour, not introduced here, and out of
-  // scope for this commit.
-  const host = await getHost();
+  // PAGES STILL REDIRECT. They call `getHost()` themselves before reaching
+  // here, so a session always exists by the time this runs and the 401 arm is
+  // simply not taken. The two surfaces differ in one place, deliberately.
+  const host = await getHostOrNull();
   if (!host) return { ok: false, status: 401, error: "Unauthorized" };
 
   // THE ONLY AUTHORIZATION READ. Scoped to live grants: `revoked` is excluded

@@ -36,6 +36,10 @@ if (url) {
   mock.module("@/lib/auth", {
     namedExports: {
       getHost: async () => (prisma ? currentHost : null),
+      // BOTH RESOLVERS. `requireBoardAccess` uses the non-redirecting one,
+      // so a mock providing only `getHost` fails at import — the module
+      // never loads and every test in the file reports as one failure.
+      getHostOrNull: async () => (prisma ? currentHost : null),
     },
   });
 }
@@ -82,6 +86,20 @@ describe(
           timezone: "America/New_York",
           campaignEndsAt: new Date(Date.now() + 7 * 864e5),
           cashModeEnabled: true,
+        },
+      });
+      // THE OWNER GRANT. Since the authorization switch, `Board.hostId` is
+      // the record of who created a board and NOT the answer to "may they
+      // act" — that is the collaborator row. Board creation writes one in the
+      // same transaction, so a board without it is a board no host can
+      // create, and a fixture lacking it tests a state that cannot exist.
+      await db.boardCollaborator.create({
+        data: {
+          boardId: board.boardId,
+          hostId,
+          role: "OWNER",
+          status: "active",
+          acceptedAt: new Date(),
         },
       });
       await db.square.createMany({
@@ -214,6 +232,10 @@ describe(
       await db.paymentReference.deleteMany({ where: { square: { boardId } } });
       await db.square.deleteMany({ where: { boardId } });
       await db.contribution.deleteMany({ where: { boardId } });
+      // Collaborator rows hold a Restrict reference to the board, so they
+      // go first — otherwise the board delete fails and the failure
+      // surfaces in the NEXT test's beforeEach rather than here.
+      await db.boardCollaborator.deleteMany({ where: { boardId } });
       await db.board.deleteMany({ where: { boardId } });
       boardId = await seedBoard();
     });

@@ -15,8 +15,8 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 import { confirmSquares } from "@/lib/confirm-square";
-import { getHost } from "@/lib/auth";
 
 interface ConfirmCashBody {
   squareId: string;
@@ -27,11 +27,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const host = await getHost();
-    if (!host) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: boardId } = await params;
     const body: ConfirmCashBody = await request.json();
     const { squareId } = body;
@@ -48,7 +43,11 @@ export async function POST(
       select: { hostId: true, squarePrice: true, gameName: true, boardType: true },
     });
 
-    if (!board || board.hostId !== host.id) {
+    const access = await requireBoardAccess(boardId, "cash.confirm");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
       return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
 
@@ -199,8 +198,8 @@ export async function POST(
           contributorEmail: sq.playerEmail,
           contributorPhone: sq.playerPhone,
           confirmedAt: new Date(),
-          recordedByHostId: host.id,
-          confirmedByHostId: host.id,
+          recordedByHostId: access.hostId,
+          confirmedByHostId: access.hostId,
         },
       });
       // Repointing IS the detach. The old row keeps its own history and its

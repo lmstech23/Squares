@@ -19,6 +19,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 import { hasConfirmedContribution } from "@/lib/board-lock";
 
 interface Props {
@@ -76,8 +77,12 @@ export async function PATCH(request: Request, { params }: Props) {
       select: { boardId: true, hostId: true, boardType: true, gameName: true },
     });
 
-    if (!board || board.hostId !== host.id) {
-      return NextResponse.json({ error: "Board not found" }, { status: 404 });
+    const access = await requireBoardAccess(id, "board.edit");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
+      return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
 
     // 3. Parse + validate

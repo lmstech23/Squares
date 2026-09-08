@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 import { getHost } from "@/lib/auth";
 import SignupPanel from "../signup-panel";
 import { formatZoned } from "@/lib/zoned-time";
@@ -64,7 +65,12 @@ export default async function VolunteersPage({ params }: Props) {
   // 404, not 403, for a board this host does not own — distinguishing "does not
   // exist" from "exists but is not yours" tells a prober which board ids are
   // real. Same order and same status as the board page.
-  if (!board || board.hostId !== host.id) notFound();
+  // `getHost()` above already redirected an unauthenticated browser to /login,
+  // so a session exists here and the 401 arm cannot be taken — pages redirect,
+  // API routes answer 401. Both refusals below become notFound(), which is what
+  // invariant 94 asks for on a page: no grant and no such board look identical.
+  const access = await requireBoardAccess(board?.boardId ?? id, "volunteer.manage");
+  if (!access.ok || !board) notFound();
 
   // The product gate. `board.boardType === "fundraiser"` is the SAME comparison
   // the host board page's fundraiser branch uses — not a second board-type

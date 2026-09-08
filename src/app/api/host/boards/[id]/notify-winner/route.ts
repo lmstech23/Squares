@@ -17,7 +17,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getHost } from "@/lib/auth";
+import { requireBoardAccess } from "@/lib/board-access";
 import { calculateWinners } from "@/lib/winners";
 import { sendEmail } from "@/lib/email";
 
@@ -30,11 +30,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const host = await getHost();
-    if (!host) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: boardId } = await params;
     const body: NotifyWinnerBody = await request.json();
     const { periodLabel } = body;
@@ -65,7 +60,11 @@ export async function POST(
       },
     });
 
-    if (!board || board.hostId !== host.id) {
+    const access = await requireBoardAccess(boardId, "winner.notify");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
       return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
 

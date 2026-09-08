@@ -600,6 +600,27 @@ export async function POST(request: Request) {
           })),
         });
 
+        // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
+        //
+        // From the moment `requireBoardAccess` is the only way onto a board,
+        // a board without this row is invisible to the person who just
+        // created it. The migration backfilled every board that existed;
+        // this covers every board that will exist. Same transaction, so a
+        // board can never exist without its owner — not even briefly.
+        //
+        // `acceptedAt` is now: they did not accept an invitation, they made
+        // the board, and their access begins with it. `invitedByHostId`
+        // stays null for the same reason.
+        await tx.boardCollaborator.create({
+          data: {
+            boardId: newBoard.boardId,
+            hostId: host.id,
+            role: "OWNER",
+            status: "active",
+            acceptedAt: new Date(),
+          },
+        });
+
         await createEvent(tx, newBoard.boardId);
 
         return newBoard;
@@ -647,6 +668,27 @@ export async function POST(request: Request) {
           })),
         });
 
+        // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
+        //
+        // From the moment `requireBoardAccess` is the only way onto a board,
+        // a board without this row is invisible to the person who just
+        // created it. The migration backfilled every board that existed;
+        // this covers every board that will exist. Same transaction, so a
+        // board can never exist without its owner — not even briefly.
+        //
+        // `acceptedAt` is now: they did not accept an invitation, they made
+        // the board, and their access begins with it. `invitedByHostId`
+        // stays null for the same reason.
+        await tx.boardCollaborator.create({
+          data: {
+            boardId: newBoard.boardId,
+            hostId: host.id,
+            role: "OWNER",
+            status: "active",
+            acceptedAt: new Date(),
+          },
+        });
+
         await createEvent(tx, newBoard.boardId);
 
         return newBoard;
@@ -689,6 +731,27 @@ export async function POST(request: Request) {
           })),
         });
 
+        // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
+        //
+        // From the moment `requireBoardAccess` is the only way onto a board,
+        // a board without this row is invisible to the person who just
+        // created it. The migration backfilled every board that existed;
+        // this covers every board that will exist. Same transaction, so a
+        // board can never exist without its owner — not even briefly.
+        //
+        // `acceptedAt` is now: they did not accept an invitation, they made
+        // the board, and their access begins with it. `invitedByHostId`
+        // stays null for the same reason.
+        await tx.boardCollaborator.create({
+          data: {
+            boardId: newBoard.boardId,
+            hostId: host.id,
+            role: "OWNER",
+            status: "active",
+            acceptedAt: new Date(),
+          },
+        });
+
         await createEvent(tx, newBoard.boardId);
 
         return newBoard;
@@ -706,6 +769,27 @@ export async function POST(request: Request) {
           ...boardData,
           status: "pending_payment",
           pendingExpiresAt,
+        },
+      });
+
+      // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
+      //
+      // From the moment `requireBoardAccess` is the only way onto a board,
+      // a board without this row is invisible to the person who just
+      // created it. The migration backfilled every board that existed;
+      // this covers every board that will exist. Same transaction, so a
+      // board can never exist without its owner — not even briefly.
+      //
+      // `acceptedAt` is now: they did not accept an invitation, they made
+      // the board, and their access begins with it. `invitedByHostId`
+      // stays null for the same reason.
+      await tx.boardCollaborator.create({
+        data: {
+          boardId: newBoard.boardId,
+          hostId: host.id,
+          role: "OWNER",
+          status: "active",
+          acceptedAt: new Date(),
         },
       });
 

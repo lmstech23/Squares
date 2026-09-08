@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getHost } from "@/lib/auth";
+import { requireBoardAccess } from "@/lib/board-access";
 import { sendEmail } from "@/lib/email";
 import {
   confirmEntryReservation,
@@ -49,17 +49,15 @@ export async function PATCH(
 ) {
   try {
     const { id: boardId } = await params;
-
-    const host = await getHost();
-    if (!host) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const board = await prisma.board.findUnique({
       where: { boardId },
       select: { boardId: true, hostId: true, gameName: true },
     });
-    if (!board || board.hostId !== host.id) {
+    const access = await requireBoardAccess(boardId, "cash.confirm");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
       return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
 
@@ -141,7 +139,7 @@ export async function PATCH(
     let result;
     try {
       result = await prisma.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: reservation.id, hostId: host.id })
+        confirmEntryReservation(tx, { reservationId: reservation.id, hostId: access.hostId })
       );
     } catch (err) {
       if (err instanceof ReservationNotPending) {

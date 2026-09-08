@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 
 // ============================================================
 // DISMISS BOARD — Addendum K
@@ -16,11 +16,6 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const host = await getHost();
-  if (!host) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { id } = await params;
 
   const board = await prisma.board.findUnique({
@@ -28,9 +23,13 @@ export async function PATCH(
     select: { boardId: true, hostId: true, status: true },
   });
 
-  if (!board || board.hostId !== host.id) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const access = await requireBoardAccess(id, "board.dismiss");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
+      return NextResponse.json({ error: "Board not found." }, { status: 404 });
+    }
 
   if (board.status !== "expired" && board.status !== "pending_payment") {
     return NextResponse.json(

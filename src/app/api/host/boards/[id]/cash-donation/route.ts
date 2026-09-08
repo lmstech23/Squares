@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireBoardAccess } from "@/lib/board-access";
 import { normalizePhone } from "@/lib/roster-identity";
-import { getHost } from "@/lib/auth";
 import {
   boardTotals,
   recordCashDonation,
@@ -42,8 +42,13 @@ interface CashDonationBody {
 }
 
 async function loadOwnedBoard(boardId: string) {
-  const host = await getHost();
-  if (!host) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  // `cash.record` — recording a walk-up contribution is the manager's job at
+  // the table. The capability check replaces the ownership comparison below and
+  // supplies the actor id, so there is no second session read.
+  const access = await requireBoardAccess(boardId, "cash.record");
+  if (!access.ok) {
+    return { error: NextResponse.json({ error: access.error }, { status: access.status }) };
+  }
 
   const board = await prisma.board.findUnique({
     where: { boardId },
@@ -57,10 +62,10 @@ async function loadOwnedBoard(boardId: string) {
     },
   });
 
-  if (!board || board.hostId !== host.id) {
+  if (!board) {
     return { error: NextResponse.json({ error: "Board not found." }, { status: 404 }) };
   }
-  return { host, board };
+  return { host: { id: access.hostId }, board };
 }
 
 export async function POST(

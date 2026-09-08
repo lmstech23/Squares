@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getHost } from "@/lib/auth";
+import { requireBoardAccess } from "@/lib/board-access";
 import { closeBoard } from "@/lib/close-board";
 
 // ============================================================
@@ -23,11 +23,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const host = await getHost();
-    if (!host) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: boardId } = await params;
 
     const board = await prisma.board.findUnique({
@@ -35,7 +30,11 @@ export async function POST(
       select: { hostId: true, boardType: true },
     });
 
-    if (!board || board.hostId !== host.id) {
+    const access = await requireBoardAccess(boardId, "board.close");
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    if (!board) {
       return NextResponse.json({ error: "Board not found." }, { status: 404 });
     }
     if (board.boardType !== "fundraiser") {

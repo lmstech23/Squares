@@ -2,6 +2,7 @@ import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { cardCapable } from "@/lib/accepted-payments";
+import { requireBoardAccess } from "@/lib/board-access";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 import { boardTotals } from "@/lib/contributions";
 import { redirect, notFound } from "next/navigation";
@@ -74,7 +75,12 @@ export default async function HostBoardPage({ params }: Props) {
     },
   });
 
-  if (!board || board.hostId !== host.id) {
+  // `getHost()` above already redirected an unauthenticated browser to /login,
+  // so a session exists here and the 401 arm cannot be taken — pages redirect,
+  // API routes answer 401. Both refusals become notFound(), which is invariant
+  // 94 on a page: no grant and no such board must look identical.
+  const access = await requireBoardAccess(board?.boardId ?? id, "board.view");
+  if (!access.ok || !board) {
     notFound();
   }
 
