@@ -509,24 +509,21 @@ export default async function HostBoardPage({ params }: Props) {
           pendingBatches={pendingBatches}
         />
 
-        {/* Contributions - donations SS11. The ledger and the cash-donation
-            entry live on their own route for the same reason volunteer
-            management does: this page is already dense, and the four numbers
-            are read standing at a table. */}
-        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-4">
-          <p className="text-sm font-medium text-white">Contributions</p>
-          <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-            Square sales and donations, and where you record cash a supporter
-            hands you.
-          </p>
-          <Link
-            href={`/host/boards/${board.boardId}/donations`}
-            className="inline-block rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 mt-3 transition-colors"
-          >
-            View contributions
-          </Link>
-        </div>
+        {/* THE STANDALONE "Contributions" CARD IS GONE. Its entry point now
+            lives in the Contributors header as "View ledger", for two reasons.
 
+            IT NAMED THE PEOPLE AND WENT TO THE MONEY. "Contributions" sat
+            directly above "Contributors" and its button said "View
+            contributions", so the page offered what read as two contributor
+            views, one of which was the transaction ledger.
+
+            AND ITS SUBTITLE DESCRIBED GAME DAY. "where you record cash a
+            supporter hands you" is physical cash across a table. A fundraiser
+            contributor pays by Zelle, Cash App, Venmo, PayPal or card; the
+            host confirms receipt of a transfer they can already see in their
+            bank. Nothing on a fundraiser board takes notes and coins.
+
+            The route is unchanged and is still fundraiser-only. */}
         {board.event && (
           <div className="mt-6">
             <EventPanel
@@ -598,6 +595,7 @@ export default async function HostBoardPage({ params }: Props) {
             boardName={board.gameName}
             hasEvent={board.event != null}
             hasPrize={board.prizePoolPercent > 0}
+            ledgerHref={`/host/boards/${board.boardId}/donations`}
           />
         </div>
       </div>

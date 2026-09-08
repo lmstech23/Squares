@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 
 // Contributor list — fundraiser-board-v2.md §9.
@@ -27,6 +28,20 @@ interface Props {
   hasEvent: boolean;
   /// prizePoolPercent > 0. Names the purchase unit; see lib/board-vocabulary.
   hasPrize: boolean;
+  /**
+   * The money ledger for this board.
+   *
+   * A HREF, NOT A BOARD ID. This component knows about people; making it build
+   * a route would give it an opinion about where money lives, which is the
+   * separation the link exists to express.
+   *
+   * THE TWO SURFACES, AND WHY THEY ARE NOT THE SAME PAGE. This section is the
+   * human view - who took part, how many, whether anything is outstanding. The
+   * ledger is transaction-keyed: pending reservations, confirmed, released and
+   * voided rows, payment rails, confirmation actions, audit detail. Neither
+   * belongs inside the other, and nothing from the ledger is duplicated here.
+   */
+  ledgerHref: string;
 }
 
 type SortKey = "name" | "date";
@@ -47,7 +62,13 @@ const STATUS_STYLE: Record<ContributorRow["status"], string> = {
   MIXED: "text-yellow-400 border-yellow-900/50 bg-yellow-950/30",
 };
 
-export default function ContributorList({ rows, boardName, hasEvent, hasPrize }: Props) {
+export default function ContributorList({
+  rows,
+  boardName,
+  hasEvent,
+  hasPrize,
+  ledgerHref,
+}: Props) {
   // The SAME resolver the contributor board uses. A host texting parents "buy
   // your $25 ticket" must not be looking at a screen that says "square".
   const u = purchaseUnit({ boardType: "fundraiser", hasEvent, hasPrize });
@@ -101,10 +122,31 @@ export default function ContributorList({ rows, boardName, hasEvent, hasPrize }:
     URL.revokeObjectURL(url);
   }
 
+  // NOT "View contributions". That names the people and reads as a second
+  // contributor view; the destination is the financial transaction ledger.
+  const ledgerLink = (
+    <Link
+      href={ledgerHref}
+      className="text-xs text-gray-400 hover:text-white transition-colors flex-shrink-0"
+    >
+      View ledger &rarr;
+    </Link>
+  );
+
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
-        <p className="text-sm font-medium">Contributors</p>
+        {/* THE LINK APPEARS HERE TOO, and that is deliberate rather than
+            symmetry. This card is the fundraiser page's only entry point to the
+            ledger now, and an empty roster does not mean an empty ledger - a
+            board can hold pending reservations and confirmed money while this
+            list shows nothing. Hiding the link on an empty roster would make
+            the ledger unreachable exactly when a host is trying to find out
+            where the money went. */}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium">Contributors</p>
+          {ledgerLink}
+        </div>
         {/* "Nobody has claimed a ticket yet" was accurate and misleading: a
             host who had just taken a donation read it as nothing having
             happened. Donations are contributions and now appear in this list,
@@ -121,13 +163,16 @@ export default function ContributorList({ rows, boardName, hasEvent, hasPrize }:
           Contributors{" "}
           <span className="text-gray-500 font-normal">({rows.length})</span>
         </p>
-        <button
-          type="button"
-          onClick={exportCsv}
-          className="text-xs text-gray-400 hover:text-white transition-colors"
-        >
-          Export CSV
-        </button>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <button
+            type="button"
+            onClick={exportCsv}
+            className="text-xs text-gray-400 hover:text-white transition-colors"
+          >
+            Export CSV
+          </button>
+          {ledgerLink}
+        </div>
       </div>
 
       <div className="flex gap-2 mb-3">
