@@ -104,8 +104,69 @@ execFileSync("npx", ["prisma", "migrate", "deploy"], {
   env: childEnv,
 });
 
-console.log(
-  "\nMigration complete. Now run the containment verification, which is " +
-    "separate and still required:\n" +
-    "  VERIFY_SITE_URL=https://beta.daali.app node --experimental-strip-types scripts/verify-containment.mts\n"
-);
+// ---------------------------------------------------------------------------
+// CONTAINMENT VERIFICATION, RUN HERE RATHER THAN REMINDED ABOUT.
+//
+// This used to print the command and trust that it would be run. On 2026-09-07
+// `20260907180000_entry_reservations` created two tables without RLS and the
+// gap sat unnoticed for a day, because the reminder prints AFTER
+// `migrate deploy` has already committed, and nobody types a command that has
+// already stopped feeling urgent.
+//
+// SAME-COMMAND DETECTION, NOT PREVENTION - and the difference matters enough to
+// state. The tables have already reached production by the time this runs.
+// Preventing that means rehearsing the whole migration chain on a disposable
+// database BEFORE applying, which is a larger change and is recorded in
+// PHASE-2-BACKLOG.md, deferred until after the pilot event because it puts a
+// Docker dependency on the production migration path. Detecting inside the same
+// command is strictly better than detecting the next day, and costs nothing.
+//
+// childEnv, NOT the ambient environment. Run by hand, the verifier reads
+// DATABASE_URL from `.env` - which in this repo points at a NON-PRODUCTION
+// project, so a hand run can connect somewhere else entirely and report PASS
+// about a database nobody migrated. Handing it the guarded string is what makes
+// this a verification OF THE MIGRATION THAT JUST RAN rather than of whatever
+// `.env` happens to name.
+console.log("\nMigration applied. Verifying containment against the same database.\n");
+
+let verifyStatus = 0;
+try {
+  execFileSync(
+    "node",
+    ["--experimental-strip-types", "scripts/verify-containment.mts"],
+    { stdio: "inherit", shell: true, env: childEnv }
+  );
+} catch (err) {
+  // execFileSync throws on any non-zero exit. The verifier's exit codes are
+  // meaningful, so they are preserved rather than collapsed into 1.
+  const status = (err as { status?: number }).status;
+  verifyStatus = typeof status === "number" ? status : 1;
+}
+
+if (verifyStatus === 0) {
+  console.log("\nContainment verified. Both conclusions passed.");
+  process.exit(0);
+}
+
+// EXIT NON-ZERO. The migration is applied and is NOT being rolled back - this is
+// a report about the state it left behind. What must not be possible is reading
+// a successful migration as a clean one.
+if (verifyStatus === 2) {
+  // The documented meaning of 2: the database conclusion stands, the deployed
+  // site was not checked, because VERIFY_SITE_URL was unset and
+  // NEXT_PUBLIC_URL is a localhost value in this project. A healthy database
+  // says nothing about the deployed app, so this is not a pass.
+  console.error(
+    "\nCONTAINMENT INCOMPLETE. The database conclusion is above; the production " +
+      "site was NOT verified. Re-run with the site named:\n" +
+      "  VERIFY_SITE_URL=https://beta.daali.app node --experimental-strip-types scripts/verify-containment.mts"
+  );
+} else {
+  console.error(
+    "\nCONTAINMENT VERIFICATION FAILED. Read the failures above. The migration " +
+      "IS APPLIED - this is not a rollback and nothing has been undone. Fix what " +
+      "it names and re-run the verifier before pushing or deploying."
+  );
+}
+process.exit(verifyStatus);
+

@@ -202,6 +202,90 @@ policies are printed on every run.
 
 ---
 
+## Rehearse the migration chain on a disposable database before applying to production
+
+**Added:** 2026-09-08
+**Ruled:** deferred until after the pilot event, deliberately. Do not re-argue.
+**Prerequisite for nothing.** This is a safety improvement, not a blocker.
+
+### What happened
+
+`20260907180000_entry_reservations` created `entry_reservations` and
+`entry_reservation_lines` and never enabled RLS. Every other table-creating
+migration since the August incident ends with the containment block; that one
+did not. It sat that way in production for a day.
+
+`verify-containment.mts` caught it correctly the moment it was run. The gap was
+not detection — the check works. The gap was **when** it runs: the reminder
+printed after `migrate deploy` had already committed, and a command that is only
+a suggestion at the end of a successful operation does not get typed.
+
+### What was done instead, and why it is not enough
+
+Option A shipped on 2026-09-08: `scripts/migrate-production.mts` now runs the
+verifier itself against the same database and exits non-zero on failure.
+
+That is **detection inside the same command**, which is strictly better than
+detection the next day. It is not prevention. The table has already reached
+production by the time the check speaks. What it buys is that nobody can finish
+a production migration without being told, and that cost thirty minutes and no
+new dependency.
+
+### The actual fix
+
+Replay the full migration chain onto the disposable Postgres FIRST, run the
+containment check against that, and refuse to touch production if it fails. A
+table without RLS could then never reach production at all.
+
+Three things make this cheaper than it sounds, all verified 2026-09-08:
+
+1. **The harness already replays.** `scripts/test-db.mjs up` builds the throwaway
+   database with `prisma migrate deploy` — the same chain, in the same order,
+   already asserted drift-free against `schema.prisma`.
+2. **The disposable database has the real roles.** `anon`, `authenticated` and
+   `service_role` all exist there, because `0_init:47-51` creates them if
+   missing. So a rehearsal covers BOTH halves — RLS *and* grants — not just the
+   half that failed this time.
+3. **The verifier already partitions its conclusions.** DATABASE CONTAINMENT and
+   PRODUCTION SITE SMOKE are separate, so a `--catalog-only` mode skips the
+   HTTP sections (6-8) without restructuring anything.
+
+**Size:** roughly 120 lines across `migrate-production.mts` and
+`verify-containment.mts`, plus the flag. Half a day.
+
+### Why it is deferred, and this is the part not to re-litigate
+
+It puts a **Docker dependency on the production migration path**. Docker not
+running, or a stale container, or a port conflict then blocks a production
+migration.
+
+That is a worse thing to be debugging during a live event than the week after
+one. The audit on 2026-09-08 established that the current surface is clean —
+all eleven post-baseline tables have RLS on, zero policies, zero client grants —
+so this closes a future hole, not a present one. Option A covers the interval.
+
+Revisit after Hampton.
+
+### Ruled out: an event trigger
+
+A `ddl_command_end` trigger that enables RLS on any new `public` table, or
+aborts, would make the gap structurally impossible. **It cannot be built here.**
+`SELECT rolsuper` for `postgres` on the production project returns `false`, and
+event triggers require superuser. Supabase runs six of its own — `pgrst_ddl_watch`
+among them — but the project role cannot add one. Evidence, not assumption; do
+not re-propose without re-checking `rolsuper`.
+
+### Related, and the reason to read the catalog rather than a probe
+
+During the same audit, an anon Data API probe returned **404** for the two
+RLS-less tables and that was briefly read as "not exposed." It was not:
+`PGRST205` is the same 404 a table that never existed returns, and it meant
+PostgREST's schema cache was stale. What actually protected those tables was
+zero grants — `42501 permission denied`, an HTTP 401. A 404 from that endpoint
+is never evidence of containment.
+
+---
+
 # Confirmation email — five confirmed defects
 
 **Added:** 2026-08-30, from a read-only audit of every email caller.

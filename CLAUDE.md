@@ -124,13 +124,27 @@ Migration SQL lives in `migrations/`, applied by hand. Note `.gitignore` ignores
 
 **RLS and role grants are invisible to `prisma/schema.prisma`.** `migrate diff` reports zero drift whether or not the database is exposed, `db pull` never introspects them, and `migrate` never restores them. On Aug 30, 2026 every table in `public` was found granting `anon` and `authenticated` full DML — 1,300 contributor rows readable and writable over the Data API — caused by `pg_default_acl`, which grants those roles on every **new** table automatically. Closed by `migrations/secure_data_api.sql`.
 
-So after any migration that creates anything in `public`:
+**The guarded migration path now runs the containment check itself.** `npm run db:migrate:production` applies the migration and then runs `verify-containment.mts` against the same database, exiting non-zero if it does not pass. It used to print the command and trust it would be run, which is exactly how `entry_reservations` and `entry_reservation_lines` reached production without RLS on 2026-09-07 and sat that way for a day — the reminder prints after `migrate deploy` has already committed.
+
+Set `VERIFY_SITE_URL` on that invocation, or the run exits 2:
+
+```
+DIRECT_URL=… VERIFY_SITE_URL=https://beta.daali.app npm run db:migrate:production
+```
+
+To run it on its own — after a hand-applied `migrations/*.sql`, or to re-check:
 
 ```
 VERIFY_SITE_URL=https://beta.daali.app node --experimental-strip-types scripts/verify-containment.mts
 ```
 
+**Run by hand it reads `DATABASE_URL` from `.env`, which in this repo does not name production.** The migrate path hands it the guarded string instead, so it always checks the database that was just migrated. A hand run can connect somewhere else entirely and report PASS about a database nobody touched — pass `DATABASE_URL` explicitly if you are not going through the migrate path.
+
 It reports two independent conclusions — **DATABASE CONTAINMENT** and **PRODUCTION SITE SMOKE**. Without `VERIFY_SITE_URL` the second reads `LOCAL ONLY / PRODUCTION UNVERIFIED` and exits 2, because `NEXT_PUBLIC_URL` is `localhost:3000` and a healthy database says nothing about the deployed app. Exit 0 means both passed; 1 means something failed.
+
+**This is detection, not prevention.** A table without RLS still reaches production; you just cannot finish the command without being told. Prevention means rehearsing the chain on a disposable database before applying — `PHASE-2-BACKLOG.md`, deferred until after the pilot event.
+
+**A 404 from the Data API is not evidence of containment.** On 2026-09-08 the two RLS-less tables returned 404 to an anon probe, which read as "not exposed" and was not: `PGRST205` is the same 404 a table that never existed returns, and it meant PostgREST's schema cache was stale. What actually protected them was zero grants — `42501 permission denied`, which is a 401. Read the catalog for containment; treat probe status codes as corroboration only.
 
 It is catalog-driven and fails closed, so a new table is checked without anyone adding it to a list. A table that genuinely should be client-readable goes in its `CLIENT_ACCESSIBLE` map with a reason, still requiring RLS and a policy — never a silent pass.
 
