@@ -473,6 +473,47 @@ The link grants nothing from this moment on.
 | `acceptedAt` | DateTime? | Set once. Terminal |
 | `revokedAt` | DateTime? | Owner may cancel an unaccepted invite |
 
+### `boundEmail` is enforced against the AUTHENTICATED identity — v2.2
+
+Ruled 2026-09-08. A bound invite may be accepted only by an authenticated
+Supabase identity **whose verified email matches `boundEmail`**.
+
+**NEVER against `Host.email`.** That column is not unique and is not reliably an
+email: both creation paths write `user.email ?? user.phone ?? user.id`, so it may
+hold an email, a phone number, or a UUID. Comparing against it would let a
+binding pass for the wrong person or fail for the right one.
+
+| Situation | Outcome |
+|---|---|
+| Accepted after matching **email OTP** | Allowed |
+| Accepted after **phone OTP** | **Refused** — there is no verified email to compare |
+| Accepted after email OTP with a **different** address | **Refused** |
+| Unauthenticated landing on a bound invite | Shows **which email the invitation is for**, then login |
+
+**A bound security field that is not enforced is worse than no binding at all**,
+because the owner believes the link is safe to forward.
+
+**AND THE REFUSAL MUST EXPLAIN ITSELF.** Someone who reaches a bound invite
+while signed in by phone, or as the wrong address, is told the invitation must be
+accepted using the invited email address. A generic 403 strands a person who has
+done nothing wrong and cannot guess what to change.
+
+**Unbound invites remain bearer invitations**: whoever validly accepts first
+becomes the manager. That is the point of leaving `boundEmail` null.
+
+### Delivery is copy-and-share — v2.2
+
+Ruled 2026-09-08. **The app sends no invitation email or SMS in this slice.**
+The owner generates the invitation, the app shows the raw URL **once** with
+copy-to-clipboard, and the owner sends it through whatever channel they choose.
+
+This keeps the invite slice independent of the fundraiser communications backlog
+and is exactly what the token model already implies: raw token shown once, raw
+token never stored, database holds only `tokenHash`.
+
+**The pending list and cancel are still required** — invariant 99 needs an
+unused invitation to be revocable, and there is no other way to set `revokedAt`.
+
 **Email binding, default on when the owner supplies an email.** An unbound link pasted into a group chat is claimed by whoever taps first, and the owner has no way to know it went to the wrong person. Binding costs the owner one field she is already typing and removes that entire class of mistake. Unbound remains available for "text this to Renee right now."
 
 **Acceptance is idempotent by constraint.** `acceptedAt` is set inside the same transaction that creates the collaborator row, conditional on it being null. Two simultaneous taps produce one collaborator and one 409 — the same shape as the draw-idempotency rule.
@@ -561,6 +602,37 @@ One active or pending grant per person per board, unlimited revoked history. The
 | Passes they minted, cash they confirmed | Untouched. The money is real regardless of who is still on the team |
 
 **Audit records reference `hostId` and never cascade.** No foreign key from a log or a contribution to `BoardCollaborator` may carry `ON DELETE CASCADE`, and revocation is a status change rather than a delete precisely so this cannot happen by accident. The record of who confirmed $340 in cash on October 2 has to survive that person leaving, which is the entire point of writing it down.
+
+### Revocation invalidates stale BOUND invitations — invariant 119, v2.2
+
+**Revoking a collaborator also revokes every still-unaccepted invitation on that
+board that is bound to that collaborator's authenticated identity**, in the same
+transaction.
+
+Without this, an owner who removes a manager can leave behind an older
+invitation that immediately recreates the access they just took away. Invariant
+99 does not cover it: that invariant voids an invite which is *itself* expired,
+revoked or accepted, and says nothing about the collaborator having been
+removed. The gap was found during the invite preflight and is closed by ruling
+rather than left to the implementation.
+
+**IT REACHES BOUND INVITATIONS ONLY, and that is a property of the model.**
+
+An unbound invite has **no recipient identity before acceptance**. Revoking a
+particular collaborator cannot determine that an outstanding bearer link belongs
+to that person, and **no attempt is made to infer it** — guessing would revoke
+links belonging to people who were never invited, or miss the one that matters,
+and either failure would be silent.
+
+So, recorded explicitly:
+
+- **Unbound invites remain valid** until accepted, expired, or **individually
+  revoked** from the pending list.
+- **An owner who needs recipient-specific revocation should issue a bound
+  invite.** That is what binding is for.
+- **This is an intentional property of a bearer invitation, not an authorization
+  bypass.** The owner chose a link anyone may redeem; revocation cannot
+  retroactively make it otherwise.
 
 **Revoking the last manager is normal** and needs no confirmation dialog. **The owner's own collaborator row cannot be revoked** — that is ownership transfer, which is out of scope.
 
@@ -771,7 +843,7 @@ OWNER.
 
 ## 10. Invariants
 
-**91–109, and 117–118.** Registered in `invariant-registry.md`.
+**91–109, 117–118, and 119.** Registered in `invariant-registry.md`.
 
 **v2.2 amends 106** — its denial list gains `winner.notify` and `board.dismiss`,
 the two capabilities added in §2 that resolve to OWNER. Per the registry's own
@@ -815,6 +887,14 @@ Next free number: **119**.
 98. An invite may be accepted only by an authenticated host, and only by the bound identity when `boundEmail` is set.
 99. An expired, revoked, or already-accepted invite cannot produce a collaborator row.
 100. `OWNER` is not an invitable role. There is no path from an invite to owner-level access.
+
+**Revocation and invitations**
+
+119. Revoking a collaborator also revokes every still-unaccepted invitation on
+     that board that is bound to that collaborator's authenticated identity. A
+     previously issued bound invitation may not be used to regain access after
+     revocation. Unbound invitations carry no identity and are out of its reach
+     by construction — §7.
 
 **Money and delegation**
 

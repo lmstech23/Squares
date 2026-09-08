@@ -234,6 +234,19 @@ An INDEX, as above. Both were introduced by the v2.2 amendment and allocated
 an endpoint that does not exist yet** — `HOST_REMOVED` has no route for any
 role — and is binding on whoever builds it rather than on a date.
 
+### 119 · Board collaborators addendum — v2.2
+
+| # | Invariant | Authoritative statement |
+|---|---|---|
+| 119 | Revocation invalidates stale bound invitations | `board-collaborators-addendum.md` §7 |
+
+Allocated 2026-09-08 with the invite slice. Nothing renumbered.
+
+**It reaches only BOUND invitations, and that limit is a property of the model
+rather than a gap in it.** An unbound invite has no recipient identity before
+acceptance, so revoking a collaborator cannot determine that an outstanding
+bearer link belongs to that person. See §7.
+
 ## Environment invariants — E1–E5
 
 **Not product invariants. They consume no number from the registry above and are never cited as invariant N.** They constrain how the repository is operated, and they are recorded here because this is the file every implementer reads first.
@@ -261,4 +274,4 @@ Environment-blocked tests are marked `REQUIRED — ENVIRONMENT BLOCKED, NOT EXEC
 2. Add the row here and the full statement in the owning document, in one commit.
 3. Amending an existing invariant does not consume a new number — mark the row `**Amended (§X)**` and point at the amending document.
 
-*Next free number: **119**.*
+*Next free number: **120**.*
