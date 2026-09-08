@@ -169,6 +169,10 @@ Statements are one-line summaries for lookup. **The owning document is authorita
 
 ### 91–109 · Board collaborators addendum §10
 
+*Amended by `board-collaborators-addendum.md` **v2.2**, 2026-09-08. Invariant
+106 is amended; the amending text is in that document's §2 and §10 and governs.
+No new numbers were allocated.*
+
 | # | Statement |
 |---|---|
 | 91 | Board authorization is determined solely by an active `BoardCollaborator` row |
@@ -186,7 +190,7 @@ Statements are one-line summaries for lookup. **The owning document is authorita
 | 103 | Every host- or manager-recorded or -confirmed contribution stores actor and timestamp |
 | 104 | A walk-up contribution satisfies every invariant a contributor-initiated one does |
 | 105 | Walk-up recording is blocked when the board is not `OPEN`, and for squares when sales are paused |
-| 106 | A MANAGER cannot close, draw, alter finalized totals, change payout destination, set locked terms, delete, manage collaborators, or transfer ownership |
+| 106 | **Amended (collaborators §2, v2.2)** — A MANAGER cannot close, draw, alter finalized totals, change payout destination, set locked terms, delete, manage collaborators, or transfer ownership; **nor `winner.notify`, nor `board.dismiss`** |
 | 107 | Revocation terminates authorization on the next request |
 | 108 | Revocation never alters or deletes historical records; nothing cascades from a collaborator row |
 | 109 | `revoked` is terminal; re-granting creates a new row |

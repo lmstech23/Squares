@@ -161,7 +161,7 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 | `fundraiser-signup-addendum.md` | **Sign-up sheets and volunteer flow. v1.6.** Authority for S0–S5 |
 | `fundraiser-donations-addendum.md` | **Donations, the `Contribution` ledger, and the A1 migration. v2.3.** Invariants 51–70 |
 | `fundraiser-launch-readiness-addendum.md` | **Deferred pricing, dietary attributes, volunteer interest. v2.1.** Invariants 71–90 |
-| `board-collaborators-addendum.md` | **Owner/manager roles and the audit trail. v2.1.** Invariants 91–109 |
+| `board-collaborators-addendum.md` | **Owner/manager roles and the audit trail. v2.2.** Invariants 91–109, 106 amended |
 | `slice-1-handoff.md` | Admission Slice 1 (A8) build brief. Derives from the three above. **Numbering corrected to 23–33** |
 | `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
@@ -172,6 +172,11 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 The fundraiser specification package was frozen on 2026-09-03 from `files (63)`:
 donations **v2.2**, launch readiness **v2.1**, collaborators **v2.1**, plus
 `invariant-registry.md`.
+
+**Collaborators v2.2 supersedes v2.1**, ruled 2026-09-08 from a verification
+pass against the freeze commit `91c9a98`. Its §"Version 2.2" changelog records
+each change and the evidence behind it. Invariant 106 is amended; no new numbers
+were allocated.
 
 **Donations v2.3 supersedes v2.2 for §13 — the A1 migration, backfill and
 correctness gate.** Ruled 2026-09-04 from three read-only production queries.
@@ -185,7 +190,7 @@ for each is in the section it amends.
 |---|---|
 | `fundraiser-donations-addendum.md` | **v2.3** — supersedes v2.2 for §13 |
 | `fundraiser-launch-readiness-addendum.md` | v2.1 — unchanged since the freeze |
-| `board-collaborators-addendum.md` | v2.1 — unchanged since the freeze |
+| `board-collaborators-addendum.md` | **v2.2** — supersedes v2.1; capability additions, blast radius, invite requirement, winner-SMS pinning |
 | `invariant-registry.md` | unversioned; numbering authority |
 | `fundraiser-admission-addendum.md` | v2.0 |
 | `fundraiser-signup-addendum.md` | v1.6 |

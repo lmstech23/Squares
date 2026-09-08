@@ -1,10 +1,36 @@
 # Board Collaborators — Addendum
 
 **Status:** **READY FOR FREEZE** — product decisions applied. Invariants 91–109.
-**Version:** 2.1 — cash-void sync, test renumber 44–60, environment-blocked annotation, numbering frozen
+**Version:** 2.2 — capability additions, blast-radius correction, invite requirement, winner-SMS pinning, §0 correction. Amends 2.1; see the changelog below
 **Companion to:** `SYSTEM-FLOW.md` (authority on app behavior) · `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-donations-addendum.md` (authority on the ledger) · `fundraiser-admission-addendum.md` · `fundraiser-signup-addendum.md` · `fundraiser-launch-readiness-addendum.md`
 
 Adds board-scoped delegation so the person who creates a fundraiser is not required to be the person operating it.
+
+---
+
+## Version 2.2 — what this amendment changes
+
+Ruled 2026-09-08, after a verification pass against the repository at the freeze
+commit `91c9a98`. **A freeze is not immutability**: changes are versioned,
+evidenced and changelogged rather than made in passing, which is the standard
+the donations addendum's v2.3 set. Every item below is a product ruling, and
+every factual claim behind one was read from the code or the live database
+catalog rather than from a document.
+
+| # | Change | Section |
+|---|---|---|
+| 1 | **§0's cash-audit claim was false and is corrected in place.** `confirm-cash` already writes `recordedByHostId` and `confirmedByHostId`. Migration step 4 has shipped | §0, §9 |
+| 2 | **Four capabilities added** — `scores.enter`, `winner.notify`, `winner.resend`, `board.dismiss`. `board.edit` is not overloaded | §2 |
+| 3 | **Blast radius corrected: 27 files, 28 comparisons**, not 21 | §3 |
+| 4 | **The manager board list is not gated on the manager's own `paymentPreference`** | §4 |
+| 5 | **Direct grant is rejected. The full invite flow is required**, and invariants 96–100 are not deferred | §5 |
+| 6 | **`HOST_REMOVED` requires a persistent actor id** when that endpoint is built | §8 |
+| 7 | **The backfill gate reads the database catalog**, not the ORM | §9 |
+| 8 | **Winner SMS pins the recipient at first send** | §9.1 *(new)* |
+
+**Invariant 106 is amended** by item 2 — its denial list gains `winner.notify`
+and `board.dismiss`. No new invariant numbers were allocated by this amendment;
+see the note at the end of §10.
 
 ---
 
@@ -39,19 +65,31 @@ if (!board || board.hostId !== host.id) {
 
 **§3 makes this a prerequisite, not a side effect.** One helper, one query, every route through it.
 
-### Cash confirmation has no audit trail today
+### Cash confirmation now has an audit trail — corrected in v2.2
 
-`POST /api/host/boards/[id]/confirm-cash` flips the square and writes:
+**This section previously read "Cash confirmation has no audit trail today" and
+was false when the package was frozen.** It described a `PaymentReference` write
+carrying no actor. `POST /api/host/boards/[id]/confirm-cash` writes both actor
+fields today, at `route.ts:202-203`:
 
 ```ts
-await prisma.paymentReference.create({
-  data: { squareId, stripeSessionId: null, amount: board.squarePrice, method: "cash" },
-});
+recordedByHostId: host.id,
+confirmedByHostId: host.id,
 ```
 
-**No actor. No reference to the host who confirmed it.** With one owner this was recoverable — there was only one person it could have been. With managers it is not, and the requirement asks for exactly the field that is missing.
+`recordCashDonation` in `lib/contributions.ts:311-312` does the same. **Migration
+step 4 in §9 — "add `confirmedByHostId` to the existing cash-confirm path" —
+has shipped**, and §9's table is annotated accordingly.
 
-This is a gap in shipped code, not a gap in the specs. It needs fixing whether or not delegation ships.
+Corrected in place rather than quietly deleted, because the claim was read as
+fact and repeated: a section asserting a gap the code does not have sends
+someone to fix something that is already fixed, and casts doubt on the sections
+that are still accurate. Verified by reading the route, not the spec.
+
+**What remains true** is the reason the section existed. With one owner an
+actorless record was recoverable — there was only one person it could have
+been. With managers it is not, and the actor fields are what make §8's audit
+trail possible. They are now populated; delegation gives them meaning.
 
 ### Three access mechanisms already exist, and this is the fourth
 
@@ -109,13 +147,49 @@ Roles are not checked at call sites. **Capabilities are**, and roles map to capa
 | `volunteer.manage` — sheets, slots, signups, when built | ✅ | ✅ |
 | `board.edit` — title, description, contact details, goal | ✅ | ✅ |
 | `staff.manage` — issue and revoke check-in staff links | ✅ | ✅ |
+| `scores.enter` — enter or correct Game Day period scores | ✅ | ✅ |
+| `winner.resend` — resend a winner SMS to the pinned recipient | ✅ | ✅ |
 | `board.close` — trigger `CLOSING` and finalization | ✅ | ❌ |
+| `winner.notify` — determine a period winner and send the first SMS | ✅ | ❌ |
+| `board.dismiss` — hide a board from the host dashboard | ✅ | ❌ |
 | `draw.run` | ✅ | ❌ |
 | `payout.configure` — Stripe destination, payment handles | ✅ | ❌ |
 | `terms.set` — prices, prize percent, dates, and the invariant 16 list | ✅ | ❌ |
 | `board.delete` | ✅ | ❌ |
 | `collaborators.manage` — invite, revoke, change roles | ✅ | ❌ |
 | `ownership.transfer` | ✅ | ❌ |
+
+### The four capabilities added in v2.2
+
+Three Game Day operational capabilities and one dashboard action, all found
+unmapped by the verification pass. **`board.edit` is not overloaded to cover
+them** — it means the board's terms and contact details, and scores are neither.
+
+**`scores.enter` — MANAGER.** Verified non-terminal: `api/boards/[id]/scores`
+performs an unconditional update of both score arrays with no per-period lock,
+no append-only history, and no side effects. Its guards are entry
+*preconditions* — the board must be `closed` with ten numbers assigned — not a
+freeze. Writing a score determines no winner, sends nothing, and moves no payout
+state. It is the manager's job at a table with a phone.
+
+**`winner.notify` — OWNER.** It writes the winner lock and texts a real person,
+and neither is undoable. This is the one Game Day action with the shape of
+`board.close`: it creates a fact rather than recording one.
+
+**`winner.resend` — MANAGER**, and only because §9.1 pins the recipient.
+Before that change resend re-read `playerPhone` from the square at send time, so
+it was not a repeat of a send but a **new send to whatever number the square
+currently held** — an authority to text an arbitrary recipient, which is not a
+manager capability. Production verification made the change free: 22 boards, 22
+empty maps, zero notifications ever sent, so there is no legacy state to
+migrate. **Were the pinning not to ship, `winner.resend` reverts to OWNER.**
+
+**`board.dismiss` — OWNER.** Recoverable per dismiss addendum K10, so this is
+not a data-risk denial. It is owner-only on **adjacency to delete**: dismiss and
+delete are the two actions that remove a board from where its owner expects to
+find it, and a manager should not be able to make a board disappear from the
+owner's dashboard. It is listed here rather than left as a special
+authorization exception, because §3 admits no exceptions.
 
 ### The denials that were not in the requirement, and why
 
@@ -162,7 +236,25 @@ Behavior:
 
 **The grant is read live on every request.** No role claim in a JWT, no session cache, no `useMemo` on the client that outlives a revocation. This single property is what makes §7's revocation immediate, and it is the thing most likely to be optimized away by someone reducing database round-trips.
 
-**Refactor scope.** Every route under `src/app/api/host/boards/[id]/` and every page under `src/app/host/boards/[id]/`. The inline `board.hostId !== host.id` check is deleted from each and replaced with one call. **A route that still contains that comparison after this lands is a bug**, and it should be checked by grep in review, not by memory.
+**Refactor scope — count of record: 27 files, 28 comparisons.** Corrected in
+v2.2 from an earlier figure of 21, which described only the inline half.
+
+| Group | Files | Notes |
+|---|---|---|
+| Inline `board.hostId !== host.id` in routes and pages | **21** | |
+| Callers of `authorizeBoardEvent` | **5** | `signup-sheet`, `signup-slots`, `signup-slots/[slotId]`, `signup-slots/reorder`, `check-in-staff-handlers.ts` |
+| The helper's own comparison, `lib/host-auth.ts:37` | **1** | |
+| | **27 files** | **28 comparisons** |
+
+**The two groups are disjoint** — no file uses both mechanisms — so the counts
+add rather than overlap. The 28th comparison is the second one inside
+`check-in-staff-handlers.ts`, which carries **two comparisons behind two public
+endpoints**: `check-in-staff` and `volunteer-access` both delegate into it.
+
+**A route that still contains that comparison after this lands is a bug**, and
+it is checked by grep in review, not by memory. **But grep counts files, and one
+file here hides two comparisons behind two endpoints** — so both public
+check-in-staff endpoints are tested by hand rather than trusted to a zero count.
 
 ---
 
@@ -194,6 +286,7 @@ Owner cards carry no badge — owning is the default and a badge on every card i
 A manager is a normal `Host` record with their own account. The page furniture stays account-level:
 
 - **Credit badge** — their own credits, unaffected by boards they manage. Managing consumes nothing.
+- **No payment-preference gate.** Added v2.2, and it is a removal, not an addition — see below.
 - **New Board** — available. It creates a board they own. Managing does not change that.
 - **Stripe banner** — reflects their own connection state, which is irrelevant to boards they manage, since contributions settle to the **owner's** connected account.
 
@@ -201,9 +294,78 @@ That last one is worth a line of host-facing copy on a managed board, because it
 
 > Contributions go to [Owner name]'s account. You manage the board; you don't receive the money.
 
+### The board list is not gated on the manager's own payment preference
+
+`src/app/host/boards/page.tsx:12` currently redirects to `/host/payment-setup`
+whenever the **session host's** `paymentPreference` is null:
+
+```ts
+if (!host.paymentPreference) redirect("/host/payment-setup");
+```
+
+**That gate must move to the board-creation path.** A manager who has never set
+her own preference — because she has never created a board, which is the whole
+point of being invited to manage someone else's — would be redirected away from
+the list before it renders, and could never reach a board she has a valid grant
+on. Her own account state would gate access to another person's board.
+
+**Knowing how you get paid is a precondition for creating a board, not for
+viewing one you were invited to manage.** `/host/boards/new/page.tsx:9` already
+enforces it correctly for creation and is unchanged.
+
+The three board pages — `page.tsx`, `donations/page.tsx`, `volunteers/page.tsx`
+— read `board.cashModeEnabled`, a board column set once at creation, and are
+already correct under delegation. `isCashHost` appears in none of them.
+Verified 2026-09-08 by reading every `paymentPreference` and `isCashHost` call
+site; **no API route reads `paymentPreference` to decide behaviour on an
+existing board.**
+
+**Stage placement, resolved.** The board-list join and this redirect's removal
+ship in the **first usable manager release**, whichever stage number that lands
+under. The addendum and the build brief disagree on the label; the milestone is
+what governs — *a manager signs in as herself, sees the boards she manages,
+opens one, and performs allowed manager actions.* A join that returns managed
+boards behind a redirect that hides the list is not that milestone.
+
 ---
 
 ## 5. Invitation and acceptance
+
+### Direct grant is rejected — v2.2
+
+**The full invite and acceptance flow is required. Invariants 96–100 are not
+deferred**, and no direct-grant shortcut may be introduced to get a manager onto
+a board sooner.
+
+This is not a preference about ceremony. It follows from what the `hosts` table
+can actually key on, read from the live catalog on 2026-09-08:
+
+- **`supabase_user_id` is the only unique column**, besides the primary key.
+  `hosts_supabase_user_id_key` is the sole unique index.
+- **`email` is not unique**, and is not reliably an email. Both creation paths —
+  `lib/auth.ts:22` and `app/auth/callback/route.ts:19` — write
+  `user.email ?? user.phone ?? user.id` into it, so it may hold an email, a
+  phone number, or a UUID.
+- **There is no `phone` column at all.**
+- **A pre-provisioned row would be stranded.** `getHost()` creates the Host row
+  lazily on first authenticated request, keyed on `supabaseUserId`. A row
+  written ahead of that has no `supabaseUserId` to match and is never found
+  again; the invitee signs in and gets a second, empty row.
+
+So there is **no stable pre-authentication identifier to bind a grant to**. A
+direct grant would have to key on the email field, which is neither unique nor
+necessarily an email — it would silently grant board access to whoever happens
+to hold a colliding value, or to nobody at all.
+
+The invite flow solves this by binding **after** authentication: the invitee
+proves an identity through the existing OTP flow, and the collaborator row is
+created against the `Host.id` that identity resolves to. That is the only point
+at which a durable identity exists.
+
+**Board Management is not delivered until a real manager can get onto a board
+using her own authenticated identity.** The foundation commits — collaborator
+schema, `board-access.ts`, the authorization switch — establish authorization;
+they do not establish access. The invite flow is what makes a manager exist.
 
 ### The link is an invitation. It is never an authorization.
 
@@ -361,6 +523,26 @@ Append-only. For collaborator lifecycle and for actions with no natural home on 
 
 **`role` is denormalized on purpose.** Reading it back through the collaborator table would report the actor's *current* role, so a revoked manager's October actions would render as "no access" — which is both wrong and exactly backwards from what an audit is for.
 
+### `SignupLog` and `HOST_REMOVED` — v2.2
+
+`SignupLog.actorType` is `SUPPORTER | HOST`. Under delegation an owner and a
+manager both log as `HOST`, so the sign-up audit cannot say **who** removed a
+helper — which is the one question an audit of a removal exists to answer.
+
+**This is currently unreachable and does not block delegation.** `HOST_REMOVED`
+is an enum value with no endpoint behind it, for anyone: `signup-rules.ts:296`
+says so, and `signups.ts:319` is the only writer, reached only through paths a
+supporter drives. Nobody can remove a helper today.
+
+**The requirement is bound to the endpoint, not to a date.** Whoever builds the
+removal route adds a persistent actor id in the same change. **Shipping that
+endpoint without one is a defect**, not a follow-up.
+
+**Extending `ActorType` to `OWNER | MANAGER` is not the fix.** §8 names the
+human, not the role — a role is what someone held at a moment, and the audit
+question is which person acted. `BoardActionLog` denormalizes `role` alongside
+`hostId` for exactly this reason, and a removal record needs the same pair.
+
 ### Host-facing display
 
 Owner-only, on the board panel. A manager can see the board's money; the record of *who touched what* belongs to the owner.
@@ -422,10 +604,74 @@ BoardInvite.tokenHash                unique
 | 1 | Create `BoardCollaborator`, `BoardInvite`, `BoardActionLog` + indexes | |
 | 2 | **Backfill one `OWNER` row per existing board** from `Board.hostId`, `status = 'active'` | Every board, including Game Day |
 | 3 | Add actor fields to `Contribution` (§8) | |
-| 4 | **Add `confirmedByHostId` to the existing cash-confirm path** | §0. Do this even if delegation slips |
+| 4 | ~~Add `confirmedByHostId` to the existing cash-confirm path~~ | **SHIPPED.** `confirm-cash/route.ts:202-203` and `contributions.ts:311-312` write both actor fields. Verified 2026-09-08 |
 | 5 | Create `src/lib/board-access.ts` and refactor every host route | The large one |
 
-**Backfill correctness gate:** after step 2, assert every board has exactly one active `OWNER` row whose `hostId` equals its `Board.hostId`. A board with zero owner rows becomes invisible to its own creator the moment step 5 lands, which is a total loss of access on live boards.
+**Backfill correctness gate — reads the database catalog, not the ORM.**
+Strengthened in v2.2. After step 2, assert on the RESULTING STATE:
+
+1. Exactly one active `OWNER` row per board.
+2. Every such row's `hostId` equals its board's `Board.hostId`.
+3. The count of active `OWNER` rows equals the count of boards.
+4. Both partial unique indexes exist in `pg_index`.
+
+**Catalog, not ORM**, and not a re-read through the same client that wrote the
+rows. The standing warning applies: `migrate diff` reports zero drift whether or
+not an index exists, and a generated client reports what the schema file claims
+rather than what the database holds. Every assertion above is a query against
+`pg_index` and the tables themselves.
+
+**This is the first migration in the sequence to touch rows in live production
+use.** Steps 1 and 3 create tables and columns nothing reads yet; step 2 writes
+a row for every board that exists, and step 5 then makes those rows the only
+thing standing between a host and her own board. A board with zero owner rows
+becomes invisible to its creator the moment step 5 lands — a total loss of
+access on live boards, discovered by the owner rather than by the deploy.
+
+---
+
+## 9.1 Winner notification: the recipient is pinned at first send — v2.2
+
+`winnerNotifiedByPeriod` maps a period label to a locked `squareId`. The lock
+pins the **square**; it does not pin the **phone**.
+`resend-winner-sms/route.ts:76-87` re-reads `playerPhone` from that square at
+send time, so editing the square's phone between the first send and a resend
+sends to the new number. **Resend is therefore not a repeat of a send but a new
+send to whatever number the square currently holds.**
+
+**The stored value becomes structured**, carrying at minimum:
+
+| Key | Meaning |
+|---|---|
+| locked `squareId` | Unchanged. The winner, fixed at notification |
+| phone used | The number the first notification actually went to |
+
+- `notify-winner` writes both atomically as the notification record.
+- `resend-winner-sms` requires an existing record, sends **only** to the stored
+  phone, and **never re-reads `playerPhone` as the destination**.
+- Existing winner-lock semantics are preserved, including the un-notified-period
+  guard: no record → 400, use the notify endpoint first.
+- The map is not otherwise redesigned.
+
+**No legacy branch is required.** Verified against production on 2026-09-08:
+**22 boards, 22 empty `{}` maps, zero non-empty.** The column is
+`jsonb NOT NULL DEFAULT '{}'`, and `notify-winner` has never run in production —
+consistent with STATUS.md recording SMS as code-complete and awaiting compliance
+approval. The shape change is free.
+
+**A defensive invalid-shape guard is retained anyway.** A record without a
+stored phone fails and tells the host to use the notify endpoint. **It does not
+fall back to reading the square** — that fallback is the behaviour being
+removed, and a guard that restores it under an error condition would reinstate
+it precisely when something is already wrong.
+
+**Both routes consume the same map, so they change together**, and this ships as
+its own correctness commit rather than inside the authorization switch. A shape
+change buried in a 27-site refactor is one nobody can review.
+
+**This is what makes `winner.resend` a MANAGER capability.** Without the
+pinning it is an authority to text an arbitrary recipient, and it reverts to
+OWNER.
 
 **Steps 1–4 are safe to land independently of step 5.** The tables sit unread and the actor fields start recording immediately. Step 5 is the switch, and it is the one that needs the grep.
 
@@ -434,6 +680,26 @@ BoardInvite.tokenHash                unique
 ## 10. Invariants
 
 **91–109.** Registered in `invariant-registry.md`.
+
+**v2.2 amends 106** — its denial list gains `winner.notify` and `board.dismiss`,
+the two capabilities added in §2 that resolve to OWNER. Per the registry's own
+rule, amending an invariant consumes no new number; the registry row is marked
+**Amended (§2)** and points here.
+
+**No new invariant numbers were allocated by this amendment**, and that is
+deliberate rather than an omission. Numbering is allocated by
+`invariant-registry.md`, not by whoever writes next, and this ruling allocated
+none. Two rules introduced here are candidates and are flagged rather than
+numbered:
+
+- §9.1's pinning — *a winner resend sends only to the number the first
+  notification used*.
+- §8's — *a helper-removal record names the human who acted*, which is bound to
+  an endpoint that does not exist yet.
+
+Both are stated as product rules in their sections and are binding as written.
+Whether either earns a number is a numbering decision, and the next free number
+is **117**.
 
 **Authorization**
 
@@ -458,7 +724,7 @@ BoardInvite.tokenHash                unique
 103. Every host- or manager-recorded and every host- or manager-confirmed contribution stores the acting host and a timestamp. A cash confirmation without an actor is invalid.
 104. A walk-up contribution creates a `Contribution` and satisfies every money, pricing, admission, and eligibility invariant that applies to a contributor-initiated one. There is no host-initiated bypass of the ledger.
 105. Walk-up recording is blocked when the board is not `OPEN`, and blocked for squares when square sales are paused.
-106. A MANAGER cannot close a board, run a draw, alter a finalized total, change payout destination, set or override locked terms, delete a board, manage collaborators, or transfer ownership.
+106. A MANAGER cannot close a board, run a draw, alter a finalized total, change payout destination, set or override locked terms, delete a board, manage collaborators, or transfer ownership. **Amended v2.2:** nor notify a winner (`winner.notify`) nor dismiss a board (`board.dismiss`).
 
 **Revocation**
 
