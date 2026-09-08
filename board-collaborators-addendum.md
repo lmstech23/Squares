@@ -754,6 +754,13 @@ because production holds no rows in the old form: 22 boards, 22 empty maps.
 its own correctness commit rather than inside the authorization switch. A shape
 change buried in a 27-site refactor is one nobody can review.
 
+**DESTINATION IS PINNED; CONSENT IS NOT.** The resend destination is pinned to
+the phone recorded at winner notification time, but SMS consent is evaluated
+**live at resend time**. A later opt-out prevents the resend. **Invariant 117
+governs destination, not current permission to send** — the two are different
+questions and are answered from different places on purpose: one is a fact about
+the moment they won, the other a fact about now.
+
 **This is what makes `winner.resend` a MANAGER capability.** Without the
 pinning it is an authority to text an arbitrary recipient, and it reverts to
 OWNER.
