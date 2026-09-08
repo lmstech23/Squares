@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { cardCapable } from "@/lib/accepted-payments";
 import { requireBoardAccess } from "@/lib/board-access";
+import { isNotified } from "@/lib/winner-notification";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 import { boardTotals } from "@/lib/contributions";
 import { redirect, notFound } from "next/navigation";
@@ -661,7 +662,15 @@ export default async function HostBoardPage({ params }: Props) {
 
 
   const winnerPositions = new Set(winners.map((w) => w.position));
-  const notifiedMap = (board.winnerNotifiedByPeriod ?? {}) as Record<string, string>;
+  // DISPLAY ONLY, and deliberately not typed as the notification shape. The
+  // score form asks nothing but "was this period notified"; giving it the
+  // record would invite it to read a phone number onto a host dashboard.
+  // `isNotified` in lib/winner-notification.ts owns the structural question.
+  const notifiedPeriods = new Set(
+    (board.periodLabels ?? []).filter((label) =>
+      isNotified(board.winnerNotifiedByPeriod, label)
+    )
+  );
 
   return (
     <div>
@@ -789,7 +798,7 @@ export default async function HostBoardPage({ params }: Props) {
             periodLabels={board.periodLabels}
             existingScoresA={board.scoresTeamA ?? []}
             existingScoresB={board.scoresTeamB ?? []}
-            winnerNotifiedByPeriod={notifiedMap}
+            notifiedPeriods={notifiedPeriods}
           />
         </div>
       )}
@@ -835,7 +844,7 @@ export default async function HostBoardPage({ params }: Props) {
                     winnerName={sq?.playerName ?? null}
                     squareNumber={w.position + 1}
                     smsOptIn={sq?.smsOptIn ?? false}
-                    alreadyNotified={!!notifiedMap[w.label]}
+                    alreadyNotified={notifiedPeriods.has(w.label)}
                   />
                 </div>
               </div>

@@ -16,6 +16,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { notificationValue } from "@/lib/winner-notification";
 import { prisma } from "@/lib/prisma";
 import { requireBoardAccess } from "@/lib/board-access";
 import { calculateWinners } from "@/lib/winners";
@@ -101,6 +102,10 @@ export async function POST(
         playerEmail: true,
         playerName: true,
         position: true,
+        // PINNED AT NOTIFICATION — invariant 117. The number on file at THIS
+        // moment is the only one a resend may ever use. Read here so the lock
+        // and the destination are decided together, from one row read.
+        playerPhone: true,
       },
     });
 
@@ -130,13 +135,18 @@ export async function POST(
       );
     }
 
-    // 7. ATOMIC LOCK — write { periodLabel: squareId } only if key is absent.
+    // 7. ATOMIC LOCK — write the notification record only if key is absent.
     //    Uses raw JSONB: ? checks key existence, || merges. Returns affected rows.
     //    If count = 0, another request already locked this period.
     const squareNumber = square.position + 1;
     const result = await prisma.$executeRaw`
       UPDATE boards
-      SET winner_notified_by_period = winner_notified_by_period || ${JSON.stringify({ [periodLabel]: square.squareId })}::jsonb
+      SET winner_notified_by_period = winner_notified_by_period || ${JSON.stringify({
+        [periodLabel]: notificationValue({
+          squareId: square.squareId,
+          phone: square.playerPhone,
+        }),
+      })}::jsonb
       WHERE board_id = ${boardId}::uuid
         AND NOT (winner_notified_by_period ? ${periodLabel})
     `;

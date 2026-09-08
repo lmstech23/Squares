@@ -10,7 +10,9 @@ interface ScoreEntryProps {
   periodLabels: string[];
   existingScoresA: number[] | null;
   existingScoresB: number[] | null;
-  winnerNotifiedByPeriod: Record<string, string>;
+  /** Which periods already have a notification. Presence only — never the
+      record, which carries the winner's phone number. */
+  notifiedPeriods: Set<string>;
 }
 
 export default function ScoreEntry({
@@ -20,7 +22,7 @@ export default function ScoreEntry({
   periodLabels,
   existingScoresA,
   existingScoresB,
-  winnerNotifiedByPeriod,
+  notifiedPeriods,
 }: ScoreEntryProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -150,7 +152,7 @@ export default function ScoreEntry({
               placeholder="—"
             />
           </div>
-          {winnerNotifiedByPeriod[label] && (
+          {notifiedPeriods.has(label) && (
             <p className="text-[10px] text-amber-400/80 mt-1">
               Winner already notified. Changing this score will not send another SMS.
             </p>
