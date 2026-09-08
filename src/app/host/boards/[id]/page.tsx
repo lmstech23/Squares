@@ -302,7 +302,14 @@ export default async function HostBoardPage({ params }: Props) {
       },
       select: { status: true, paymentMethod: true, voidedAt: true },
     });
-    const counters = boardCounters(board.squares, counterDonations);
+    // THE SAME SOURCE THE CLOSE GUARD COUNTS. A reservation is not in the
+    // ledger until it is confirmed, so this cannot come from `counterDonations`
+    // above - it would read zero while $55 sat waiting on the Contributions
+    // page, and a host glancing at the dashboard would have no reason to look.
+    const pendingReservations = await prisma.entryReservation.count({
+      where: { boardId: board.boardId, status: "pending" },
+    });
+    const counters = boardCounters(board.squares, counterDonations, pendingReservations);
 
     // Event panel — only on a board with an event.
     let expected = 0;

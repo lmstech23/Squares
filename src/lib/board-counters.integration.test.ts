@@ -44,7 +44,44 @@ describe(
         },
         select: { status: true, paymentMethod: true, voidedAt: true },
       });
-      return boardCounters(board.squares, donations);
+      // Mirrors the host page exactly, including the reservation count - which
+      // comes from its own table because a reservation has no Contribution
+      // until the host confirms it.
+      const pendingReservations = await db.entryReservation.count({
+        where: { boardId, status: "pending" },
+      });
+      return boardCounters(board.squares, donations, pendingReservations);
+    }
+
+    /** A pending direct-payment ticket reservation, with an event to hang it on. */
+    async function reservation(code: string) {
+      let ev = await db.event.findFirst({ where: { boardId } });
+      if (!ev) {
+        ev = await db.event.create({
+          data: {
+            boardId,
+            startsAt: new Date(Date.now() + 20 * 864e5),
+            timezone: "America/New_York",
+          },
+        });
+      }
+      return db.entryReservation.create({
+        data: {
+          boardId,
+          eventId: ev.id,
+          referenceCode: code,
+          contributorName: "Parent",
+          contributorEmail: "p@example.com",
+          contributorPhone: "+16785550142",
+          paymentRail: "zelle",
+          lines: {
+            create: [
+              { tier: "CHILD", priceBasis: "FLAT", unitPriceCents: 1500, quantity: 2 },
+            ],
+          },
+        },
+        select: { id: true },
+      });
     }
 
     async function squares(status: string, n: number) {
@@ -102,8 +139,13 @@ describe(
 
     beforeEach(async () => {
       if (boardId) {
+        // Reservations and their lines hold FKs to the board and the event,
+        // so they go first. These tests are the first here to create either.
+        await db.entryReservationLine.deleteMany({ where: { reservation: { boardId } } });
+        await db.entryReservation.deleteMany({ where: { boardId } });
         await db.square.deleteMany({ where: { boardId } });
         await db.contribution.deleteMany({ where: { boardId } });
+        await db.event.deleteMany({ where: { boardId } });
         await db.board.deleteMany({ where: { boardId } });
       }
       const b = await db.board.create({
@@ -133,8 +175,13 @@ describe(
 
     after(async () => {
       if (boardId) {
+        // Reservations and their lines hold FKs to the board and the event,
+        // so they go first. These tests are the first here to create either.
+        await db.entryReservationLine.deleteMany({ where: { reservation: { boardId } } });
+        await db.entryReservation.deleteMany({ where: { boardId } });
         await db.square.deleteMany({ where: { boardId } });
         await db.contribution.deleteMany({ where: { boardId } });
+        await db.event.deleteMany({ where: { boardId } });
         await db.board.deleteMany({ where: { boardId } });
       }
       if (hostId) await db.host.deleteMany({ where: { id: hostId } });
@@ -221,6 +268,47 @@ describe(
     });
 
     // ---- OPEN is inventory, always ------------------------------------------
+
+    // THE DEFECT THIS FIXES. The dashboard read squares and contributions, and
+    // a direct-payment reservation is in neither until the host confirms it -
+    // so AWAITING showed 0 while money was genuinely waiting one screen over,
+    // and a host had no reason to open the page where it was sitting.
+    test("a pending reservation counts in AWAITING", async () => {
+      await reservation("H82K4");
+      const c = await counters();
+      assert.equal(c.awaiting, 1, "0 here is the bug: the ledger cannot see it");
+    });
+
+    test("reservations and reserved_cash squares both count, and add", async () => {
+      await squares("reserved_cash", 2);
+      await reservation("H82K4");
+      const c = await counters();
+      assert.equal(c.awaiting, 3);
+    });
+
+    test("a resolved or released reservation counts nowhere", async () => {
+      const a = await reservation("H82K4");
+      const b = await reservation("K93M5");
+      await db.entryReservation.update({
+        where: { id: a.id },
+        data: { status: "released", releasedAt: new Date() },
+      });
+      await db.entryReservation.update({
+        where: { id: b.id },
+        data: { status: "resolved", resolvedAt: new Date() },
+      });
+      const c = await counters();
+      assert.equal(c.awaiting, 0, "history is not a worklist");
+    });
+
+    test("a reservation never touches CONFIRMED, IN CHECKOUT or OPEN", async () => {
+      const before = await counters();
+      await reservation("H82K4");
+      const after = await counters();
+      assert.equal(after.confirmed, before.confirmed);
+      assert.equal(after.inCheckout, before.inCheckout);
+      assert.equal(after.open, before.open, "a ticket takes no inventory");
+    });
 
     test("donations never change OPEN", async () => {
       await contribution({ status: "confirmed" });

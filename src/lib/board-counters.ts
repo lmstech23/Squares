@@ -59,9 +59,24 @@ export interface BoardCounters {
   open: number;
 }
 
+/**
+ * Pending direct-payment ticket reservations on this board.
+ *
+ * A COUNT, NOT ROWS, and it comes from `EntryReservation` rather than the
+ * ledger. A reservation has NO Contribution until the host confirms it - the
+ * money row is created at confirmation - so a counter reading contributions
+ * finds nothing and shows zero while money is genuinely waiting.
+ *
+ * That is the same failure the close guard exists to prevent, and it is worse
+ * here: close stops and says so, while a dashboard reading zero gives the host
+ * no reason to open the page where the reservation is sitting. The count reads
+ * exactly what `closeBoard` step 3 reads, so the two cannot disagree about
+ * whether anything is outstanding.
+ */
 export function boardCounters(
   squares: CounterSquare[],
-  donations: CounterDonation[]
+  donations: CounterDonation[],
+  pendingReservations = 0
 ): BoardCounters {
   const sq = (status: string) =>
     squares.filter((s) => s.paymentStatus === status).length;
@@ -77,6 +92,10 @@ export function boardCounters(
   const awaitingDonations = donations.filter(
     (d) => d.status === "pending" && d.paymentMethod === "cash"
   ).length;
+
+  // ONE PER RESERVATION, matching how a donation and an entry purchase are
+  // counted here: the purchase is the unit that exists in every state, and a
+  // reservation's passes do not exist until it is confirmed.
 
   // Mid-Stripe-checkout. This is a REAL, DURABLE STATE: the ledger row is
   // written before the Checkout Session ("row first, session second"), so it
@@ -95,7 +114,7 @@ export function boardCounters(
 
   return {
     confirmed: sq("paid") + confirmedDonations,
-    awaiting: sq("reserved_cash") + awaitingDonations,
+    awaiting: sq("reserved_cash") + awaitingDonations + pendingReservations,
     inCheckout: sq("pending") + inCheckoutDonations,
     // INVENTORY, and only ever inventory. A donation cannot make a ticket
     // available or unavailable.
