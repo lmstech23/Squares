@@ -10,11 +10,22 @@ export const dynamic = "force-dynamic";
 // What they reserved, what to send, where to send it, and the reference code
 // that lets the host match a bank memo to this row.
 //
-// A STABLE URL, EMAILED TO THEM. This is the only screen a direct payer ever
-// sees: they leave to open a banking app and come back to it, possibly days
-// later, possibly on a different device. The reservation id is the key — a
-// server-generated UUID, unguessable, known at the moment the email is sent.
-// The same model the passes screen uses.
+// A STABLE URL, AND NOW GENUINELY EMAILED. They leave to open a banking app and
+// come back to this, possibly days later, possibly on a different device. The
+// reservation id is the key — a server-generated UUID, unguessable. The same
+// model the passes screen uses.
+//
+// THIS COMMENT WAS WRONG UNTIL 2026-09-08 and is worth the correction rather
+// than a quiet rewrite: it asserted "emailed to them" when no reservation email
+// existed anywhere in the codebase. The reserve route sent nothing, and a
+// contributor who closed this tab lost the reference code entirely. The claim
+// was read as fact and repeated. `sendReservationEmail` in confirmation-email.ts
+// now makes it true, on creation.
+//
+// THIS PAGE IS STILL THE AUTHORITY. It recomputes from the board on every load,
+// so it can say the host cleared a handle where the email — frozen at send —
+// would go on naming an account that may no longer be theirs. The email says as
+// much and links here.
 //
 // THE LINK IS NOT A CREDENTIAL FOR ANYTHING BUT READING. Nothing on this page
 // changes state. The reference code shown here authorises nothing either; it is

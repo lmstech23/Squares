@@ -5,6 +5,7 @@ import { normalizePhone } from "@/lib/roster-identity";
 import { quoteEntry, offersEntry, type EntryLine, type EntryTier } from "@/lib/entry-pricing";
 import { generateReferenceCode } from "@/lib/reference-code";
 import { acceptedRails, RAIL_LABEL, type DirectRail } from "@/lib/accepted-payments";
+import { sendReservationEmail } from "@/lib/confirmation-email";
 
 // ============================================================
 // CONTRIBUTOR: reserve Entry Tickets, pay the host directly.
@@ -287,6 +288,41 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    // ---- the pending-reservation email ------------------------------------
+    //
+    // AFTER THE TRANSACTION, AND NON-FATAL. The row is committed; a mail
+    // failure must not be able to unmake it, and the contributor is being sent
+    // to a page carrying the same information either way. sendReservationEmail
+    // swallows its own errors and reports a boolean, and this awaits it only so
+    // the send is attempted before the serverless invocation can be frozen.
+    //
+    // THE RECOVERY PATH, NOT THE RECEIPT. Until this existed the browser tab
+    // was the only copy of the reference code - close it and the mechanism the
+    // host uses to match a bank memo to this row was gone from the
+    // contributor's side. The page remains what someone reads immediately after
+    // checkout; this is what they find three days later.
+    const ticketCents = quote.totalCents;
+    await sendReservationEmail({
+      reservationId: created.id,
+      referenceCode: created.referenceCode,
+      boardName: board.gameName,
+      contributorEmail: email,
+      railLabel: RAIL_LABEL[rail],
+      handle,
+      // THE STORED PRICES, from the same rows that were just written. Not a
+      // second quote: a reservation taken before the early-bird cutoff owes the
+      // early price, and an email that re-quoted would tell them a different
+      // number from the page and from the host's worklist.
+      lines: lineRows.map((l) => ({
+        tier: l.tier,
+        unitPriceCents: l.unitPriceCents,
+        quantity: l.quantity,
+      })),
+      ticketCents,
+      donationCents: created.donationAmountCents,
+      totalCents: ticketCents + created.donationAmountCents,
+    });
 
     return NextResponse.json({
       reservationId: created.id,

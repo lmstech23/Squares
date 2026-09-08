@@ -1,4 +1,4 @@
-import { test, describe, before, after, beforeEach } from "node:test";
+import { test, describe, before, after, beforeEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
@@ -22,6 +22,30 @@ const prisma = url ? new PrismaClient({ datasources: { db: { url } } }) : null;
 // other route test here uses. A bare `@/` specifier at module scope would break
 // `npm test`, which runs this file without the alias loader and expects it to
 // skip rather than fail to load.
+// Every send this run, in order. `failNext` makes the next one throw, which is
+// how the non-fatal rule is proven rather than asserted: a reservation must
+// still exist after a send that failed.
+//
+// Registered BEFORE the route module is imported, or the handler binds the real
+// sendEmail - which throws on a missing RESEND_API_KEY and would make every
+// test here a test of that error instead.
+const sends: { to: string; subject: string; html: string }[] = [];
+let failNext = false;
+
+if (url) {
+  mock.module("@/lib/email", {
+    namedExports: {
+      sendEmail: async (to: string, subject: string, html: string) => {
+        if (failNext) {
+          failNext = false;
+          throw new Error("simulated Resend failure");
+        }
+        sends.push({ to, subject, html });
+      },
+    },
+  });
+}
+
 const { POST } = url
   ? await import("../app/api/board/[slug]/entry/reserve/route.ts")
   : { POST: null as never };
@@ -104,6 +128,8 @@ describe(
     });
 
     async function wipe() {
+      sends.length = 0;
+      failNext = false;
       if (!boardId) return;
       await db.entryReservationLine.deleteMany({
         where: { reservation: { boardId } },
@@ -192,6 +218,146 @@ describe(
       assert.equal(b.status, 200);
       assert.notEqual(a.data.referenceCode, b.data.referenceCode);
       assert.equal(await db.entryReservation.count({ where: { boardId } }), 2);
+    });
+
+    // ====================================================================
+    // THE PENDING-RESERVATION EMAIL.
+    //
+    // Until this existed, nothing was sent between reserving and the host
+    // confirming: the browser tab held the only copy of the reference code, and
+    // closing it took the reconciliation mechanism with it. The contributor
+    // could still know they owed $80 by Zelle and have no way to tell the host
+    // which payment was theirs.
+    //
+    // THE PAGE STAYS THE AUTHORITY. It recomputes from the board; the email is
+    // frozen at send. These assert that the email says so and links back.
+    // ====================================================================
+
+    /** The one send this run, with a message when the count is wrong. */
+    const mail = () => {
+      assert.equal(sends.length, 1, "expected one email, got " + sends.length);
+      return sends[0];
+    };
+
+    test("tickets only: breakdown, total, rail, handle and code", async () => {
+      await seedBoard();
+      const res = await call(goodBody());
+      assert.equal(res.status, 200);
+
+      const m = mail();
+      assert.equal(m.to, "taylor@example.com");
+      // 2 adult early at $40 + 1 child at $15.
+      assert.match(m.html, /2 . Adult/);
+      assert.match(m.html, /1 . Child/);
+      assert.ok(m.html.includes("$80"), "the adult line");
+      assert.ok(m.html.includes("$15"), "the child line");
+      assert.match(m.html, /Total due/);
+      assert.ok(m.html.includes("$95"), "the total");
+      assert.match(m.html, /Pay via Zelle/);
+      assert.match(m.html, /host@example\.com/, "the handle");
+      assert.ok(m.html.includes(res.data.referenceCode), "the code");
+      assert.match(m.html, /payment memo/i);
+      assert.doesNotMatch(m.html, /Donation/, "no donation line when there is none");
+    });
+
+    // THREE NUMBERS, NOT ONE, for the reason the page already gives: a single
+    // total nobody can reconcile against what they chose is a total they query.
+    test("tickets plus a donation: three numbers, donation on its own line", async () => {
+      await seedBoard();
+      const res = await call(goodBody({ donationAmountCents: 2500 }));
+      assert.equal(res.status, 200);
+
+      const m = mail();
+      // THE TICKET LINES ARE ITEMISED, so there is no ticket subtotal row and
+      // none is wanted: 80 + 15 + 25 = 120 reconciles from what is on screen,
+      // which is the property the page's three numbers exist to give. A
+      // subtotal beside itemised lines is a fourth number to check, not a
+      // fourth fact.
+      assert.ok(m.html.includes("$80"), "the adult line");
+      assert.ok(m.html.includes("$15"), "the child line");
+      assert.match(m.html, /Donation/);
+      assert.ok(m.html.includes("$25"), "the donation, on its own line");
+      assert.ok(m.html.includes("$120"), "the total due");
+      assert.ok(m.subject.includes("send $120 by Zelle"));
+    });
+
+    test("the subject leads with the code, then the amount and rail", async () => {
+      await seedBoard();
+      const res = await call(goodBody());
+      const m = mail();
+      assert.equal(
+        m.subject,
+        "Reservation " + res.data.referenceCode + " \u2014 send $95 by Zelle \u2014 Reserve Test"
+      );
+      // The recovery case: searching the code alone finds it, unopened.
+      assert.ok(m.subject.startsWith("Reservation " + res.data.referenceCode));
+    });
+
+    test("a different rail carries its own label and handle", async () => {
+      await seedBoard({ hostCashapp: "$hostcash", acceptedPaymentMethods: ["zelle", "cashapp"] });
+      const res = await call(goodBody({ paymentRail: "cashapp" }));
+      assert.equal(res.status, 200);
+
+      const m = mail();
+      assert.match(m.html, /Pay via Cash App/);
+      assert.ok(m.html.includes("$hostcash"));
+      assert.doesNotMatch(m.html, /host@example\.com/, "not the Zelle handle");
+      assert.match(m.subject, /by Cash App/);
+    });
+
+    test("the link resolves to this reservation", async () => {
+      await seedBoard();
+      const res = await call(goodBody());
+      const r = await db.entryReservation.findFirstOrThrow({ where: { boardId } });
+      assert.equal(r.id, res.data.reservationId);
+      assert.ok(mail().html.includes("/reservation/" + r.id));
+      assert.match(mail().html, /View reservation/);
+    });
+
+    // The email must not present itself as the authority on something that can
+    // move. A host changing their Zelle number leaves this message stale.
+    test("it points at the page as the current source of truth", async () => {
+      await seedBoard();
+      await call(goodBody());
+      assert.match(mail().html, /current payment details/i);
+    });
+
+    // NON-FATAL, and proven by the row surviving rather than by reading code.
+    test("a send failure does not roll back the reservation", async () => {
+      await seedBoard();
+      failNext = true;
+
+      const res = await call(goodBody());
+      assert.equal(res.status, 200, "the contributor is not shown an error");
+      assert.equal(sends.length, 0, "nothing was sent");
+
+      const r = await db.entryReservation.findFirstOrThrow({ where: { boardId } });
+      assert.equal(r.status, "pending");
+      assert.equal(r.referenceCode, res.data.referenceCode);
+      assert.equal(
+        await db.entryReservationLine.count({ where: { reservationId: r.id } }),
+        2,
+        "its lines are intact"
+      );
+    });
+
+    test("a refused reservation sends nothing", async () => {
+      await seedBoard();
+      const res = await call(goodBody({ lines: [] }));
+      assert.equal(res.status, 400);
+      assert.equal(sends.length, 0);
+    });
+
+    // STORED PRICES, NEVER RE-QUOTED. A reservation taken before the cutoff owes
+    // the early price; an email that re-quoted would disagree with the page and
+    // with the host's worklist.
+    test("after the cutoff the email carries the price actually reserved", async () => {
+      await seedBoard({ earlyBirdEndsAt: new Date(Date.now() - 864e5) });
+      const res = await call(goodBody());
+      assert.equal(res.status, 200);
+      // 2 adult REGULAR at $50 + 1 child at $15.
+      assert.ok(mail().html.includes("$100"));
+      assert.ok(mail().subject.includes("send $115 by Zelle"));
     });
 
     // ---- the help checkbox --------------------------------------------------

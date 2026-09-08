@@ -171,6 +171,9 @@ function subjectAndBody(
  * Never throws. Payment state is already committed by the time this runs and
  * must not be affected by an email provider having a bad minute.
  */
+/** Display names for the two entry tiers. Reservation email only. */
+const TIER_LABEL: Record<string, string> = { ADULT: "Adult", CHILD: "Child" };
+
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
     minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
@@ -751,4 +754,163 @@ export async function sendPendingConfirmations(where: {
   }
 
   return result;
+}
+
+/**
+ * The pending-reservation email — sent when a direct-payment reservation is
+ * CREATED, not when it is confirmed.
+ *
+ * WHY IT EXISTS. A direct payer leaves Daali to open a banking app. Until this,
+ * the browser tab was the only copy of their reference code: close it and they
+ * might still remember they owe $80 by Zelle, but the code the host uses to
+ * match a bank memo to their row is gone from their side entirely. That is the
+ * whole reconciliation mechanism, lost to a closed tab.
+ *
+ * THE PAGE IS THE IMMEDIATE VIEW; THIS IS THE RECOVERY PATH. `/reservation/[id]`
+ * recomputes from the board on every load, so it can say "the host cleared this
+ * handle" where a sent email cannot. This message therefore points at the page
+ * as the authority rather than presenting itself as one - see the note it
+ * carries. An email frozen at send must not become the more-trusted copy of
+ * something that can move.
+ *
+ * NEVER THROWS. A mail failure must not be able to leave a reservation
+ * uncreated: the row is already committed by the time this runs, and the
+ * contributor has already been sent to the page that shows the same
+ * information. Same rule the release notice follows.
+ *
+ * NO STATE IS WRITTEN. There is no `emailedAt` stamp and no NotificationDelivery
+ * row, so there is no claim to race on and nothing to release on failure - the
+ * atomic-claim machinery upstream exists because a cron and a webhook can sweep
+ * the same rows, and nothing sweeps this. One creation, one send.
+ */
+export async function sendReservationEmail(input: {
+  reservationId: string;
+  referenceCode: string;
+  boardName: string;
+  contributorEmail: string;
+  railLabel: string;
+  /** Null when the host has no handle for this rail. Should not happen: the
+      reserve route refuses a rail `acceptedRails` does not return. Handled
+      anyway, because a blank line telling someone where to send money is worse
+      than an email that omits the destination and points at the page. */
+  handle: string | null;
+  /** STORED unit prices, never re-quoted — the same rule the page follows. */
+  lines: { tier: string; unitPriceCents: number; quantity: number }[];
+  ticketCents: number;
+  donationCents: number;
+  totalCents: number;
+}): Promise<boolean> {
+  const base = emailBaseUrl();
+  const url = `${base}/reservation/${encodeURIComponent(input.reservationId)}`;
+  const code = esc(input.referenceCode);
+
+  // THE SUBJECT DELIBERATELY BREAKS THE HOUSE PATTERN, and that is not an
+  // oversight. The other four are `{what happened} — {board}`, because they
+  // announce a completed thing. This one asks for an action, and its job is
+  // RECOVERY: the parent searching their inbox three days later is looking for
+  // the code the host asked them to put in a memo, not for the word
+  // "reservation". The code goes first so it survives truncation in a phone's
+  // list view, where the board name would push it off the end.
+  const subject =
+    `Reservation ${input.referenceCode} — send ${money(input.totalCents)} ` +
+    `by ${input.railLabel} — ${input.boardName}`;
+
+  const lineRows = input.lines
+    .map(
+      (l) => `
+        <tr>
+          <td style="padding:2px 0;font:14px system-ui,sans-serif;color:#444;">
+            ${l.quantity} × ${esc(TIER_LABEL[l.tier] ?? l.tier)}
+          </td>
+          <td style="padding:2px 0;font:14px system-ui,sans-serif;text-align:right;">
+            ${money(l.unitPriceCents * l.quantity)}
+          </td>
+        </tr>`
+    )
+    .join("");
+
+  // THE DONATION KEEPS ITS OWN LINE, for the reason the page already gives: a
+  // single total nobody can reconcile against what they chose is a total they
+  // will query. Absent entirely when there is none - a "$0 donation" row is a
+  // question, not information.
+  const donationRow =
+    input.donationCents > 0
+      ? `
+        <tr>
+          <td style="padding:2px 0;font:14px system-ui,sans-serif;color:#444;">Donation</td>
+          <td style="padding:2px 0;font:14px system-ui,sans-serif;text-align:right;">
+            ${money(input.donationCents)}
+          </td>
+        </tr>`
+      : "";
+
+  const destination = input.handle
+    ? `
+        <p style="margin:6px 0 0;font:14px system-ui,sans-serif;">
+          To: <strong>${esc(input.handle)}</strong>
+        </p>`
+    : `
+        <p style="margin:6px 0 0;font:14px system-ui,sans-serif;color:#8a6d00;">
+          The host has not published a ${esc(input.railLabel)} destination yet —
+          open your reservation below for the current details.
+        </p>`;
+
+  const html = `
+    <p style="margin:0;font:600 16px system-ui,sans-serif;">Reservation saved</p>
+    <p style="margin:6px 0 0;font:14px system-ui,sans-serif;color:#444;">
+      ${esc(input.boardName)}
+    </p>
+
+    <table cellpadding="0" cellspacing="0" style="width:100%;margin-top:14px;">
+      ${lineRows}
+      ${donationRow}
+      <tr>
+        <td style="padding-top:8px;border-top:1px solid #e5e5e5;font:600 14px system-ui,sans-serif;">
+          Total due
+        </td>
+        <td style="padding-top:8px;border-top:1px solid #e5e5e5;font:600 14px system-ui,sans-serif;text-align:right;">
+          ${money(input.totalCents)}
+        </td>
+      </tr>
+    </table>
+
+    <table cellpadding="0" cellspacing="0" style="width:100%;margin-top:16px;">
+      <tr><td style="border-top:1px solid #e5e5e5;padding-top:12px;">
+        <p style="margin:0;font:600 14px system-ui,sans-serif;">
+          Pay via ${esc(input.railLabel)}
+        </p>
+        <p style="margin:6px 0 0;font:14px system-ui,sans-serif;">
+          Send: <strong>${money(input.totalCents)}</strong>
+        </p>
+        ${destination}
+        <p style="margin:6px 0 0;font:14px system-ui,sans-serif;">
+          Reference code: <strong>${code}</strong>
+        </p>
+        <p style="margin:10px 0 0;font:14px system-ui,sans-serif;color:#444;">
+          Include <strong>${code}</strong> in the payment memo so the payment can
+          be matched to your reservation.
+        </p>
+        <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#666;">
+          Your tickets will be emailed after payment is confirmed.
+        </p>
+      </td></tr>
+    </table>
+
+    <p style="margin:16px 0 0;font:14px system-ui,sans-serif;">
+      <a href="${url}" style="color:#166534;">View reservation</a>
+    </p>
+    <p style="margin:6px 0 0;font:13px system-ui,sans-serif;color:#666;">
+      If anything here does not match, use that link — it always shows the
+      current payment details.
+    </p>`;
+
+  try {
+    await sendEmail(input.contributorEmail, subject, html);
+    return true;
+  } catch (err) {
+    // Logged with the code rather than the email address: this line ends up in
+    // a shared log, and the code is what a host would search on anyway.
+    console.warn(`Reservation email failed for ${input.referenceCode}:`, err);
+    return false;
+  }
 }

@@ -137,7 +137,15 @@ export default function PurchasePanel({
         return;
       }
       // Straight to the pending-payment screen: what to send, where, and the
-      // reference code. That page is the only thing a direct payer needs.
+      // reference code.
+      //
+      // THE IMMEDIATE VIEW, NOT THE ONLY ONE. This said "that page is the only
+      // thing a direct payer needs", and it was the design assumption until a
+      // closed tab was recognised as taking the reference code with it - the
+      // one thing the host needs to match a bank memo to this row. The reserve
+      // route now emails the same details as a recovery path. The page stays
+      // the authority, because it recomputes from the board and can say a
+      // handle was cleared; the email is frozen at send and points back here.
       //
       // router.push, not window.location. This is an INTERNAL route - the
       // sheets that assign window.location.href are leaving for an external
