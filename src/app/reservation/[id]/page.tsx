@@ -73,6 +73,7 @@ export default async function ReservationPage({ params }: Props) {
     select: {
       referenceCode: true,
       contributorName: true,
+      contributorEmail: true,
       donationAmountCents: true,
       paymentRail: true,
       status: true,
@@ -126,36 +127,49 @@ export default async function ReservationPage({ params }: Props) {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-lg mx-auto px-4 py-6">
-        <h1 className="text-xl font-bold leading-tight">{board.gameName}</h1>
+        <p className="text-sm text-gray-400">{board.gameName}</p>
 
-        {/* THE STATE, FIRST. Someone returning to this link days later needs to
-            know whether they still owe money before they read anything else.
-            A resolved or released reservation must never keep showing "send
-            $95" — that is how a contributor pays twice, or pays for something
-            the host already let go. */}
-        {/* NO "AWAITING PAYMENT" BANNER. The instructions below - an amount,
-            a handle and a reference code - already say the money has not been
-            sent. A banner above them restated it and pushed the thing they
-            came for further down the screen.
+        {/* WHAT HAPPENED, AND WHAT IS STILL REQUIRED, ABOVE EVERYTHING ELSE.
+            The page used to open on a small-caps "Your reservation" label and a
+            list of line items, which tells a contributor what they chose and
+            nothing about whether they are done. Someone returning days later
+            could not answer the only question they came back with.
 
-            The other two states DO get a banner, because they are the cases
-            where the instructions must NOT be acted on. */}
-        {pending ? null : reservation.status === "released" ? (
-          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3.5 py-3">
-            <p className="text-sm font-medium">This reservation was released.</p>
-            <p className="mt-1 text-xs text-gray-400 leading-relaxed">
-              Reserved {reservedOn}. Nothing is owed and nothing was charged. If
-              you did send payment, contact the host — do not send it again.
+            All three states get a header at the same weight, so they are
+            distinguishable at a glance rather than by reading the body copy.
+            PENDING AND CONFIRMED MUST NOT BE CONFUSABLE: `confirmed` here means
+            the host received the money and the passes exist, so a returning
+            contributor reading the wrong one either pays twice or never pays. */}
+        {pending ? (
+          <>
+            <h1 className="mt-1 text-2xl font-bold leading-tight">Reservation saved</h1>
+            <p className="mt-1.5 text-sm text-gray-300 leading-relaxed">
+              Send {money(totalCents)} by {railLabel} to finish. Your passes are
+              emailed once the host marks the payment received.
             </p>
-          </div>
+          </>
+        ) : reservation.status === "released" ? (
+          <>
+            <h1 className="mt-1 text-2xl font-bold leading-tight">
+              Reservation released
+            </h1>
+            <p className="mt-1.5 text-sm text-gray-300 leading-relaxed">
+              Nothing is owed and nothing was charged.{" "}
+              <span className="text-gray-400">
+                Reserved {reservedOn}. If you did send payment, contact the host
+                — do not send it again.
+              </span>
+            </p>
+          </>
         ) : (
-          <div className="mt-4 rounded-lg border border-green-900/60 bg-green-950/20 px-3.5 py-3">
-            <p className="text-sm font-medium text-green-300">Payment received</p>
-            <p className="mt-1 text-xs text-gray-400 leading-relaxed">
-              The host confirmed this reservation. Nothing further is owed, and
-              your passes are on their way by email.
+          <>
+            <h1 className="mt-1 text-2xl font-bold leading-tight text-green-300">
+              You&apos;re all set
+            </h1>
+            <p className="mt-1.5 text-sm text-gray-300 leading-relaxed">
+              Passes emailed to {reservation.contributorEmail}.
             </p>
-          </div>
+          </>
         )}
 
         {/* What they reserved. Per-line prices, because a total alone cannot be
@@ -224,10 +238,10 @@ export default async function ReservationPage({ params }: Props) {
               )}
 
               <CopyField
-                label="Put this in the memo"
+                label="Reference code"
                 value={reservation.referenceCode}
                 size="large"
-                hint="This is how the host matches your payment to this reservation. Without it they may not be able to tell which one is yours."
+                hint={`Put ${reservation.referenceCode} in the payment memo. This is how the host matches your payment to your reservation.`}
               />
             </div>
 
