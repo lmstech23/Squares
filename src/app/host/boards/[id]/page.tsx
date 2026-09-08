@@ -98,6 +98,34 @@ export default async function HostBoardPage({ params }: Props) {
       })
     : [];
 
+  // ACTIVE MANAGERS. The owner's own row is excluded — it cannot be revoked
+  // (that is ownership transfer) and listing it beside a Remove button that
+  // refuses would be a control that lies.
+  //
+  // `invitedAs` comes from the invitation they ACCEPTED, never `Host.email`.
+  // A bound invite records the address it was sent to and who consumed it, so
+  // it is an address that person proved they control.
+  const activeManagers = canManageCollaborators
+    ? await prisma.boardCollaborator.findMany({
+        where: { boardId: board.boardId, status: "active", role: "MANAGER" },
+        orderBy: { acceptedAt: "asc" },
+        select: {
+          id: true,
+          acceptedAt: true,
+          host: {
+            select: {
+              invitesAccepted: {
+                where: { boardId: board.boardId, boundEmail: { not: null } },
+                select: { boundEmail: true },
+                orderBy: { acceptedAt: "desc" },
+                take: 1,
+              },
+            },
+          },
+        },
+      })
+    : [];
+
   // Inline cleanup: release expired Stripe checkouts on page load (cash reservations stay until host acts)
   await prisma.square.updateMany({
     where: {
@@ -645,6 +673,11 @@ export default async function HostBoardPage({ params }: Props) {
               id: i.id,
               boundEmail: i.boundEmail,
               expiresAt: i.expiresAt.toISOString(),
+            }))}
+            managers={activeManagers.map((m) => ({
+              id: m.id,
+              invitedAs: m.host.invitesAccepted[0]?.boundEmail ?? null,
+              acceptedAt: m.acceptedAt?.toISOString() ?? null,
             }))}
           />
         )}

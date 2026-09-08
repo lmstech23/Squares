@@ -65,23 +65,19 @@ export async function POST(request: Request, { params }: Props) {
       );
     }
 
-    // A SECOND INVITE FOR SOMEONE WHO ALREADY MANAGES THIS BOARD IS A NO-OP
-    // WITH A CLEAR MESSAGE, not a duplicate row — §5. Only checkable for a
-    // BOUND invite: an unbound one has no recipient to check.
-    if (raw) {
-      const existing = await prisma.boardCollaborator.findFirst({
-        where: {
-          boardId,
-          status: "active",
-          host: { supabaseUserId: { not: null } },
-        },
-        select: { id: true, host: { select: { email: true } } },
-      });
-      // Deliberately NOT keyed on Host.email — that column is not identity. The
-      // real duplicate defence is the partial unique index at acceptance; this
-      // is a courtesy check and says so.
-      void existing;
-    }
+    // NO DUPLICATE PRE-CHECK, DELIBERATELY.
+    //
+    // "Does this person already manage the board?" cannot be answered before
+    // acceptance: there is no trustworthy pre-authentication identity key. The
+    // only candidate is `Host.email`, and that column is neither unique nor
+    // reliably an email — it holds `user.email ?? user.phone ?? user.id`. Matching
+    // on it would refuse an invitation for the wrong person, or pass one for
+    // somebody else entirely.
+    //
+    // DUPLICATE LIVE GRANTS ARE PREVENTED AUTHORITATIVELY AT ACCEPTANCE, by
+    // `board_collaborators_live_grant_key`. A courtesy check here would have
+    // been advisory at best and wrong at worst, and it is better to let someone
+    // send a redundant invitation than to block a valid one.
 
     const token = generateInviteToken();
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 864e5);

@@ -15,8 +15,36 @@ import { safeReturnPath } from "./login-return.ts";
 const url = process.env.TEST_DATABASE_URL;
 const prisma = url ? new PrismaClient({ datasources: { db: { url } } }) : null;
 
+// Swapped per test so one file can act as the owner, the manager, or a stranger.
+// Registered before the routes are imported, or they bind the real client.
+let currentUserId: string | null = null;
+
+if (url) {
+  mock.module("@/lib/supabase/server", {
+    namedExports: {
+      createClient: async () => ({
+        auth: {
+          getUser: async () => ({
+            data: { user: currentUserId ? { id: currentUserId } : null },
+          }),
+        },
+      }),
+    },
+  });
+}
+
 const mod = url ? await import("./board-invites.ts") : ({} as never);
 const { acceptInvite, revokeCollaborator, hashInviteToken, generateInviteToken } = mod;
+
+// THE REAL ROUTES, for the revocation slice. The library is already covered
+// above; what these prove is that the surface an owner actually clicks reaches
+// it, with the right capability and the right emails.
+const collaboratorsRoute = url
+  ? await import("../app/api/host/boards/[id]/collaborators/route.ts")
+  : ({} as never);
+const invitesRoute = url
+  ? await import("../app/api/host/boards/[id]/invites/route.ts")
+  : ({} as never);
 
 describe(
   "board invites (integration)",
@@ -30,15 +58,34 @@ describe(
     const RENEE = "renee@example.com";
     const STRANGER = "someone.else@example.com";
 
+    const supabaseIds = new Map<string, string>();
+
     async function makeHost(tag: string) {
+      const supabaseUserId = `inv-${tag}-${randomUUID()}`;
       const h = await db.host.create({
-        data: {
-          supabaseUserId: `inv-${tag}-${randomUUID()}`,
-          email: `${tag}-${randomUUID()}@example.com`,
-        },
+        data: { supabaseUserId, email: `${tag}-${randomUUID()}@example.com` },
       });
+      supabaseIds.set(h.id, supabaseUserId);
       return h.id;
     }
+
+    /** Sign in as a fixture host, for the route-level tests. */
+    const signInAs = (hostId: string | null) => {
+      currentUserId = hostId ? supabaseIds.get(hostId)! : null;
+    };
+
+    const callRoute = async (
+      fn: (r: Request, c: { params: Promise<{ id: string }> }) => Promise<Response>,
+      body?: Record<string, unknown>
+    ) => {
+      const req = new Request("http://test/api", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const res = await fn(req, { params: Promise.resolve({ id: boardId }) });
+      return { status: res.status, json: await res.json() };
+    };
 
     /** An invitation as the create route writes one. Returns the RAW token. */
     async function invite(
@@ -105,6 +152,172 @@ describe(
       }
       await db.host.deleteMany({ where: { id: { in: [ownerId, reneeId, strangerId] } } });
       await db.$disconnect();
+    });
+
+    // ====================================================================
+    // REVOCATION THROUGH THE REAL API, not the library directly.
+    //
+    // The library is covered above. What these prove is that the surface an
+    // owner actually clicks reaches it: the right capability, the right emails
+    // for invariant 119, and the guards that keep a board from losing its owner.
+    // ====================================================================
+
+    /** A manager on this board, invited at `email` and having accepted. */
+    async function seatManager(hostId: string, email: string | null) {
+      const token = await invite({ boundEmail: email });
+      const r = await accept(token, hostId, email);
+      assert.equal(r.ok, true, "fixture manager should have been seated");
+      return db.boardCollaborator.findFirstOrThrow({
+        where: { boardId, hostId, status: "active" },
+      });
+    }
+
+    test("R1. an OWNER sees active managers, and not their own row", async () => {
+      await seatManager(reneeId, RENEE);
+      signInAs(ownerId);
+
+      const r = await callRoute(collaboratorsRoute.GET);
+      assert.equal(r.status, 200);
+      assert.equal(r.json.collaborators.length, 1, "the manager, not the owner");
+      assert.equal(r.json.collaborators[0].role, "MANAGER");
+      assert.equal(r.json.collaborators[0].invitedAs, RENEE);
+    });
+
+    test("R2. revoking through the route ends access immediately", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      signInAs(ownerId);
+
+      const r = await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+      assert.equal(r.status, 200);
+
+      const after = await db.boardCollaborator.findUniqueOrThrow({ where: { id: grant.id } });
+      assert.equal(after.status, "revoked");
+      assert.ok(after.revokedAt);
+      assert.equal(after.revokedByHostId, ownerId);
+    });
+
+    // HISTORY SURVIVES — invariant 108. The row is updated, never deleted.
+    test("R3. the revoked row is preserved, not removed", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      signInAs(ownerId);
+      await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+
+      const rows = await db.boardCollaborator.findMany({ where: { boardId, hostId: reneeId } });
+      assert.equal(rows.length, 1, "still there");
+      assert.equal(rows[0].id, grant.id, "the same row");
+      assert.ok(rows[0].acceptedAt, "and it still records when they joined");
+    });
+
+    // INVARIANT 119 THROUGH THE ROUTE. The emails come from the invitation they
+    // ACCEPTED, which is the only address this board has reason to believe is
+    // theirs — never Host.email.
+    test("R4. revoking cancels their unaccepted BOUND invitation, in one go", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      const stale = await invite({ boundEmail: RENEE });
+      signInAs(ownerId);
+
+      const r = await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+      assert.equal(r.status, 200);
+      assert.equal(r.json.invitesRevoked, 1, "and the owner is told");
+
+      const dead = await accept(stale, reneeId, RENEE);
+      assert.equal(!dead.ok && dead.reason, "unusable", "cannot regain access");
+    });
+
+    // THE LIMIT, THROUGH THE ROUTE. A bearer link has no recipient identity, so
+    // revocation cannot reach it, and no attempt is made to guess — §7.
+    test("R5. an unrelated unbound bearer invite is untouched", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      const bearer = await invite();
+      signInAs(ownerId);
+
+      const r = await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+      assert.equal(r.json.invitesRevoked, 0);
+
+      const still = await db.boardInvite.findFirstOrThrow({
+        where: { boardId, boundEmail: null },
+      });
+      assert.equal(still.revokedAt, null, "the bearer link still works");
+      const used = await accept(bearer, strangerId, STRANGER);
+      assert.equal(used.ok, true);
+    });
+
+    // Another manager's bound invitation is not collateral damage.
+    test("R6. only THEIR invitation is cancelled", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      const other = await invite({ boundEmail: STRANGER });
+      signInAs(ownerId);
+
+      await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+
+      const r = await accept(other, strangerId, STRANGER);
+      assert.equal(r.ok, true, "the other invitation still works");
+    });
+
+    // A BOARD MUST NOT LOSE ITS OWNER. The partial unique index would accept a
+    // second OWNER once the first went revoked, so this guard is the only thing
+    // standing there.
+    test("R7. the owner's own row cannot be revoked", async () => {
+      signInAs(ownerId);
+      const own = await db.boardCollaborator.findFirstOrThrow({
+        where: { boardId, hostId: ownerId, role: "OWNER" },
+      });
+      const r = await callRoute(collaboratorsRoute.DELETE, { collaboratorId: own.id });
+      assert.equal(r.status, 409);
+      assert.match(r.json.error, /ownership transfer/i);
+
+      const after = await db.boardCollaborator.findUniqueOrThrow({ where: { id: own.id } });
+      assert.equal(after.status, "active");
+    });
+
+    // A MANAGER HOLDS NO `collaborators.manage` — invariant 106. She would
+    // otherwise be able to remove the others and be revoked by nobody.
+    test("R8. a MANAGER cannot list or revoke collaborators", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      signInAs(reneeId);
+
+      const list = await callRoute(collaboratorsRoute.GET);
+      assert.equal(list.status, 403);
+
+      const del = await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+      assert.equal(del.status, 403);
+
+      const after = await db.boardCollaborator.findUniqueOrThrow({ where: { id: grant.id } });
+      assert.equal(after.status, "active", "nothing moved");
+    });
+
+    test("R9. a stranger gets 404, not 403", async () => {
+      await seatManager(reneeId, RENEE);
+      signInAs(strangerId);
+      const r = await callRoute(collaboratorsRoute.GET);
+      assert.equal(r.status, 404);
+    });
+
+    test("R10. revoking twice is refused the second time", async () => {
+      const grant = await seatManager(reneeId, RENEE);
+      signInAs(ownerId);
+      assert.equal(
+        (await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id })).status,
+        200
+      );
+      const again = await callRoute(collaboratorsRoute.DELETE, { collaboratorId: grant.id });
+      assert.equal(again.status, 409);
+    });
+
+    // The invite route no longer pre-checks for an existing manager. A
+    // redundant invitation is ALLOWED to be created; the duplicate is refused
+    // authoritatively at acceptance by the partial unique index.
+    test("R11. inviting an existing manager is allowed, and blocked at acceptance", async () => {
+      await seatManager(reneeId, RENEE);
+      signInAs(ownerId);
+
+      const created = await callRoute(invitesRoute.POST, { boundEmail: RENEE });
+      assert.equal(created.status, 200, "the invitation is created, not refused");
+
+      const token = created.json.url.split("/invite/")[1];
+      const r = await accept(token, reneeId, RENEE);
+      assert.equal(!r.ok && r.reason, "already-collaborator");
+      assert.equal((await grantsFor(reneeId)).length, 1, "still one grant");
     });
 
     // ---- the milestone ------------------------------------------------------
