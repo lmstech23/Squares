@@ -586,7 +586,7 @@ export default function ClaimSheet({
                 I&apos;d like to help with the event
               </span>
               <span className="block text-xs text-gray-600 mt-0.5">
-                Once your payment is confirmed, we&apos;ll email you a link to the volunteer sign-up sheet.
+                Volunteer sign-up details will be sent with tickets after payment is confirmed.
               </span>
             </span>
           </label>
