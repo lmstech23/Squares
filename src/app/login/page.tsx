@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { safeReturnPath } from "@/lib/login-return";
 import { createClient } from "@/lib/supabase/client";
 
 type Method = "email" | "phone";
@@ -79,7 +80,14 @@ export default function LoginPage() {
     }
 
     await new Promise((r) => setTimeout(r, 500));
-    window.location.href = "/host/boards";
+    // RESUME WHERE THEY WERE HEADED. This was a hardcoded "/host/boards", so an
+    // invitation link was lost the moment the recipient had to sign in. The
+    // value is validated by `safeReturnPath`, which matches ONE shape and falls
+    // back rather than sanitising — an open redirect here would turn a login
+    // link into a phishing tool.
+    window.location.href = safeReturnPath(
+      new URLSearchParams(window.location.search).get("next")
+    );
   }
 
   const displayIdentity = method === "phone" ? phone : email;

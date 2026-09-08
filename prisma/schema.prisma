@@ -30,6 +30,9 @@ model Host {
   collaborations         BoardCollaborator[] @relation("CollaboratorHost")
   invitesSent            BoardCollaborator[] @relation("CollaboratorInvitedBy")
   revocationsPerformed   BoardCollaborator[] @relation("CollaboratorRevokedBy")
+  invitesCreated         BoardInvite[]       @relation("InviteCreatedBy")
+  invitesAccepted        BoardInvite[]       @relation("InviteAcceptedBy")
+  invitesRevoked         BoardInvite[]       @relation("InviteRevokedBy")
 
   paymentPreference         String?             @map("payment_preference")
 
@@ -178,6 +181,7 @@ model Board {
   contributions             Contribution[]
   entryReservations         EntryReservation[]
   collaborators             BoardCollaborator[]
+  invites                   BoardInvite[]
 
   /// Two PARTIAL indexes exist on this table and are deliberately NOT
   /// declared here: idx_boards_pending_expiry (WHERE status = pending_payment)
@@ -1149,6 +1153,60 @@ enum CollaboratorStatus {
   revoked
 
   @@map("collaborator_status")
+}
+
+
+/// A manager invitation — collaborators v2.2 §5. Invariants 96-100, 119.
+///
+/// THE LINK IS AN INVITATION AND NEVER AN AUTHORIZATION — invariant 96.
+/// Possession OFFERS access; only `BoardCollaborator` grants it. This table
+/// exists so acceptance has something to consume, and is worthless afterwards.
+///
+/// HASHED AT REST. The raw token is shown to the owner once and never stored,
+/// so a database read cannot produce a working link — the same model
+/// `CheckinStaffAccess` and `SupporterAccessToken` already use.
+model BoardInvite {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  boardId          String        @map("board_id") @db.Uuid
+  /// MANAGER only, enforced by `board_invites_manager_only` — invariant 100.
+  role             BoardRole
+  tokenHash        String        @map("token_hash")
+  /// Null is a BEARER invitation: whoever validly accepts first becomes the
+  /// manager. Set, acceptance requires an authenticated identity whose VERIFIED
+  /// email matches — never `Host.email`, which is not unique and may hold a
+  /// phone number or a UUID.
+  boundEmail       String?       @map("bound_email")
+  createdByHostId  String        @map("created_by_host_id") @db.Uuid
+  expiresAt        DateTime      @map("expires_at") @db.Timestamptz(6)
+  /// Set ONCE, conditionally, in the transaction that creates the collaborator
+  /// row — invariant 97. The conditional UPDATE on this being null is what
+  /// makes acceptance single-use under concurrency.
+  acceptedAt       DateTime?     @map("accepted_at") @db.Timestamptz(6)
+  acceptedByHostId String?       @map("accepted_by_host_id") @db.Uuid
+  /// The owner cancelling an unused invitation, and the mechanism invariant 119
+  /// uses when a collaborator is revoked.
+  revokedAt        DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  revokedByHostId  String?       @map("revoked_by_host_id") @db.Uuid
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  board      Board @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
+  createdBy  Host  @relation("InviteCreatedBy", fields: [createdByHostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  acceptedBy Host? @relation("InviteAcceptedBy", fields: [acceptedByHostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  revokedBy  Host? @relation("InviteRevokedBy", fields: [revokedByHostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  /// The pending-list index is PARTIAL and invisible here; it lives in the
+  /// migration: (board_id) WHERE accepted_at IS NULL AND revoked_at IS NULL.
+  @@unique([tokenHash], map: "board_invites_token_hash_key")
+  @@map("board_invites")
+}
+
+/// Reserved for a future pending/accepted/revoked projection. Not read yet.
+enum InviteStatus {
+  pending
+  accepted
+  revoked
+
+  @@map("invite_status")
 }
 
 enum SlotType {

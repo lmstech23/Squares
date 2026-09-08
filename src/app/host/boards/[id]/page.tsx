@@ -2,7 +2,8 @@ import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { cardCapable } from "@/lib/accepted-payments";
-import { requireBoardAccess } from "@/lib/board-access";
+import { requireBoardAccess, roleHas } from "@/lib/board-access";
+import ManagersPanel from "./managers-panel";
 import { isNotified } from "@/lib/winner-notification";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 import { boardTotals } from "@/lib/contributions";
@@ -84,6 +85,18 @@ export default async function HostBoardPage({ params }: Props) {
   if (!access.ok || !board) {
     notFound();
   }
+
+  // OWNER ONLY, and gated on the capability rather than on the role — the
+  // check is always the capability. A manager viewing this board sees no
+  // Managers panel, because `collaborators.manage` is not hers (invariant 106).
+  const canManageCollaborators = roleHas(access.role, "collaborators.manage");
+  const pendingInvites = canManageCollaborators
+    ? await prisma.boardInvite.findMany({
+        where: { boardId: board.boardId, acceptedAt: null, revokedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, boundEmail: true, expiresAt: true },
+      })
+    : [];
 
   // Inline cleanup: release expired Stripe checkouts on page load (cash reservations stay until host acts)
   await prisma.square.updateMany({
@@ -623,6 +636,17 @@ export default async function HostBoardPage({ params }: Props) {
               )}
             </div>
           </div>
+        )}
+
+        {canManageCollaborators && (
+          <ManagersPanel
+            boardId={board.boardId}
+            invites={pendingInvites.map((i) => ({
+              id: i.id,
+              boundEmail: i.boundEmail,
+              expiresAt: i.expiresAt.toISOString(),
+            }))}
+          />
         )}
 
         <div className="mt-6">
