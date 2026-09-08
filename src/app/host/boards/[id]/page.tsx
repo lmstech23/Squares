@@ -251,6 +251,10 @@ export default async function HostBoardPage({ params }: Props) {
         playerPhone: true,
         paymentStatus: true,
         claimedAt: true,
+        // THE PRICE THIS SQUARE WAS SOLD AT. Invariant 48: fixed the moment it
+        // left `open` and never recomputed, so a square bought at the early
+        // price still reads that price after the board moves.
+        pricePaidCents: true,
       },
     });
 
@@ -263,12 +267,25 @@ export default async function HostBoardPage({ params }: Props) {
     //
     // Mixed purchases are included too: someone who bought tickets AND added a
     // donation is one person who did both, and their row should say so.
-    const donations = await prisma.contribution.findMany({
+    // ENTRY MONEY WAS INVISIBLE HERE. The filter was `donationAmountCents > 0`
+    // alone, written before standalone Entry Tickets existed. An entry purchase
+    // creates no Square and carries its money in `entryAmountCents`, so it
+    // matched neither source and the roster showed nothing for a board whose
+    // only sales were tickets - which is every purchase on a no-prize
+    // fundraiser. Widened to either kind of money.
+    //
+    // `squareAmountCents` is still NOT a reason to include a row: that money is
+    // already on the square rows above. A mixed square+donation purchase comes
+    // in on its donation, as it always did.
+    const contributions = await prisma.contribution.findMany({
       where: {
         boardId: board.boardId,
         status: { in: ["confirmed", "pending"] },
         voidedAt: null,
-        donationAmountCents: { gt: 0 },
+        OR: [
+          { donationAmountCents: { gt: 0 } },
+          { entryAmountCents: { gt: 0 } },
+        ],
         contributorEmail: { not: null },
       },
       orderBy: { createdAt: "asc" },
@@ -278,10 +295,38 @@ export default async function HostBoardPage({ params }: Props) {
         contributorPhone: true,
         status: true,
         createdAt: true,
+        entryAmountCents: true,
+        donationAmountCents: true,
       },
     });
 
-    const contributors = contributorRows(claimed, donations);
+    // TICKET COUNT FOR ENTRY PURCHASES, and nothing else - the money stays on
+    // the ledger row above. A Contribution records what a purchase was worth
+    // but not how many tickets it bought, and passes carry no contributionId,
+    // so counting passes per person is the only way to answer it.
+    //
+    // `squareId: null` keeps square-minted passes out, or a square would count
+    // twice. Voided passes are excluded: a void is terminal and the gate
+    // refuses them, so they are not tickets anyone holds.
+    const entryPasses = board.event
+      ? await prisma.admissionPass.findMany({
+          where: {
+            supporter: { eventId: board.event.id },
+            squareId: null,
+            status: { in: ["active", "used"] },
+          },
+          select: { supporter: { select: { email: true, phone: true } } },
+        })
+      : [];
+
+    const contributors = contributorRows(
+      claimed,
+      contributions,
+      entryPasses.map((p) => ({
+        supporterEmail: p.supporter.email,
+        supporterPhone: p.supporter.phone,
+      }))
+    );
 
     // THE TOP COUNTERS. SQUARELESS rows - `squareAmountCents = 0` - because a
     // mixed purchase is already counted through its squares and counting it

@@ -62,6 +62,19 @@ const STATUS_STYLE: Record<ContributorRow["status"], string> = {
   MIXED: "text-yellow-400 border-yellow-900/50 bg-yellow-950/30",
 };
 
+/**
+ * Whole dollars where the amount is whole, cents where it is not.
+ *
+ * NO CURRENCY SYMBOL - the CSV uses this too, and a leading "$" turns a number
+ * into text in every spreadsheet that opens it. The row adds its own symbol.
+ */
+function dollars(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function ContributorList({
   rows,
   boardName,
@@ -98,14 +111,31 @@ export default function ContributorList({
   // rows. Built in the browser — no endpoint, nothing to secure.
   function exportCsv() {
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    // One column added, matching what the row shows. Still no amounts.
-    const header = ["Name", "Email", u.Many, "Donated", "Date", "Status"];
+    // TWO COLUMNS ADDED, MATCHING WHAT THE ROW SHOWS. dafdf7d set the rule and
+    // it still holds: the export reflects the contributor row, it does not
+    // become a ledger export. No rails, no reservation detail, no confirmation
+    // controls, no transaction history - those live on /donations.
+    //
+    // "Donated" stays as the yes/no it always was, beside the amount, so a
+    // sheet someone already filters on does not change meaning.
+    const header = [
+      "Name",
+      "Email",
+      u.Many,
+      "Ticket amount",
+      "Donated",
+      "Donation amount",
+      "Date",
+      "Status",
+    ];
     const body = visible.map((r) =>
       [
         esc(r.name),
         esc(r.email),
         String(r.tickets),
+        dollars(r.ticketCents),
         r.donated ? "yes" : "no",
+        dollars(r.donationCents),
         esc(shortDate(r.claimedAt)),
         r.status,
       ].join(",")
@@ -212,17 +242,49 @@ export default function ContributorList({
                     "0 tickets" - which says they got nothing rather than that
                     they gave. The marker replaces the count where there is
                     none, and sits beside it where there is. */}
+                {/* TICKET MONEY AND DONATION MONEY STAY DISTINCT. Someone who
+                    bought a ticket and added a gift reads
+                    "1 ticket - $40 - $25 donation", never a single $65 they
+                    cannot reconcile against what they chose. Same reason the
+                    reservation page and its email show three numbers.
+
+                    THE AMOUNTS ARE HISTORICAL. `ticketCents` sums what was
+                    actually paid - `Square.pricePaidCents` and
+                    `Contribution.entryAmountCents` - so an early-bird ticket
+                    bought at $40 still reads $40 after the board moves to $50.
+
+                    TWO ASYMMETRIES ARE DELIBERATE. A count with no money: a
+                    square from before `pricePaidCents` existed. Money with no
+                    count: a card entry purchase that has not confirmed has no
+                    passes yet, so there is nothing to count. Both render what
+                    is known rather than a zero that reads as a fact. */}
                 <span className="text-xs text-gray-400 tabular-nums">
-                  {r.tickets > 0 ? (
+                  {r.tickets > 0 && (
                     <>
                       {r.tickets} {r.tickets === 1 ? u.one : u.many}
-                      {r.donated && (
-                        <span className="text-gray-600"> + donation</span>
+                      {r.ticketCents > 0 && (
+                        <span className="text-gray-500">
+                          {" \u00b7 $"}
+                          {dollars(r.ticketCents)}
+                        </span>
                       )}
                     </>
-                  ) : (
-                    <span className="text-gray-500">donation</span>
                   )}
+                  {r.tickets === 0 && r.ticketCents > 0 && (
+                    <span className="text-gray-500">${dollars(r.ticketCents)}</span>
+                  )}
+                  {r.donationCents > 0 && (
+                    <span className="text-gray-500">
+                      {r.tickets > 0 || r.ticketCents > 0 ? " \u00b7 " : ""}
+                      {"$"}
+                      {dollars(r.donationCents)} donation
+                    </span>
+                  )}
+                  {r.tickets === 0 &&
+                    r.ticketCents === 0 &&
+                    r.donationCents === 0 && (
+                      <span className="text-gray-500">donation</span>
+                    )}
                 </span>
                 <span className="text-xs text-gray-500 tabular-nums w-14 text-right">
                   {shortDate(r.claimedAt)}
