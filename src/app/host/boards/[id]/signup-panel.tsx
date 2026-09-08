@@ -19,6 +19,7 @@
 // CANCELLED tally counts cancel-and-reclaim cycles by the same person.
 
 import { useState } from "react";
+import { formatZoned } from "@/lib/zoned-time";
 import { useRouter } from "next/navigation";
 
 /**
@@ -49,7 +50,17 @@ export interface PanelSlot {
 
 interface Props {
   boardId: string;
-  eventTimezone: string;
+  /** The board's zone. The SAME zone the slot routes parse in - see the page. */
+  timezone: string;
+  /**
+   * The event day as a `type="date"` value, or null when the event has no date.
+   *
+   * Every shift on an event board is on the event day, so the new-shift form
+   * opens on it instead of asking. NOT a default the server applies: the host
+   * can change it, and an event with no date yet gets an empty field rather
+   * than a guess.
+   */
+  eventDate: string | null;
   sheet: { id: string; title: string | null; instructions: string | null; isOpen: boolean } | null;
   slots: PanelSlot[];
 }
@@ -72,7 +83,7 @@ function timeLabel(slot: PanelSlot, tz: string): string {
   return slot.endsAt ? `${f(slot.startsAt)} – ${f(slot.endsAt)}` : `${f(slot.startsAt)} onward`;
 }
 
-export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Props) {
+export default function SignupPanel({ boardId, timezone, eventDate, sheet, slots }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,8 +101,14 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
 
   const [name, setName] = useState("");
   const [capacity, setCapacity] = useState("1");
-  const [startsAt, setStartsAt] = useState("");
-  const [endsAt, setEndsAt] = useState("");
+  // DATE AND TIME HELD SEPARATELY, and the date is one field for both ends.
+  // A shift has one day; two datetime-local boxes made that two answers a host
+  // could disagree with themselves about, and made the day the thing most often
+  // wrong. What goes on the wire is still "YYYY-MM-DDTHH:mm" - this is a form
+  // change, not a storage change. Slots keep full timestamptz.
+  const [shiftDate, setShiftDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [unitLabel, setUnitLabel] = useState("");
 
   const totalCapacity = slots.reduce((n, s) => n + s.capacity, 0);
@@ -123,7 +140,8 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
 
   /** Clear every field and close the form. */
   function resetForm() {
-    setName(""); setCapacity("1"); setStartsAt(""); setEndsAt(""); setUnitLabel("");
+    setName(""); setCapacity("1"); setUnitLabel("");
+    setShiftDate(""); setStartTime(""); setEndTime("");
     setComposing(null); setEditingId(null); setError(null);
   }
 
@@ -133,7 +151,10 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
    * point.
    */
   function startCreating(type: "SHIFT" | "ITEM") {
-    setName(""); setCapacity("1"); setStartsAt(""); setEndsAt(""); setUnitLabel("");
+    setName(""); setCapacity("1"); setUnitLabel("");
+    // THE PREFILL, AND ONLY HERE. A new shift opens on the event day; editing
+    // loads the slot's own date below and must not be overwritten by it.
+    setShiftDate(eventDate ?? ""); setStartTime(""); setEndTime("");
     setEditingId(null); setError(null); setComposing(type);
   }
 
@@ -180,18 +201,29 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
       </div>
 
       {slotType === "SHIFT" ? (
-        <div className="grid grid-cols-2 gap-2">
+        <>
+          {/* The date, prefilled and editable. Kept visible rather than hidden:
+              a host running a two-day event needs to see which day this is, and
+              a field that silently decides is worse than one that shows its
+              answer. */}
           <div>
-            <label className={label} htmlFor="slotStart">Starts</label>
-            <input id="slotStart" type="datetime-local" className={input}
-                   value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+            <label className={label} htmlFor="slotDate">Date</label>
+            <input id="slotDate" type="date" className={input}
+                   value={shiftDate} onChange={(e) => setShiftDate(e.target.value)} />
           </div>
-          <div>
-            <label className={label} htmlFor="slotEnd">Ends (optional)</label>
-            <input id="slotEnd" type="datetime-local" className={input}
-                   value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={label} htmlFor="slotStart">Starts</label>
+              <input id="slotStart" type="time" className={input}
+                     value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+            </div>
+            <div>
+              <label className={label} htmlFor="slotEnd">Ends (optional)</label>
+              <input id="slotEnd" type="time" className={input}
+                     value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+            </div>
           </div>
-        </div>
+        </>
       ) : (
         <div>
           <label className={label} htmlFor="slotUnit">Unit (optional)</label>
@@ -218,11 +250,20 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
             // slotType is sent only on CREATE. On edit the server rejects it
             // with a 409, and sending it would turn a legitimate save into an
             // error the host did nothing to cause.
+            // The date and the two times recombine into what the wire format
+            // has always been. The route reads that wall clock in the BOARD's
+            // zone, so a shift typed as 3:00 PM is stored as 3:00 PM there.
+            //
+            // A time with no date sends null, and the server answers "a shift
+            // needs a start time" - the same message as before. Composing
+            // "undefinedT15:00" would reach the route as unparseable instead.
+            const at = (t: string) =>
+              shiftDate && t ? `${shiftDate}T${t}` : null;
             const payload = {
               ...(editingId ? {} : { slotType }),
               name, capacity: parseInt(capacity, 10),
-              startsAt: slotType === "SHIFT" ? startsAt || null : null,
-              endsAt: slotType === "SHIFT" ? endsAt || null : null,
+              startsAt: slotType === "SHIFT" ? at(startTime) : null,
+              endsAt: slotType === "SHIFT" ? at(endTime) : null,
               unitLabel: slotType === "ITEM" ? unitLabel || null : null,
             };
             const url = editingId
@@ -307,7 +348,7 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-white truncate">{s.name}</p>
-                <p className="text-xs text-gray-600 truncate">{timeLabel(s, eventTimezone)}</p>
+                <p className="text-xs text-gray-600 truncate">{timeLabel(s, timezone)}</p>
               </div>
               <span className="text-xs tabular-nums flex-shrink-0 text-gray-400">
                 {s.filled}/{s.capacity}
@@ -318,8 +359,17 @@ export default function SignupPanel({ boardId, eventTimezone, sheet, slots }: Pr
                   setEditingId(s.id); setComposing(s.slotType); setError(null);
                   setName(s.name); setCapacity(String(s.capacity));
                   setUnitLabel(s.unitLabel ?? "");
-                  setStartsAt(s.startsAt ? s.startsAt.slice(0, 16) : "");
-                  setEndsAt(s.endsAt ? s.endsAt.slice(0, 16) : "");
+                  // THROUGH THE ZONE, not `iso.slice(0, 16)`. That slice put
+                  // the UTC wall clock into a local-time box: it round-tripped
+                  // consistently, so the form looked right, while the list
+                  // beside it rendered the same instant through Intl in the
+                  // board's zone and disagreed by the offset. The box now
+                  // refills with exactly what the row displays.
+                  const st = formatZoned(s.startsAt ? new Date(s.startsAt) : null, timezone);
+                  const en = formatZoned(s.endsAt ? new Date(s.endsAt) : null, timezone);
+                  setShiftDate(st?.date ?? en?.date ?? "");
+                  setStartTime(st?.time ?? "");
+                  setEndTime(en?.time ?? "");
                 }}>
                 Edit
               </button>

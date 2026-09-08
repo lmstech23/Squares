@@ -40,6 +40,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authorizeBoardEvent } from "@/lib/host-auth";
+import { parseZoned } from "@/lib/zoned-time";
 import {
   validateSlotInput,
   slotFillState,
@@ -89,6 +90,18 @@ export async function PATCH(request: Request, { params }: Props) {
       return NextResponse.json({ error: "Slot not found." }, { status: 404 });
     }
 
+    // THE SAME ZONE THE CREATE ROUTE WRITES IN, resolved the same way. An edit
+    // that parsed differently from a create would rewrite a correct slot into a
+    // wrong one on a save that changed only its name.
+    const board = await prisma.board.findUniqueOrThrow({
+      where: { boardId: auth.boardId },
+      select: { timezone: true, event: { select: { timezone: true } } },
+    });
+    const timeZone = board.timezone ?? board.event?.timezone;
+    if (!timeZone) {
+      return NextResponse.json({ error: "This board has no timezone set." }, { status: 400 });
+    }
+
     const body = (await request.json()) as PatchBody;
 
     // TYPE IS IMMUTABLE. The database cannot enforce this: the S1 CHECKs police
@@ -110,15 +123,27 @@ export async function PATCH(request: Request, { params }: Props) {
       slotType: slot.slotType as "SHIFT" | "ITEM",
       name: "name" in body ? (body.name ?? "") : slot.name,
       capacity: "capacity" in body ? (body.capacity ?? 0) : slot.capacity,
-      startsAt: "startsAt" in body ? (body.startsAt ? new Date(body.startsAt) : null) : slot.startsAt,
-      endsAt: "endsAt" in body ? (body.endsAt ? new Date(body.endsAt) : null) : slot.endsAt,
+      // ZONED, and with the create route's ambiguity policy: earlier start,
+      // later end, so a shift on the fall-back night is never silently
+      // shortened. An omitted key keeps the stored instant untouched - that is
+      // the `"startsAt" in body` test, and it is why a name-only edit cannot
+      // move a time.
+      startsAt:
+        "startsAt" in body
+          ? parseZoned(body.startsAt, timeZone, "earlier")
+          : slot.startsAt,
+      endsAt:
+        "endsAt" in body ? parseZoned(body.endsAt, timeZone, "later") : slot.endsAt,
       unitLabel: "unitLabel" in body ? (body.unitLabel?.trim() || null) : slot.unitLabel,
       notes: "notes" in body ? (body.notes?.trim() || null) : slot.notes,
     };
 
-    if (next.startsAt && Number.isNaN(next.startsAt.getTime()))
+    // On the RAW body, for the reason the create route gives: parseZoned
+    // answers null for malformed input, which is indistinguishable from "not
+    // sent" once it reaches validateSlotInput.
+    if (body.startsAt && !next.startsAt)
       return NextResponse.json({ error: "Unrecognized start time." }, { status: 400 });
-    if (next.endsAt && Number.isNaN(next.endsAt.getTime()))
+    if (body.endsAt && !next.endsAt)
       return NextResponse.json({ error: "Unrecognized end time." }, { status: 400 });
 
     const valid = validateSlotInput(next);

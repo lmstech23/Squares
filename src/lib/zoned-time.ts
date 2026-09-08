@@ -171,3 +171,56 @@ export function endOfDayZoned(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return null;
   return parseZoned(`${input}T23:59:59`, timeZone, "later");
 }
+
+/**
+ * The inverse of `parseZoned`: a UTC instant back into the wall clock a person
+ * in `timeZone` would read off it, split for `type="date"` and `type="time"`.
+ *
+ * WHY THIS HAS TO EXIST. Reading a stored instant back into a form is the other
+ * half of writing one, and getting only one half right is worse than getting
+ * neither: the sign-up slot editor used `iso.slice(0, 16)`, which puts the UTC
+ * wall clock into a local-time input. It round-tripped consistently, so the
+ * form looked correct, and every list that rendered the same slot through
+ * `Intl` in the event's zone disagreed with it by the zone's offset. Four
+ * production shifts were stored four hours off that way.
+ *
+ * `hourCycle: "h23"` is not decoration. Without it `en-US` yields "24" for
+ * midnight, which is not a valid `type="time"` value and silently blanks the
+ * field.
+ *
+ * Returns null for an invalid date or an invalid IANA zone, matching
+ * `parseZoned`, so callers write their own error copy.
+ */
+export function formatZoned(
+  date: Date | null | undefined,
+  timeZone: string
+): { date: string; time: string } | null {
+  if (!date || Number.isNaN(date.getTime())) return null;
+
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+  } catch {
+    return null; // invalid IANA zone
+  }
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  const year = get("year");
+  const month = get("month");
+  const day = get("day");
+  const hour = get("hour");
+  const minute = get("minute");
+  if (!year || !month || !day || !hour || !minute) return null;
+
+  return { date: `${year}-${month}-${day}`, time: `${hour}:${minute}` };
+}

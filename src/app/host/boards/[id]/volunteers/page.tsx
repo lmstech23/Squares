@@ -23,6 +23,7 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getHost } from "@/lib/auth";
 import SignupPanel from "../signup-panel";
+import { formatZoned } from "@/lib/zoned-time";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,8 @@ export default async function VolunteersPage({ params }: Props) {
       gameName: true,
       boardType: true,
       hostId: true,
-      event: { select: { id: true, name: true, timezone: true } },
+      timezone: true,
+      event: { select: { id: true, name: true, timezone: true, startsAt: true } },
     },
   });
 
@@ -71,6 +73,27 @@ export default async function VolunteersPage({ params }: Props) {
   if (board.boardType !== "fundraiser") notFound();
   const event = board.event;
   if (!event) notFound();
+
+  // ONE ZONE, RESOLVED ONCE, used for BOTH the times the form writes and the
+  // times every list renders. They used to come from different places - the
+  // routes parsed in the runtime's zone and the list rendered in the event's -
+  // which is how a shift typed as 9:11 AM came to display as 5:11 AM.
+  //
+  // `Board.timezone` is the authority and is nullable; `Event.timezone` is NOT
+  // NULL and is written from the same value, so it is the fallback rather than
+  // a competing answer. The slot routes resolve it identically.
+  const timeZone = board.timezone ?? event.timezone;
+
+  // THE EVENT DATE, AS A `type="date"` VALUE, for the new-shift form to open on.
+  //
+  // Every shift on an event board is on the event day, so making the host type
+  // that date again is one more thing to get wrong - and the thing they were
+  // getting wrong. Computed on the server, in the event's zone: a render must
+  // not decide what day it is, the same rule the entry-tier pricing follows.
+  //
+  // Null when the event has no date yet. The form then asks for one rather than
+  // guessing, because "no date" and "today" are different answers.
+  const eventDate = formatZoned(event.startsAt, timeZone)?.date ?? null;
 
   const sheet = await prisma.signupSheet.findUnique({
     where: { eventId: event.id },
@@ -157,7 +180,8 @@ export default async function VolunteersPage({ params }: Props) {
         <div className="mt-5">
           <SignupPanel
             boardId={board.boardId}
-            eventTimezone={event.timezone}
+            timezone={timeZone}
+            eventDate={eventDate}
             sheet={
               sheet
                 ? {
