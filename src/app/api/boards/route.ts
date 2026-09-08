@@ -503,16 +503,29 @@ export async function POST(request: Request) {
       // boards - so a board created today and one created last week describe
       // themselves the same way.
       //
-      // NOT A CHOICE THE HOST MAKES YET. The onboarding control is Track 2.
-      // Until it ships this reproduces the old inferred behaviour exactly,
-      // which is the point: the column changes what the system can EXPRESS
-      // before it changes what any board DOES.
+      // CARD IS NOT DERIVED HERE, AND THAT IS THE POINT.
+      //
+      // This used to read `host.stripeChargesEnabled ? ["card"] : []`. Stripe
+      // being connected means the host is ELIGIBLE to accept cards; it does not
+      // mean every fundraiser they run should. Because it is a HOST-level flag,
+      // connecting Stripe once turned card on for every board that host would
+      // ever create, with nothing anywhere able to turn it off - which is how a
+      // no-prize direct-payment fundraiser came to serve a live Stripe checkout
+      // for $80 on 2026-09-08.
+      //
+      // Card is now an explicit choice, made in the fundraiser edit panel,
+      // where the host can see it. A new board accepts none until they say so.
+      //
+      // THE DIRECT RAILS STAY DERIVED, deliberately. Creation already requires
+      // at least one handle and collects all four, so a handle typed there IS
+      // the host saying "accept this" - there is no second question to answer
+      // and no ambiguity to resolve. The five-toggle creation UX is Track 2 and
+      // is not being pulled forward.
       //
       // Game Day gets an empty array and nothing consults it.
       acceptedPaymentMethods:
         boardType === "fundraiser"
           ? ([
-              ...(host.stripeChargesEnabled ? ["card"] : []),
               ...(hostZelle ? ["zelle"] : []),
               ...(hostCashapp ? ["cashapp"] : []),
               ...(hostVenmo ? ["venmo"] : []),

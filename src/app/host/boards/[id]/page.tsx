@@ -1,6 +1,7 @@
 import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { cardCapable } from "@/lib/accepted-payments";
 import { purchaseUnit } from "@/lib/board-vocabulary";
 import { boardTotals } from "@/lib/contributions";
 import { redirect, notFound } from "next/navigation";
@@ -439,6 +440,8 @@ export default async function HostBoardPage({ params }: Props) {
               board.timezone ?? "America/New_York"
             )}
             currentTicketCount={board.totalSquares}
+            initialAcceptedMethods={board.acceptedPaymentMethods}
+            cardEligible={cardCapable(host)}
             initialVenmo={board.hostVenmo ?? ""}
             initialZelle={board.hostZelle ?? ""}
             initialCashapp={board.hostCashapp ?? ""}

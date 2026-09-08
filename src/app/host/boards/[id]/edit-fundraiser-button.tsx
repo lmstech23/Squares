@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { methodStatuses } from "@/lib/accepted-payments";
 import { validateTicketCount, TOO_MANY_TICKETS } from "@/lib/board-inventory";
 
 interface Props {
@@ -41,6 +42,16 @@ interface Props {
   initialEarlyBirdEndsAt: string;
   currentTicketCount: number;
   /** The four direct-payment handles, as stored. "" means not set. */
+  /** What the board accepts today. Editable here; nothing else writes it. */
+  initialAcceptedMethods: string[];
+  /**
+   * Whether card COULD be accepted: a live Stripe account on this host.
+   *
+   * Eligibility, not intent. Stripe being connected is what makes card
+   * possible; ticking it here is what makes it offered. Conflating the two is
+   * how a direct-payment fundraiser came to serve a live Stripe checkout.
+   */
+  cardEligible: boolean;
   initialVenmo: string;
   initialZelle: string;
   initialCashapp: string;
@@ -110,6 +121,7 @@ export default function EditFundraiserButton({
   initialName, initialVenue, initialStartsAt, initialEndsAt, initialTimezone, initialGoal,
   initialTitle, initialCause,
   initialPrice, initialEarlyBirdPrice, initialEarlyBirdEndsAt, currentTicketCount,
+  initialAcceptedMethods, cardEligible,
   initialVenmo, initialZelle, initialCashapp, initialPaypal,
   inventoryLocked, regularLocked, earlyBirdLocked,
   inventoryLockReason, regularLockReason, earlyBirdLockReason,
@@ -142,10 +154,36 @@ export default function EditFundraiserButton({
   const [entryChild, setEntryChild] = useState(initialEntryChild);
   const [entryAdultEarly, setEntryAdultEarly] = useState(initialEntryAdultEarly);
   const [entryAdultRegular, setEntryAdultRegular] = useState(initialEntryAdultRegular);
+  const [methods, setMethods] = useState<string[]>(initialAcceptedMethods);
   const [venmo, setVenmo] = useState(initialVenmo);
   const [zelle, setZelle] = useState(initialZelle);
   const [cashapp, setCashapp] = useState(initialCashapp);
   const [paypal, setPaypal] = useState(initialPaypal);
+
+  // THE SAME PREDICATES THE CONTRIBUTOR PAGE USES, against the form's CURRENT
+  // values rather than the saved ones. Paste a Venmo username and the Venmo row
+  // stops saying it needs one, before saving - the host sees the effect of the
+  // edit they are making, which is the whole reason this is derived here rather
+  // than rendered from props.
+  const statuses = methodStatuses(
+    {
+      acceptedPaymentMethods: methods,
+      hostZelle: zelle.trim() || null,
+      hostCashapp: cashapp.trim() || null,
+      hostVenmo: venmo.trim() || null,
+      hostPaypal: paypal.trim() || null,
+    },
+    cardEligible
+  );
+  const anyOfferable = statuses.some((m) => m.offerable);
+  const handleFor: Record<string, { value: string; set: (v: string) => void; placeholder: string }> = {
+    zelle: { value: zelle, set: setZelle, placeholder: "Phone or email" },
+    cashapp: { value: cashapp, set: setCashapp, placeholder: "$cashtag" },
+    venmo: { value: venmo, set: setVenmo, placeholder: "@username" },
+    paypal: { value: paypal, set: setPaypal, placeholder: "paypal.me/you or email" },
+  };
+  const toggle = (m: string) =>
+    setMethods((cur) => (cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m]));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Adding an event to a board that never had one. The creation-time checkbox
@@ -253,6 +291,16 @@ export default function EditFundraiserButton({
     // Mirrors the route. At least one handle must survive - clearing Venmo
     // while Zelle remains is fine; clearing the last one leaves contributors a
     // board with nowhere to send money.
+    // THE SAVE RULE, mirrored from the route so the host learns it here rather
+    // than from a 400. Selected is not offerable: a board with only Venmo
+    // ticked and no Venmo handle looks configured and can collect nothing.
+    if (!anyOfferable) {
+      setError(
+        "Choose at least one payment method contributors can actually use. " +
+          "A method needs its details filled in, and card needs Stripe connected."
+      );
+      return;
+    }
     if (![venmo, zelle, cashapp, paypal].some((h) => h.trim())) {
       setError(
         "Add at least one way to receive payment — Venmo, Zelle, Cash App, or PayPal."
@@ -286,6 +334,10 @@ export default function EditFundraiserButton({
       // ALL FOUR, ALWAYS. Nothing locks them at any point in the board's life,
       // so there is no locked value to avoid echoing back, and sending the full
       // set is what lets a host clear one.
+      // ALWAYS SENT, beside the handles and written in the same transaction as
+      // them. A host pasting a Venmo username and ticking Venmo in one save
+      // must never end up with one and not the other.
+      body.acceptedPaymentMethods = methods;
       body.hostVenmo = venmo.trim() || null;
       body.hostZelle = zelle.trim() || null;
       body.hostCashapp = cashapp.trim() || null;
@@ -613,40 +665,73 @@ export default function EditFundraiserButton({
           for a Cash App tag, a Zelle enrolment or a PayPal.me link, and a regex
           that rejected a valid handle would block the very correction this
           exists to allow. ---------------------------------------------------- */}
-      <div className="space-y-4 rounded-lg border border-gray-800 p-3">
-        <p className="text-xs font-semibold text-gray-300">How you get paid</p>
+      <div className="space-y-3 rounded-lg border border-gray-800 p-3">
+        <p className="text-xs font-semibold text-gray-300">How contributors pay</p>
         <p className="text-xs text-gray-600 leading-relaxed">
-          Contributors paying directly see these. Leave one blank to stop
-          offering it. At least one must stay set.
+          Tick what this fundraiser accepts. A method is only offered once its
+          details are filled in, so you can tick one now and come back to it.
         </p>
 
-        <div>
-          <label htmlFor="zelle" className={labelClass}>Zelle</label>
-          <input id="zelle" className={inputClass} value={zelle}
-                 placeholder="Phone or email"
-                 onChange={(e) => setZelle(e.target.value)} />
-        </div>
+        {statuses.map((m) => {
+          const h = handleFor[m.method];
+          return (
+            <div key={m.method} className="rounded-lg border border-gray-800 bg-gray-900 p-2.5">
+              <label
+                className={`flex items-start gap-2.5 ${m.blocked ? "cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={m.selected}
+                  disabled={m.blocked}
+                  onChange={() => toggle(m.method)}
+                  className="mt-0.5 accent-green-500 disabled:opacity-40"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className={`text-sm ${m.blocked ? "text-gray-600" : "text-gray-200"}`}>
+                      {m.label}
+                    </span>
+                    {m.offerable && (
+                      <span className="text-[11px] uppercase tracking-wide text-green-400">
+                        Offered
+                      </span>
+                    )}
+                  </span>
+                  {/* WHAT IS STILL REQUIRED, shown only when it matters: the
+                      method is ticked and cannot yet be offered. An unticked
+                      row nagging about a missing handle is noise. Card's
+                      requirement shows always, because it is the one blocker
+                      the host cannot clear from this form. */}
+                  {m.requirement && (m.selected || m.blocked) && (
+                    <span className="block text-xs text-amber-400/80 mt-0.5">
+                      {m.requirement}
+                    </span>
+                  )}
+                </span>
+              </label>
 
-        <div>
-          <label htmlFor="cashapp" className={labelClass}>Cash App</label>
-          <input id="cashapp" className={inputClass} value={cashapp}
-                 placeholder="$cashtag"
-                 onChange={(e) => setCashapp(e.target.value)} />
-        </div>
+              {/* The handle sits WITH its toggle. Ticking a rail and filling in
+                  its details are one action to a host, and they are written in
+                  one transaction, so they belong in one place on screen. */}
+              {h && (
+                <input
+                  aria-label={`${m.label} details`}
+                  className={`${inputClass} mt-2`}
+                  value={h.value}
+                  placeholder={h.placeholder}
+                  onChange={(e) => h.set(e.target.value)}
+                />
+              )}
+            </div>
+          );
+        })}
 
-        <div>
-          <label htmlFor="venmo" className={labelClass}>Venmo</label>
-          <input id="venmo" className={inputClass} value={venmo}
-                 placeholder="@username"
-                 onChange={(e) => setVenmo(e.target.value)} />
-        </div>
-
-        <div>
-          <label htmlFor="paypal" className={labelClass}>PayPal</label>
-          <input id="paypal" className={inputClass} value={paypal}
-                 placeholder="paypal.me/you or email"
-                 onChange={(e) => setPaypal(e.target.value)} />
-        </div>
+        {!anyOfferable && (
+          <p className="text-xs text-red-400 leading-relaxed">
+            Nothing here can take money yet. Tick a method and fill in its
+            details, or connect Stripe to accept cards.
+          </p>
+        )}
       </div>
 
       {!hasEvent && !addingEvent && (

@@ -50,6 +50,11 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import {
+  normalizeAcceptedMethods,
+  hasOfferableMethod,
+  type BoardPaymentMethod,
+} from "@/lib/accepted-payments";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
@@ -99,6 +104,8 @@ type Body = {
   entryChildPriceCents?: number | null;
   entryAdultEarlyPriceCents?: number | null;
   entryAdultRegularPriceCents?: number | null;
+  /// Which methods this board accepts. NEVER LOCKED - see the block below.
+  acceptedPaymentMethods?: unknown;
   /// Direct-payment handles. NEVER LOCKED - see the block that applies them.
   hostVenmo?: string | null;
   hostZelle?: string | null;
@@ -146,10 +153,14 @@ export async function PATCH(request: Request, { params }: Props) {
         entryAdultRegularPriceCents: true,
         fundraisingGoalCents: true,
         causeDescription: true,
+        acceptedPaymentMethods: true,
         hostVenmo: true,
         hostZelle: true,
         hostCashapp: true,
         hostPaypal: true,
+        // Card is offerable only on a live account. Read here so the save rule
+        // and the panel agree about what "offerable" means.
+        host: { select: { stripeAccountId: true, stripeChargesEnabled: true } },
         event: { select: { id: true, timezone: true, startsAt: true, endsAt: true } },
       },
     });
@@ -462,6 +473,58 @@ export async function PATCH(request: Request, { params }: Props) {
       }
       for (const f of HANDLE_FIELDS) {
         if (f in body) boardData[f] = finalHandles[f];
+      }
+    }
+
+    // --- accepted payment methods -------------------------------------------
+    //
+    // VALIDATED AGAINST THE HANDLES AS THEY WILL BE AFTER THIS SAVE, not as
+    // they are now. A host pasting a Venmo username and ticking Venmo in one
+    // save must not be told Venmo has no handle - the two travel together, and
+    // they are written in the same transaction below for the same reason.
+    //
+    // NOT LOCKED, ever, and not by accident. Invariant 16 locks the TERMS of
+    // the deal: what a contributor is buying and for how much. How the host
+    // receives the money is not a term. A host whose Zelle is frozen mid
+    // campaign has to be able to switch to Cash App, which is exactly why the
+    // handles have never been locked either.
+    let finalMethods = board.acceptedPaymentMethods as BoardPaymentMethod[];
+    if ("acceptedPaymentMethods" in body) {
+      const parsed = normalizeAcceptedMethods(body.acceptedPaymentMethods);
+      if (!parsed) {
+        return NextResponse.json(
+          { error: "Unrecognized payment method." },
+          { status: 400 }
+        );
+      }
+      finalMethods = parsed;
+      boardData.acceptedPaymentMethods = parsed;
+    }
+
+    // THE SAVE RULE. At least one method must be OFFERABLE afterwards -
+    // selected AND payable. Selected is not enough: a board with only Venmo
+    // ticked and no Venmo handle looks configured and can collect nothing.
+    //
+    // Checked whenever EITHER side moved, because either can break it: clearing
+    // the last handle, or unticking the last method that had one.
+    if (touchedHandles || "acceptedPaymentMethods" in body) {
+      const after = {
+        acceptedPaymentMethods: finalMethods,
+        hostZelle: finalHandles.hostZelle,
+        hostCashapp: finalHandles.hostCashapp,
+        hostVenmo: finalHandles.hostVenmo,
+        hostPaypal: finalHandles.hostPaypal,
+      };
+      if (!hasOfferableMethod(after, board.host)) {
+        return NextResponse.json(
+          {
+            error:
+              "Choose at least one payment method contributors can actually use. " +
+              "A method needs its details filled in, and card needs Stripe connected.",
+            field: "acceptedPaymentMethods",
+          },
+          { status: 400 }
+        );
       }
     }
 

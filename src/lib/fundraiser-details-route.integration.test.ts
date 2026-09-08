@@ -81,9 +81,21 @@ describe(
           gameName: "Homecoming",
           slug: "route-" + randomUUID().slice(0, 8),
           boardType: "fundraiser",
-          // Every fundraiser must say what it accepts -
-          // boards_fundraiser_accepts_something refuses an empty list.
-          acceptedPaymentMethods: ["card"],
+          // DERIVED FROM THE HANDLES, exactly as creation now does it.
+          //
+          // This was a bare ["card"] — chosen only to satisfy
+          // boards_fundraiser_accepts_something, back when the column meant
+          // nothing. It describes a board no host can create: card listed on a
+          // host with no Stripe account, so nothing on it could ever take
+          // money. Once the save rule required one OFFERABLE method, every
+          // handle test on this fixture failed — correctly, against a board
+          // that should not exist.
+          acceptedPaymentMethods: (["zelle", "cashapp", "venmo", "paypal"] as const).filter(
+            (r) =>
+              handles[
+                { zelle: "hostZelle", cashapp: "hostCashapp", venmo: "hostVenmo", paypal: "hostPaypal" }[r]
+              ]
+          ),
           squarePrice: PRICE,
           fundraisingGoalCents: goal,
           totalSquares: 100,
@@ -141,6 +153,11 @@ describe(
     beforeEach(async () => {
       if (!boardId) return;
       await db.square.deleteMany({ where: { boardId } });
+      // Contributions were never cleaned here because no test made one - the
+      // lock tests use a paid SQUARE. The FK is Restrict, so the board delete
+      // below fails and the failure surfaces in the NEXT test's beforeEach,
+      // not in the test that left the row.
+      await db.contribution.deleteMany({ where: { boardId } });
       await db.event.deleteMany({ where: { boardId } });
       await db.board.deleteMany({ where: { boardId } });
       boardId = "";
@@ -467,5 +484,193 @@ describe(
       assert.match(json.error, /1,000 tickets/);
       assert.equal(await rowCount(), 100, "nothing was written");
     });
+
+    // ====================================================================
+    // ACCEPTED PAYMENT METHODS — through the real route, real transaction.
+    //
+    // Before this, `acceptedPaymentMethods` was written in exactly one place:
+    // board creation, deriving `card` from `host.stripeChargesEnabled`. Because
+    // that is a HOST-level flag, connecting Stripe once turned card on for
+    // every fundraiser that host would ever run, and nothing anywhere could
+    // turn it off — which is how a no-prize direct-payment board came to serve
+    // a live Stripe checkout for $80.
+    //
+    // THE SAVE RULE: at least one method must be OFFERABLE afterwards, not
+    // merely selected. The two cases it separates are the first two tests.
+    // ====================================================================
+
+    /** Read back exactly what the column holds. */
+    const methodsNow = async () =>
+      (await db.board.findUniqueOrThrow({
+        where: { boardId },
+        select: { acceptedPaymentMethods: true },
+      })).acceptedPaymentMethods;
+
+    const handlesNow = async () =>
+      db.board.findUniqueOrThrow({
+        where: { boardId },
+        select: { hostZelle: true, hostVenmo: true, hostCashapp: true, hostPaypal: true },
+      });
+
+    // THE PERMITTED CASE. Ticking a rail before its handle exists is a real
+    // flow — "I'll paste my Venmo username when I find it."
+    test("Zelle offerable, Venmo ticked with no handle: saves", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostVenmo: null });
+      const r = await call({
+        acceptedPaymentMethods: ["zelle", "venmo"],
+        hostZelle: "555-0100",
+        hostVenmo: null,
+      });
+      status200(r);
+      assert.deepEqual(await methodsNow(), ["zelle", "venmo"], "both stored");
+      assert.equal((await handlesNow()).hostVenmo, null, "Venmo simply is not live yet");
+    });
+
+    // THE REFUSED CASE. Every method selected is unusable, so the board could
+    // take no money at all.
+    test("only Venmo ticked with no handle: refused, and nothing is written", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostVenmo: null });
+      const before = await methodsNow();
+
+      // THE HANDLES ARE LEFT ALONE, deliberately. Clearing them too would trip
+      // the older "add at least one way to receive payment" guard first, and
+      // this test would pass while proving nothing about the methods rule. The
+      // Zelle handle stays stored and simply is not selected - which is exactly
+      // the state the rule has to catch: handles on file, none of them ticked.
+      const r = await call({ acceptedPaymentMethods: ["venmo"] });
+      assert.equal(r.status, 400);
+      assert.match(r.json.error!, /at least one payment method/i);
+      assert.deepEqual(await methodsNow(), before, "the column did not move");
+      assert.equal((await handlesNow()).hostZelle, "555-0100", "nor did the handle");
+    });
+
+    // ONE TRANSACTION. A host pasting a handle and ticking its rail in the same
+    // save must never get one without the other — and the rule is checked
+    // against the handles AS THEY WILL BE, not as they are.
+    test("a handle and its rail land together in one save", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostVenmo: null });
+      status200(
+        await call({
+          acceptedPaymentMethods: ["zelle", "venmo"],
+          hostZelle: "555-0100",
+          hostVenmo: "@newhandle",
+        })
+      );
+      assert.deepEqual(await methodsNow(), ["zelle", "venmo"]);
+      assert.equal((await handlesNow()).hostVenmo, "@newhandle");
+    });
+
+    // The rule reads the POST-save handles. Ticking only Venmo is fine when the
+    // same request supplies the handle that makes it offerable.
+    test("ticking only Venmo saves when the same request supplies its handle", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostVenmo: null });
+      status200(
+        await call({
+          acceptedPaymentMethods: ["venmo"],
+          hostZelle: null,
+          hostVenmo: "@newhandle",
+        })
+      );
+      assert.deepEqual(await methodsNow(), ["venmo"]);
+    });
+
+    test("an empty selection is refused", async () => {
+      await seedBoard();
+      const r = await call({ acceptedPaymentMethods: [] });
+      assert.equal(r.status, 400);
+      assert.match(r.json.error!, /at least one payment method/i);
+    });
+
+    test("an unknown method is refused before anything is written", async () => {
+      await seedBoard();
+      const before = await methodsNow();
+      const r = await call({ acceptedPaymentMethods: ["zelle", "bitcoin"] });
+      assert.equal(r.status, 400);
+      assert.match(r.json.error!, /Unrecognized payment method/i);
+      assert.deepEqual(await methodsNow(), before);
+    });
+
+    test("the stored order is stable regardless of how it was sent", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostCashapp: "$h" });
+      status200(await call({ acceptedPaymentMethods: ["cashapp", "zelle"] }));
+      assert.deepEqual(await methodsNow(), ["zelle", "cashapp"]);
+    });
+
+    // CARD IS AN EXPLICIT CHOICE NOW. This board's host has no Stripe account
+    // in the test database, so card can never be offerable here — and a save
+    // that leaves card as the only selection has to fail.
+    test("card alone with no Stripe account is refused", async () => {
+      await seedBoard();
+      const r = await call({ acceptedPaymentMethods: ["card"] });
+      assert.equal(r.status, 400);
+      assert.match(r.json.error!, /at least one payment method/i);
+    });
+
+    // NOT LOCKED AFTER CONTRIBUTIONS BEGIN. Invariant 16 locks the terms of the
+    // deal — what a contributor buys and for how much. How the host receives
+    // money is not a term, and a frozen Zelle account mid-campaign is exactly
+    // the correction this has to allow.
+    test("methods stay editable after a confirmed contribution", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostCashapp: "$h" });
+      await db.contribution.create({
+        data: {
+          boardId,
+          status: "confirmed",
+          paymentMethod: "cash",
+          squareAmountCents: 5000,
+          donationAmountCents: 0,
+          totalPaidCents: 5000,
+          contributorName: "Payer",
+          contributorEmail: "payer@example.com",
+          confirmedAt: new Date(),
+        },
+      });
+
+      status200(await call({ acceptedPaymentMethods: ["cashapp"] }));
+      assert.deepEqual(await methodsNow(), ["cashapp"], "switched rails mid-campaign");
+    });
+
+    test("handles stay editable after a confirmed contribution, as before", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostCashapp: "$h" });
+      await db.contribution.create({
+        data: {
+          boardId, status: "confirmed", paymentMethod: "cash",
+          squareAmountCents: 5000, donationAmountCents: 0, totalPaidCents: 5000,
+          contributorName: "Payer", contributorEmail: "payer@example.com",
+          confirmedAt: new Date(),
+        },
+      });
+      status200(await call({ acceptedPaymentMethods: ["zelle"], hostZelle: "555-0199" }));
+      assert.equal((await handlesNow()).hostZelle, "555-0199");
+    });
+
+    // A save that says nothing about payment methods must not touch them. Most
+    // edits — a goal, a cause, an event name — are exactly that.
+    test("a save that omits the field leaves the column alone", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100" });
+      const before = await methodsNow();
+      status200(await call({ causeDescription: "New cause" }));
+      assert.deepEqual(await methodsNow(), before);
+    });
+
+    // xv8yuwhd's stopgap value must survive an ordinary edit untouched. It was
+    // set by hand and is the live board's intended state.
+    test("an unrelated edit preserves a hand-set selection", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostCashapp: "$h" });
+      status200(await call({ acceptedPaymentMethods: ["zelle", "cashapp"] }));
+      status200(await call({ fundraisingGoalCents: 30_000 }));
+      assert.deepEqual(await methodsNow(), ["zelle", "cashapp"]);
+    });
+
+    // Clearing the last handle while its rail is the only selection is the same
+    // failure as never having one, and is caught by the same rule.
+    test("clearing the last usable handle is refused", async () => {
+      await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostVenmo: null });
+      status200(await call({ acceptedPaymentMethods: ["zelle"] }));
+      const r = await call({ hostZelle: null, hostVenmo: null, hostCashapp: null, hostPaypal: null });
+      assert.equal(r.status, 400);
+      assert.equal((await handlesNow()).hostZelle, "555-0100", "unchanged");
+    });
+
   }
 );
