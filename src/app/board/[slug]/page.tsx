@@ -302,10 +302,32 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
           tier: priced.tier,
           label,
           priceCents: priced.pricePaidCents,
-          // Said only when an early window is what set this price. FLAT means
-          // the tier has never had two prices, and calling that "regular"
-          // would imply a discount somebody missed.
-          note: priced.priceBasis === "EARLY" ? "early bird price" : null,
+          // Two different facts sharing one slot, and they cannot collide:
+          // CHILD is FLAT by construction - entryPriceFor returns FLAT for it
+          // unconditionally, because a child ticket has never had two prices -
+          // so the EARLY branch is unreachable for CHILD and the age range is
+          // unreachable for ADULT.
+          //
+          // "early bird price" is said only when an early window is what set
+          // this price. FLAT means the tier has never had two prices, and
+          // calling that "regular" would imply a discount somebody missed.
+          //
+          // THE AGE RANGE IS HARDCODED, AND THAT IS A KNOWN DEFERRAL, NOT AN
+          // OVERSIGHT. A parent choosing a ticket for a 13-year-old has no
+          // other way to find out which tier that is; the description is not
+          // where a purchase decision gets made. But the three tiers are fixed
+          // columns on Board, not host-configurable, so this string is right
+          // for every board that exists today and wrong for the first host
+          // whose child tier is 5-11 - who would have no fix but a deploy.
+          // Host-defined tiers are the TicketType work; PHASE-2-BACKLOG.md
+          // carries it, and this line is listed there so the two are found
+          // together. Do not add a board column for this in the meantime.
+          note:
+            priced.priceBasis === "EARLY"
+              ? "early bird price"
+              : priced.tier === "CHILD"
+                ? "Ages 4–12"
+                : null,
         } satisfies EntryTierOffer,
       ];
     });

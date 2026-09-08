@@ -286,6 +286,101 @@ is never evidence of containment.
 
 ---
 
+## Host-defined ticket types (TicketType) — Track 2
+
+**Added:** 2026-09-08
+**Status:** deferred to Track 2 by ruling. Not opened for the pilot.
+
+**THIS IS THE FIRST RECORD OF TicketType IN THIS REPOSITORY.** It was ruled
+deferred in conversation and existed nowhere in version control — not in
+`fundraiser-board-v2.md`, not in any addendum, not here. That is the
+off-repo-truth failure the baseline exercise was run to stop, so it is written
+down now even though nothing is being built. Anything below that turns out to
+disagree with a spec is a bug to report, not a decision to make.
+
+### The shape of the problem
+
+Entry tiers are **fixed columns on `Board`**, not rows:
+
+```
+entryChildPriceCents
+entryAdultEarlyPriceCents
+entryAdultRegularPriceCents
+```
+
+`PassTier` is a two-value enum, `CHILD | ADULT`. A host cannot add "Senior",
+"Student" or "Family of four", cannot rename a tier, and cannot define what an
+age band means. TicketType is the work that turns those columns into rows a
+host owns.
+
+Two things are parked against it. Both are live in production and both are
+correct for every board that exists today.
+
+### 1. The child age range is hardcoded copy
+
+`src/app/board/[slug]/page.tsx`, in the `entryOffers` flatMap: CHILD's `note`
+renders the literal `"Ages 4–12"`, which the panel and the card sheet both draw
+as `$15 · Ages 4–12`.
+
+It reuses the existing `note` slot rather than adding markup, and cannot collide
+with `"early bird price"` because `entryPriceFor` returns `FLAT` for CHILD
+unconditionally — a child ticket has never had two prices, so the EARLY branch
+is unreachable for that tier.
+
+**Why it was accepted rather than made configurable.** A parent choosing a
+ticket for a 13-year-old has no other way to learn which tier that is, and the
+board description is not where a purchase decision gets made. The alternative
+was a nullable board column plus a form field, validation, the
+`fundraiser-details` route and the lock rules that already govern
+`entryChildPriceCents` once a child ticket sells — real work for something one
+board needed this month.
+
+**The cost, stated so nobody rediscovers it as a bug.** The first host whose
+child tier is 5–11 gets wrong copy on a live board with no fix but a deploy.
+When TicketType lands, this string comes from the tier the host defined. Until
+then, **do not add a board column for it** — that is a migration and a form
+field standing in front of the work that actually solves it.
+
+It appears in the reservation panel and the card sheet, and nowhere else. Not on
+the pass, not at the gate, not on any roster, not in any email, not on the
+reservation screen — verified 2026-09-08.
+
+### 2. Four independent "Child" / "Adult" maps
+
+There is no vocabulary resolver for tiers. `purchaseUnit()` in
+`board-vocabulary.ts` covers the purchase unit and says nothing about tiers, so
+each surface hardcodes its own:
+
+```
+src/app/board/[slug]/page.tsx:294              ["CHILD","Child"], ["ADULT","Adult"]
+src/app/host/boards/[id]/donations/
+  reservation-worklist.tsx:43                  { ADULT: "Adult", CHILD: "Child" }
+src/app/reservation/[id]/page.tsx:55           { ADULT: "Adult", CHILD: "Child" }
+src/app/api/board/[slug]/entry/route.ts:58     { CHILD: "Child admission", … }
+```
+
+**Do not consolidate them now** — ruled 2026-09-08. Four maps that agree are not
+costing anything today, and a resolver built against a two-value enum would be
+thrown away by TicketType, which has to key on a host-owned row instead. The
+right time to write one resolver is when there is something variable for it to
+resolve.
+
+They are listed here so that whoever builds TicketType finds every place a tier
+name is rendered in one place rather than by grep, and so that a fifth copy added
+in the meantime is recognised as making this worse.
+
+### Explicitly not in scope, and why
+
+**"Under 4 free at the gate" was considered and rejected** for the panel on
+2026-09-08. It needs two edits rather than one shared string — the panel and the
+card sheet have separate subtitle lines — and it makes a promise the gate cannot
+keep: check-in counts passes, so an unticketed three-year-old is a judgment call
+for whoever is scanning. The age range answers a purchase question, which is
+what the panel is for; under-four-free answers a gate question, and the gate has
+a person at it. If it is wanted, it is host policy in the description.
+
+---
+
 # Confirmation email — five confirmed defects
 
 **Added:** 2026-08-30, from a read-only audit of every email caller.
