@@ -7,6 +7,7 @@ import { validateTicketCount } from "@/lib/board-inventory";
 import { Prisma } from "@prisma/client";
 import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { validateEntryPricing } from "@/lib/entry-pricing";
+import { boardCreationGate } from "@/lib/board-creation-gate";
 import { generateSlug } from "@/lib/slug";
 
 // ============================================================
@@ -127,6 +128,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Host not found" }, { status: 404 });
     }
 
+    // 2. Payment readiness gate
+    //
+    // THIS STEP WAS DELETED, NOT MISSING BY DESIGN — `349529a` removed it on
+    // 2026-02-26 and left the numbering jumping from 1 to 3. Fixing only the
+    // page gate would be worse than fixing neither: the host reaches the form,
+    // fills in game name, teams, price and payout split, and is refused on
+    // submit with the work still in the fields.
+    //
+    // THE API CANNOT REDIRECT, so the destination travels in the body and the
+    // client routes. The three refusals keep their own messages — "you never
+    // chose" and "your Stripe is not ready" are not the same problem.
+    const gate = boardCreationGate(host);
+    if (!gate.allow) {
+      return NextResponse.json(
+        { error: gate.message, reason: gate.reason, destination: gate.destination },
+        { status: 403 }
+      );
+    }
 
     // 3. Parse + validate body
     const body: CreateBoardBody = await request.json();
