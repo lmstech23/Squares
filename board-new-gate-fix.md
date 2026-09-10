@@ -1,22 +1,57 @@
-# Fix — Cash hosts redirected to Stripe from New Board
+# Fix — Null-preference hosts redirected to Stripe from New Board
 
 **Environment:** beta.daali.app
-**Severity:** High — blocks cash hosts on beta from creating new boards.
+**Severity:** High — blocked hosts who had never chosen a payment preference
+from creating any board. **Filed as "cash hosts"; that was wrong** — see the
+population amendment in §1.
 **Scope rule:** Board path only. **No Event behavior changes in this ticket.**
+**Status:** CLOSED 2026-09-10. Production R5 pass — §12.
 
 ---
 
 ## 1. Observed vs expected
 
-| | Cash host today | Cash host expected |
+| | Affected host today | Expected |
 |---|---|---|
 | `/host/boards` | Loads. Optional Connect Stripe banner | Same |
-| `/host/boards/new` | **→ `/host/stripe`** | Form opens |
+| `/host/boards/new` | **→ `/host/stripe`** | `/host/payment-setup` |
 | `POST /api/boards` | Untested — see §3 | Accepts |
 
+> **Population amended 2026-09-10, before merge. The affected hosts are
+> NULL-PREFERENCE hosts, not cash hosts.** Tracing the deployed conditional
+> `paymentPreference !== "cash" && !stripeChargesEnabled` against a cash host:
+> `"cash" !== "cash"` is false and short-circuits, so **no cash host was ever
+> blocked by this gate.** A host with no preference set fails the first term,
+> fails the second, and is sent to Stripe — silently answering the question
+> `/host/payment-setup` exists to ask.
+>
+> The misdiagnosis came from reading the dashboard's optional-Stripe banner as
+> cash-host-only per SYSTEM-FLOW §2. Its real condition is
+> `!isPlatformOwner && !host.stripeAccountId`, and it never reads
+> `paymentPreference`. Compounded by F5: with the owner bypass unreachable,
+> `isPlatformOwner` is always false, so that banner renders for **every** host
+> without a `stripeAccountId` — including exactly the null-preference hosts that
+> were actually broken. The signal read as "cash host" was firing on the broken
+> population.
+>
+> **The fix was unaffected.** `UNSET → /host/payment-setup` was always the real
+> defect and is what Commit 1 addresses. The title and severity above are
+> amended; the row `POST /api/boards` "Untested" also resolved differently than
+> expected — §3 found it had no gate at all.
+
 The dashboard showing the *optional* banner is what localizes this. Per
-SYSTEM-FLOW §2 that copy is cash-host-only. The page guard one level down is
-not reading payment preference at all.
+SYSTEM-FLOW §2 that copy is cash-host-only.
+
+> **Also wrong, corrected 2026-09-10.** This paragraph originally continued *"the
+> page guard one level down is not reading payment preference at all."* It was.
+> The deployed guard read `paymentPreference !== "cash" && !stripeChargesEnabled`
+> — it consulted the column and got the *shape* wrong, which is a different
+> defect from ignoring it. And SYSTEM-FLOW §2 describes the banner as
+> cash-host-only, but the implementation gates on
+> `!isPlatformOwner && !host.stripeAccountId` and never reads preference at all,
+> so the document and the code disagree about that banner. Not repaired here —
+> it is a SYSTEM-FLOW question, and §2 of this ticket forbids editing SYSTEM-FLOW
+> from inside a code hotfix.
 
 > **Amended 2026-09-09.** This section originally said "the dashboard guard is
 > correct and reading payment preference properly." **There is no dashboard
@@ -700,6 +735,42 @@ signal read as "cash host" was firing on the broken population.
 **Commit 1 was unaffected by the correction.** `UNSET → /host/payment-setup` was
 always the real defect and is what the fix addresses.
 
+### Release — 2026-09-10. CLOSED
+
+**Production R5: PASS.** Signed in as `dtate@lmstechs.net` against
+`beta.daali.app`, `/host/boards/new` lands on `/host/payment-setup` and not on
+`/host/stripe`. Nothing was selected and nothing submitted, so `fb3f4fdb…`
+remains `paymentPreference = null` and R5 stays re-runnable on future releases.
+
+That single observation is the ticket's result. It is the defect as amended in
+§1 — null-preference hosts unable to onboard — confirmed fixed in production.
+
+Six commits, pushed `0dfaa2e..880e4f7`:
+
+| Commit | |
+|---|---|
+| `1be9026` | the fix — shared gate, both consumers |
+| `100873a` | merge, `--no-ff`, so Commit 1 stays revertable as a unit |
+| `03ae1b6` | route-handler wiring test, closing gate #4's accepted gap |
+| `6556241` | typecheck fix for a TS2367 that shipped inside `1be9026` |
+| `b739d55` | this ticket, imported |
+| `880e4f7` | §13 rollback, recorded before the push |
+
+Production deployment `squares-c0beopffg-daaliyah-tates-projects.vercel.app`;
+`beta.daali.app` re-aliased to it. Verification at release: `TSC_EXIT=0`,
+`BUILD_EXIT=0`, 307 tests / 306 pass / 0 fail / 1 skipped, exit codes captured
+directly rather than through a pipe.
+
+Preview deployment `squares-26ieorcmn…` removed after the production pass. The
+previous production deployment `squares-clw5rvl1v…` remains as the first
+rollback target.
+
+**Not touched by this release:** `PLATFORM_OWNER_ID` and the dead owner bypass
+(F5), the dashboard guard (§8.3, Commit 2 dropped), the Fundraiser picker (§5),
+and everything under `src/app/events`.
+
+**Open on exit:** F2, F3 (two of five entries retired), F4, F5, F7.
+
 ### Closing the gate #4 gap — a test, not a person
 
 The accepted gap gets closed by a route-handler integration test for
@@ -809,6 +880,35 @@ changes who is charged for board creation.
 
 Predates this ticket and is independent of it. **`PLATFORM_OWNER_ID` is not to
 be altered as part of this hotfix.**
+
+**F7 — new, and next. There is no CI.**
+
+`npm test` runs on a developer machine and nowhere else. No
+`.github/workflows`, no other CI configuration; Vercel's build command is
+`next build`, which does not run tests. No `engines` field pins a Node version.
+
+This is what makes the route wiring test added in `03ae1b6` weaker than it
+reads. It is durable, but nothing invokes it automatically — which is the
+`b771c68` failure one level up. That cleanup pass deleted a correct fix because
+no test objected; a test that no CI runs objects only when someone remembers to
+ask it.
+
+**Minimum scope:**
+
+- Run `tsc --noEmit` and `npm test` on push and on pull request.
+- Use a Node version that supports `--experimental-test-module-mocks` —
+  the flag `npm test` now depends on. Local is v22.19.0 and works; pin
+  deliberately rather than inheriting a runner default, since an older Node
+  fails on the flag and a `--experimental-*` flag is not covered by semver.
+
+**No production changes in F7.** Not the application, not the database, not
+environment variables, not the deploy configuration. CI configuration only.
+
+Note the ordering trap: `npm test` alone reports **1 skipped** when the
+integration database is absent, and that skip is the documented signal that the
+concurrency suite did not run. CI should treat it as expected rather than
+either failing on it or silently accepting a green run that proved less than it
+appears to.
 
 ### Housekeeping
 
