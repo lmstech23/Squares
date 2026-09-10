@@ -13,7 +13,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "npx tsx prisma/seed.ts",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/test-alias-only.mjs --test \"src/**/*.test.ts\"",
     "db:migrate:production": "node --experimental-strip-types scripts/migrate-production.mts",
     "db:migrate:production:dry": "node --experimental-strip-types scripts/migrate-production.mts --dry-run",
     "test:db:up": "node scripts/test-db.mjs up",
