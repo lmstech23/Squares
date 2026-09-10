@@ -910,6 +910,38 @@ concurrency suite did not run. CI should treat it as expected rather than
 either failing on it or silently accepting a green run that proved less than it
 appears to.
 
+**F8 — new, and kept separate. SYSTEM-FLOW §2 and the Connect-Stripe banner
+implementation disagree.**
+
+SYSTEM-FLOW §2 describes the dashboard's optional Connect-Stripe banner as
+cash-host-only copy. The implementation renders it on
+`!isPlatformOwner && !host.stripeAccountId` and **never reads
+`paymentPreference` at all.**
+
+**This is the misreading that produced this ticket's original misdiagnosis.**
+The banner was taken as evidence that the affected account was a cash host, when
+it is not evidence of anything about payment preference. Compounded by F5: with
+the owner bypass unreachable, `isPlatformOwner` is always false, so the banner
+renders for every host without a `stripeAccountId` — including precisely the
+null-preference hosts that were actually broken. See the population amendment in
+§1.
+
+**Do not change either side until it is decided which is authoritative.** Both
+readings are defensible and they are not equivalent:
+
+- *The document is right* — the banner should be cash-host-only and the condition
+  should consult `paymentPreference`. A null-preference host would then stop
+  being told to connect Stripe before anyone has asked how they want to collect.
+- *The code is right* — the banner is about Stripe connection state, not payment
+  preference, and §2's wording should be corrected to match.
+
+CLAUDE.md is explicit that a document/code conflict is a bug to report, not to
+resolve by picking a side. It is also not repairable from inside a code hotfix:
+§2 of this ticket forbids editing SYSTEM-FLOW to match code, on the grounds that
+a spec edited to match broken code stops being an authority.
+
+Independent of F7 — no CI change touches this.
+
 ### Housekeeping
 
 Two copies of this document existed in Downloads with different hashes, and the
