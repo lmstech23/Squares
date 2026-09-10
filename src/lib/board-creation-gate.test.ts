@@ -65,11 +65,12 @@ describe("boardCreationGate — R1-R11", () => {
       host({ paymentPreference: null, stripeChargesEnabled: false })
     );
     assert.equal(gate.allow, false);
+    // THE DESTINATION IS THE WHOLE TEST, not the refusal. The old denylist also
+    // refused this host — it just sent them to /host/stripe, silently answering
+    // the question payment setup exists to ask. Asserting the exact destination
+    // is what distinguishes the fix from the bug.
     assert.ok(!gate.allow && gate.destination === "/host/payment-setup");
     assert.ok(!gate.allow && gate.reason === "no-preference");
-    // The regression this replaces: the old denylist sent this host to Stripe,
-    // silently answering the question payment setup exists to ask.
-    assert.ok(!gate.allow && gate.destination !== "/host/stripe");
   });
 
   // R6 — the case a fix reaching for `stripeAccountId` gets wrong. An abandoned
