@@ -816,3 +816,60 @@ Two copies of this document existed in Downloads with different hashes, and the
 one matching the given filename was an 8,549-byte earlier draft lacking §4's
 owner table, §5, V1, and the Commit 1/Commit 2 split. Delete stale drafts. A
 ticket that instructs by section number fails badly against the wrong revision.
+
+---
+
+## 13. Rollback
+
+**Five commits shipped as one release.** To take all of it back:
+
+```bash
+git revert --no-commit 6556241 03ae1b6
+git revert --no-commit -m 1 100873a
+git commit -m "revert: board-creation gate and route regression tests"
+```
+
+`-m 1` on the merge commit is required and is the parent that matters: it keeps
+`main`'s history and undoes the branch's contribution. The two plain reverts must
+come first — `6556241` (typecheck fix) and `03ae1b6` (route wiring test) sit on
+top of the merge and depend on the code it introduced.
+
+`b739d55`, the ticket import, is documentation and is **not** in the sequence.
+Reverting the fix should not delete the record of why it was made.
+
+**What reverting restores.** The pre-fix gate: `/host/boards/new` sends any host
+whose `paymentPreference` is not exactly `"cash"` to `/host/stripe` when Stripe
+is not charge-enabled, and `POST /api/boards` has no payment gate at all. That is
+the state production ran in from 2026-02-26 to 2026-09-10, so it is survivable —
+but null-preference hosts go back to being unable to onboard, which is the defect
+this release exists to fix.
+
+**What it does not touch.** `PLATFORM_OWNER_ID` and the dead owner bypass (F5)
+are untouched by this release and unaffected by reverting it.
+
+### Verification at release
+
+Captured directly, no pipe:
+
+```
+TSC_EXIT=0
+BUILD_EXIT=0
+npm test  ->  307 tests, 306 pass, 0 fail, 1 skipped
+```
+
+The one skip is the documented integration-database signal — it means the
+concurrency suite did not run, not that it failed.
+
+### Where `npm test` actually runs — nowhere but a developer machine
+
+**There is no CI in this repository.** No `.github/workflows`, no other CI
+configuration, and Vercel's build command is `next build`, which does not run
+tests. No `engines` field pins a Node version. Local Node is v22.19.0, where
+`--experimental-test-module-mocks` is supported — verified by the tests running,
+not by consulting a version table.
+
+The consequence is worth stating rather than leaving implied: the route wiring
+test does **not** run on every commit. It runs when someone types `npm test`.
+Against `b771c68` — a correct fix deleted by a cleanup pass — the test is the
+durable half, but the half that *invokes* it is still a careful person. Adding CI
+would close that, and is not in this ticket.
