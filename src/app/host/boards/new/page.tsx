@@ -1,4 +1,5 @@
 import { getHost } from "@/lib/auth";
+import { boardCreationGate } from "@/lib/board-creation-gate";
 import { redirect } from "next/navigation";
 import NewBoardFlow from "./new-board-flow";
 import Link from "next/link";
@@ -6,7 +7,10 @@ import Link from "next/link";
 export default async function NewBoardPage() {
   const host = await getHost();
   if (!host) redirect("/login");
-  if (host.paymentPreference !== "cash" && !host.stripeChargesEnabled) redirect("/host/stripe");
+  // Gate #3. The condition lives in `@/lib/board-creation-gate` because the API
+  // gate below it must agree, and the two drifted apart once already.
+  const gate = boardCreationGate(host);
+  if (!gate.allow) redirect(gate.destination);
 
 
   return (
