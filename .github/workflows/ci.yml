@@ -1,0 +1,164 @@
+# F7 — the first CI this repository has had.
+#
+# WHY IT EXISTS. `npm test` has run on one developer machine and nowhere else.
+# Vercel's build command is `next build`, which does not run tests, so nothing
+# automatic has ever objected to a broken commit.
+#
+# That is the `b771c68` failure one level up. On 2026-02-25 a correct fix was
+# committed to two files; the next day a cleanup pass deleted it from both while
+# "removing dead paymentPreference refs" — they were not dead, they were the fix
+# — and nothing caught it for six months. The regression tests added since are
+# the durable half; this workflow is the half that actually runs them.
+#
+# SCOPE IS DELIBERATELY NARROW. Typecheck and unit tests. No application,
+# database, environment-variable or deployment changes, and this workflow
+# neither deploys nor can deploy: it has read-only permissions and no secrets.
+# Vercel continues to deploy from pushes to main independently of this file.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege. This workflow reads code and reports; it needs nothing else.
+permissions:
+  contents: read
+
+# A newer push to the same ref makes an in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck and tests
+    runs-on: ubuntu-latest
+
+    env:
+      # NON-FUNCTIONAL PLACEHOLDERS, AND THEY MUST STAY THAT WAY.
+      #
+      # `prisma generate` runs from `postinstall` and resolves the datasource
+      # block, which references both of these. `.env` is gitignored, so without
+      # them the install step fails on a schema it never needed to connect to.
+      #
+      # Nothing in this job opens a connection: the integration suite skips
+      # without TEST_DATABASE_URL, and the route test mocks `@/lib/prisma` so
+      # the client is never constructed. A real credential here would buy
+      # nothing and put production one typo away from a CI log.
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/unused
+      DIRECT_URL: postgresql://ci:ci@127.0.0.1:5432/unused
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # PINNED EXACTLY, NOT BY RANGE. `npm test` passes
+      # `--experimental-test-module-mocks`, which the route-handler test in
+      # src/lib/board-creation-route.test.ts depends on. It landed in Node
+      # 22.3.0, and an experimental flag carries no semver promise — a runner
+      # default that drifts backwards or forwards could remove or rename it.
+      # 22.19.0 is the version the suite is known to pass on.
+      - name: Use Node 22.19.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # EXPLICIT, THOUGH `postinstall` ALREADY RAN IT.
+      #
+      # CLAUDE.md: run `prisma generate` before any verification whenever
+      # schema.prisma changed, because tsc and the tests read the GENERATED
+      # client, not the schema file. A green suite against a stale client proves
+      # only that the old client still compiles — `raffleEnabled` once passed
+      # tsc and 169 tests while being invisible to TypeScript.
+      #
+      # Stated as its own step so the requirement survives someone removing the
+      # postinstall hook.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # `tee` would swallow the exit code without pipefail, turning every test
+      # failure into a green run — which is precisely the class of silent pass
+      # this workflow exists to prevent.
+      - name: Test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.txt
+
+      # THE SKIP IS A SIGNAL, NOT NOISE — and it must not fail the build.
+      #
+      # `npm test` reports "1 skipped" when the disposable Postgres is absent.
+      # Per CLAUDE.md that skip means the concurrency suite — the eight
+      # confirmation and pass-minting cases that are the only real-database
+      # coverage of the money path — DID NOT RUN. A green check that quietly
+      # omits it is worse than a red one, because it reads as complete.
+      #
+      # `if: always()` so the report appears even when the tests failed.
+      - name: Report suite completeness
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f test-output.txt ]; then
+            echo "::warning title=No test output::The test step produced no output file; completeness unknown."
+            exit 0
+          fi
+
+          # `|| true` ON EVERY GREP. GitHub runs these steps as `bash -e`, and a
+          # grep that matches nothing exits non-zero — which would abort the step
+          # through the command substitution and turn "no summary line found"
+          # into a failed build for a run whose tests all passed.
+          SKIPPED=$(grep -oE '^# skipped [0-9]+' test-output.txt | awk '{print $3}' | head -1 || true)
+          PASS=$(grep -oE '^# pass [0-9]+' test-output.txt | awk '{print $3}' | head -1 || true)
+          FAIL=$(grep -oE '^# fail [0-9]+' test-output.txt | awk '{print $3}' | head -1 || true)
+
+          {
+            echo "### Test suite"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| pass | ${PASS:-unknown} |"
+            echo "| fail | ${FAIL:-unknown} |"
+            echo "| skipped | ${SKIPPED:-unknown} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # AN UNPARSEABLE RUN IS NOT A CLEAN RUN.
+          #
+          # If the summary line is missing — the reporter changed, the output was
+          # truncated, the step died early — then completeness is UNKNOWN, and
+          # defaulting it to zero would print "nothing skipped" and manufacture
+          # exactly the false all-clear this step exists to prevent. Say so
+          # instead.
+          if [ -z "$SKIPPED" ]; then
+            echo "> **Could not determine how many tests were skipped.** No \`# skipped\` line in the output, so this run's completeness is unknown — do not read it as complete." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Suite completeness unknown::No '# skipped' summary line found in the test output. Completeness could not be verified."
+          elif [ "$SKIPPED" -gt 0 ]; then
+            {
+              echo "> **The concurrency suite did not run.**"
+              echo ">"
+              echo "> \`${SKIPPED}\` test(s) skipped because no integration database was"
+              echo "> available. The confirmation and pass-minting cases — the only"
+              echo "> real-database coverage of the money path — were NOT exercised by"
+              echo "> this run. This is expected in CI and does not fail the build."
+              echo ">"
+              echo "> To run them locally:"
+              echo "> \`npm run test:db:up && npm run test:integration && npm run test:db:down\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "::warning title=Concurrency suite did not run::${SKIPPED} test(s) skipped — no integration database. The money-path concurrency cases were not exercised. Expected in CI; run npm run test:db:up locally to cover them."
+          else
+            echo "All tests ran; nothing skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # NOT ADDED YET, DELIBERATELY. `scripts/check-event-isolation.sh` ships
+      # with the Event package, which has not landed in this repository. Wiring
+      # it in belongs to that change, not this one — a CI step that calls a
+      # missing script is a red build that teaches people to ignore red builds.
