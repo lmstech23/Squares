@@ -183,6 +183,16 @@ model Board {
   collaborators             BoardCollaborator[]
   invites                   BoardInvite[]
 
+  /// Public theming, Deploy 1 — docs/public-theme-spec.md §2. Additive, nullable,
+  /// no default, no backfill. NULL in all three is exactly today's render.
+  /// CHECK (donation_default_cents > 0) lives in SQL only.
+  themeId              String?      @map("theme_id") @db.Uuid
+  theme                PublicTheme? @relation(fields: [themeId], references: [themeId], onDelete: Restrict, onUpdate: NoAction)
+  donationDefaultCents Int?         @map("donation_default_cents")
+  /// Board configuration for attribution (spec §2.1) — not a theme field and not
+  /// a Host field. CHECK (trimmed, 1–60 chars) lives in SQL only.
+  publicOrganizerLabel String?      @map("public_organizer_label")
+
   /// Two PARTIAL indexes exist on this table and are deliberately NOT
   /// declared here: idx_boards_pending_expiry (WHERE status = pending_payment)
   /// and idx_boards_expired_cleanup (WHERE status = expired). Prisma 6.19.2
@@ -1402,4 +1412,33 @@ enum BoardPaymentMethod {
   paypal
 
   @@map("board_payment_method")
+}
+
+// ---------------------------------------------------------------------------
+// Public theming — docs/public-theme-spec.md v3.1 §2.
+// ---------------------------------------------------------------------------
+
+enum ThemeSurface {
+  LIGHT
+  DARK
+
+  @@map("theme_surface")
+}
+
+/// Presentation only. A board points at a theme; the theme knows nothing about
+/// boards beyond the back-relation. `src/lib/public-theme.ts` reads these
+/// values and imports nothing from Prisma.
+///
+/// CHECK (primary_color ~ '^#[0-9A-F]{6}$') lives in SQL only.
+model PublicTheme {
+  themeId         String       @id @default(dbgenerated("gen_random_uuid()")) @map("theme_id") @db.Uuid
+  /// text, = hosts.supabase_user_id — deliberately not a Host FK (spec §2).
+  organizerUserId String       @map("organizer_user_id")
+  primaryColor    String       @map("primary_color")
+  surface         ThemeSurface @default(DARK)
+  heroImageUrl    String?      @map("hero_image_url")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  boards          Board[]
+
+  @@map("public_themes")
 }
