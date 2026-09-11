@@ -226,7 +226,7 @@ export default function PurchasePanel({
               inputMode="decimal"
               value={donationText}
               onChange={(e) => setDonationText(e.target.value)}
-              placeholder="25"
+              placeholder="Optional"
               className={inputClass}
             />
           </div>
