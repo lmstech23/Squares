@@ -13,6 +13,11 @@ import DonateSheet from "./donate-sheet";
 import EntrySheet, { type EntryTierOffer } from "./entry-sheet";
 import PurchasePanel, { type PanelRail } from "./purchase-panel";
 import HoldTimer from "./hold-timer";
+import {
+  organizerAttribution,
+  themeStyle,
+  type PublicThemeInput,
+} from "@/lib/public-theme";
 
 // Contributor board — fundraiser-board-v2.md §6 and §7.
 //
@@ -108,6 +113,16 @@ interface Props {
     cashapp: string | null;
     paypal: string | null;
   };
+  /// The board's public theme, or null. Null is today's page exactly: the root
+  /// gets no data-surface and no style (public-theme spec invariant 1). Applied
+  /// once, at the root, through themeStyle — never read for a colour here.
+  theme: PublicThemeInput | null;
+  /// Donate Only's presets and first-open selection, from the single source in
+  /// src/lib/contributions.ts, resolved on the server (spec §5).
+  donationPresets: readonly number[];
+  initialDonationCents: number;
+  /// Board attribution (spec §2.1, §9). Independent of the theme.
+  publicOrganizerLabel: string | null;
   /// Set on return from a completed checkout — v2 §6.
   confirmation: {
     positions: number[];
@@ -155,6 +170,10 @@ export default function FundraiserView({
   status,
   handles,
   confirmation,
+  theme,
+  donationPresets,
+  initialDonationCents,
+  publicOrganizerLabel,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
   const [donating, setDonating] = useState(false);
@@ -408,6 +427,10 @@ export default function FundraiserView({
           ? `Get ${u.many} — ${money(currentPrice)}`
           : `Support this fundraiser — ${money(currentPrice)}`;
 
+  // Label first, then today's host line, then nothing — spec §9. With the label
+  // null this is exactly the old `hostName && …` (invariant 12).
+  const attribution = organizerAttribution(publicOrganizerLabel, hostName);
+
   // Clamped at 100% when raised exceeds the goal — the real figure still shows
   // above the bar. v2 §7.
   const pct =
@@ -416,7 +439,7 @@ export default function FundraiserView({
       : null;
 
   return (
-    <div className="min-h-screen bg-tone-950 text-tone-fg">
+    <div className="min-h-screen bg-tone-950 text-tone-fg" {...themeStyle(theme)}>
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* What is this */}
         <h1 className="text-xl font-bold leading-tight">{title}</h1>
@@ -465,8 +488,11 @@ export default function FundraiserView({
             {money(squareProduct.price.amountCents)} per {u.one}
           </p>
         ))}
-        {hostName && (
-          <p className="text-xs text-tone-600 mt-2">hosted by {hostName}</p>
+        {attribution?.kind === "label" && (
+          <p className="text-xs text-tone-600 mt-2">Organized by {attribution.label}</p>
+        )}
+        {attribution?.kind === "host" && (
+          <p className="text-xs text-tone-600 mt-2">hosted by {attribution.hostName}</p>
         )}
 
         {/* How's it going. `raised` is a sum of pricePaidCents, never a count
@@ -781,6 +807,8 @@ export default function FundraiserView({
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
             rails={rails}
+            donationPresets={donationPresets}
+            initialDonationCents={initialDonationCents}
             onClose={() => setDonating(false)}
           />
         )}

@@ -21,7 +21,6 @@ import {
 // hosts are parent groups and booster clubs, not registered charities, and the
 // platform has no way to know which is which.
 
-const PRESETS = [1000, 2500, 5000, 10000];
 const MIN_CENTS = 500;
 
 const inputClass =
@@ -40,6 +39,8 @@ export default function DonateSheet({
   cashModeEnabled,
   stripeConnected,
   rails,
+  donationPresets,
+  initialDonationCents,
   onClose,
 }: {
   slug: string;
@@ -51,11 +52,19 @@ export default function DonateSheet({
    * not decide eligibility and never sees a method it may not offer.
    */
   rails: PanelRail[];
+  /**
+   * The amount presets and the first-open selection. Both come from the single
+   * source in src/lib/contributions.ts (public-theme spec §5), resolved on the
+   * server and passed down: that module imports the Prisma client, so it
+   * cannot be imported into this client component.
+   */
+  donationPresets: readonly number[];
+  initialDonationCents: number;
   onClose: () => void;
 }) {
   // `Other` is a peer option, not a smaller link — the person giving $250
   // should not have to hunt for it (§6).
-  const [preset, setPreset] = useState<number | "other">(2500);
+  const [preset, setPreset] = useState<number | "other">(initialDonationCents);
   const [otherText, setOtherText] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -226,7 +235,7 @@ export default function DonateSheet({
         <div className="mt-4">
           <span className={labelClass}>Amount</span>
           <div className="grid grid-cols-5 gap-2">
-            {PRESETS.map((cents) => (
+            {donationPresets.map((cents) => (
               <button
                 key={cents}
                 type="button"

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import CopyField from "./copy-field";
+import { themeStyle } from "@/lib/public-theme";
 
 export const dynamic = "force-dynamic";
 
@@ -96,6 +97,8 @@ export default async function ReservationPage({ params }: Props) {
       board: {
         select: {
           gameName: true,
+          // Public theme, spec §6. Null for every board until one is assigned.
+          themeId: true,
           timezone: true,
           hostZelle: true,
           hostCashapp: true,
@@ -109,6 +112,14 @@ export default async function ReservationPage({ params }: Props) {
   if (!reservation) notFound();
 
   const { board } = reservation;
+
+  // Null theme -> no attributes on the root, exactly today's page (invariant 1).
+  const theme = board.themeId
+    ? await prisma.publicTheme.findUnique({
+        where: { themeId: board.themeId },
+        select: { primaryColor: true, surface: true },
+      })
+    : null;
   const rail = reservation.paymentRail as keyof typeof HANDLE_FOR;
   const handle = board[HANDLE_FOR[rail]];
   const railLabel = RAIL_LABEL[rail] ?? rail;
@@ -136,7 +147,7 @@ export default async function ReservationPage({ params }: Props) {
   const pending = reservation.status === "pending";
 
   return (
-    <div className="min-h-screen bg-tone-950 text-tone-fg">
+    <div className="min-h-screen bg-tone-950 text-tone-fg" {...themeStyle(theme)}>
       <div className="max-w-lg mx-auto px-4 py-6">
         <p className="text-sm text-tone-400">{board.gameName}</p>
 

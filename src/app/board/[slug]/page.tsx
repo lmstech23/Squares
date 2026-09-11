@@ -332,11 +332,34 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
       ];
     });
 
+    // PUBLIC THEME — docs/public-theme-spec.md §6. Fetched here, inside the
+    // fundraiser branch, and only when one is set. The page query above is
+    // untouched: its `include` already carries the new Board columns.
+    const theme = board.themeId
+      ? await prisma.publicTheme.findUnique({
+          where: { themeId: board.themeId },
+          select: { primaryColor: true, surface: true },
+        })
+      : null;
+
+    // Loaded here rather than at the top of the file: every line of this page
+    // outside L115–400 is out of bounds (spec §6). contributions.ts is already
+    // this page's dependency; this names two more of its exports. The presets
+    // travel as props because donate-sheet is a client component and
+    // contributions.ts imports the Prisma client.
+    const { DONATION_PRESETS_CENTS, initialDonationCents } = await import(
+      "@/lib/contributions"
+    );
+
     return (
       <FundraiserView
         title={board.gameName}
         causeDescription={board.causeDescription}
         hostName={board.host.name}
+        theme={theme}
+        donationPresets={DONATION_PRESETS_CENTS}
+        initialDonationCents={initialDonationCents(board.donationDefaultCents)}
+        publicOrganizerLabel={board.publicOrganizerLabel}
         squareProduct={squareProductFor(
           board,
           board.squares.map((sq) => ({

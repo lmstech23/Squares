@@ -23,6 +23,7 @@ interface Props {
 }
 
 import { ADMISSION } from "@/lib/board-vocabulary";
+import { themeStyle } from "@/lib/public-theme";
 
 export const metadata: Metadata = {
   title: "Your passes — Daali",
@@ -64,7 +65,8 @@ export default async function PassesPage({ params }: Props) {
           startsAt: true,
           venue: true,
           timezone: true,
-          board: { select: { gameName: true } },
+          // themeId: public theme, spec §6. Null until one is assigned.
+          board: { select: { gameName: true, themeId: true } },
         },
       },
     },
@@ -86,6 +88,14 @@ export default async function PassesPage({ params }: Props) {
   });
 
   const event = grant.event;
+
+  // Null theme -> no attributes on the root, exactly today's page (invariant 1).
+  const theme = event.board.themeId
+    ? await prisma.publicTheme.findUnique({
+        where: { themeId: event.board.themeId },
+        select: { primaryColor: true, surface: true },
+      })
+    : null;
   const eventName = event.name ?? event.board.gameName;
 
   const when = new Intl.DateTimeFormat("en-US", {
@@ -98,7 +108,7 @@ export default async function PassesPage({ params }: Props) {
   }).format(event.startsAt);
 
   return (
-    <div className="min-h-screen bg-tone-950 text-tone-fg">
+    <div className="min-h-screen bg-tone-950 text-tone-fg" {...themeStyle(theme)}>
       <div className="max-w-lg mx-auto px-4 py-6">
         <h1 className="text-xl font-bold leading-tight">{eventName}</h1>
         <p className="text-sm text-tone-400 mt-1.5">{when}</p>
