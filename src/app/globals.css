@@ -41,3 +41,95 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 input[type="date"]:hover::-webkit-calendar-picker-indicator {
   opacity: 1;
 }
+
+/* ---------------------------------------------------------------------------
+ * PUBLIC THEMING — docs/public-theme-spec.md v3.1 §3. ADDITIVE ONLY: nothing
+ * above this line is edited.
+ *
+ * Every token defaults to the stock palette value it replaced, so a page with
+ * no theme computes exactly what it did before (invariant 1). Non-inline
+ * @theme, so a token can be overridden on an element; the defaults reference
+ * stock palette variables, which Tailwind emits because they are referenced.
+ * ------------------------------------------------------------------------- */
+@theme {
+  --color-tone-100: var(--color-gray-100);
+  --color-tone-200: var(--color-gray-200);
+  --color-tone-300: var(--color-gray-300);
+  --color-tone-400: var(--color-gray-400);
+  --color-tone-500: var(--color-gray-500);
+  --color-tone-600: var(--color-gray-600);
+  --color-tone-700: var(--color-gray-700);
+  --color-tone-800: var(--color-gray-800);
+  --color-tone-900: var(--color-gray-900);
+  --color-tone-950: var(--color-gray-950);
+  --color-tone-fg: var(--color-white);
+
+  /* Brand roles. The organizer colour feeds ONLY these five (spec §3.2); the
+     defaults below are exactly the stock values each one replaced. */
+  --color-brand: var(--color-white);
+  --color-brand-hover: var(--color-gray-200);
+  --color-on-brand: var(--color-gray-950);
+  --color-brand-line: var(--color-green-500);
+  --color-brand-wash: var(--color-green-950);
+
+  /* Status families. Never derived from the organizer colour (invariant 9). */
+  --color-ok-100: var(--color-green-100);
+  --color-ok-200: var(--color-green-200);
+  --color-ok-300: var(--color-green-300);
+  --color-ok-500: var(--color-green-500);
+  --color-ok-800: var(--color-green-800);
+  --color-ok-900: var(--color-green-900);
+  --color-ok-950: var(--color-green-950);
+  --color-bad-400: var(--color-red-400);
+  --color-bad-900: var(--color-red-900);
+  --color-bad-950: var(--color-red-950);
+  --color-warn-100: var(--color-yellow-100);
+  --color-warn-200: var(--color-yellow-200);
+  --color-warn-600: var(--color-yellow-600);
+  --color-warn-800: var(--color-yellow-800);
+  --color-warn-900: var(--color-yellow-900);
+  --color-warn-950: var(--color-yellow-950);
+  --color-caution-200: var(--color-amber-200);
+  --color-caution-300: var(--color-amber-300);
+  --color-caution-900: var(--color-amber-900);
+  --color-caution-950: var(--color-amber-950);
+}
+
+/* LIGHT surface — LITERALS ONLY (spec §3.1.2, §3.1.5). Never var(--color-…): a
+ * palette variable nothing references is not emitted, and a reference to it
+ * renders transparent with no error. Mirrors LIGHT_TABLE in
+ * src/lib/public-theme.ts; public-theme.test.ts fails if the two disagree.
+ * Brand tokens are not here: they arrive as inline literals from themeStyle(). */
+[data-surface="light"] {
+  --color-tone-950: #FFFFFF;
+  --color-tone-900: #F3F4F6;
+  --color-tone-800: #E5E7EB;
+  --color-tone-700: #D1D5DB;
+  --color-tone-600: #686E7C;
+  --color-tone-500: #5B6472;
+  --color-tone-400: #4B5563;
+  --color-tone-300: #374151;
+  --color-tone-200: #1F2937;
+  --color-tone-100: #111827;
+  --color-tone-fg: #030712;
+  --color-ok-950: #DCFCE7;
+  --color-ok-900: #86EFAC;
+  --color-ok-800: #4ADE80;
+  --color-ok-500: #16A34A;
+  --color-ok-300: #147739;
+  --color-ok-200: #0F4423;
+  --color-ok-100: #0B3019;
+  --color-bad-950: #FEE2E2;
+  --color-bad-900: #FCA5A5;
+  --color-bad-400: #B91C1C;
+  --color-warn-950: #FEF9C3;
+  --color-warn-900: #FDE047;
+  --color-warn-800: #EAB308;
+  --color-warn-600: #A16207;
+  --color-warn-200: #251604;
+  --color-warn-100: #1A0F03;
+  --color-caution-950: #FEF3C7;
+  --color-caution-900: #FCD34D;
+  --color-caution-300: #833C07;
+  --color-caution-200: #693006;
+}
