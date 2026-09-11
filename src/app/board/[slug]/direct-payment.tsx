@@ -43,22 +43,22 @@ export default function DirectPaymentHandles({
       <ul className="space-y-1 text-sm">
         {handles.zelle && (
           <li>
-            <span className="text-gray-500">Zelle</span> — {handles.zelle}
+            <span className="text-tone-500">Zelle</span> — {handles.zelle}
           </li>
         )}
         {handles.cashapp && (
           <li>
-            <span className="text-gray-500">Cash App</span> — {handles.cashapp}
+            <span className="text-tone-500">Cash App</span> — {handles.cashapp}
           </li>
         )}
         {handles.venmo && (
           <li>
-            <span className="text-gray-500">Venmo</span> — {handles.venmo}
+            <span className="text-tone-500">Venmo</span> — {handles.venmo}
           </li>
         )}
         {handles.paypal && (
           <li>
-            <span className="text-gray-500">PayPal</span> — {handles.paypal}
+            <span className="text-tone-500">PayPal</span> — {handles.paypal}
           </li>
         )}
       </ul>

@@ -61,8 +61,8 @@ interface Props {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
-const labelClass = "block text-sm text-gray-400 mb-1.5";
+  "w-full rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5 text-sm text-tone-fg placeholder:text-tone-600 outline-none focus:border-tone-600 transition-colors";
+const labelClass = "block text-sm text-tone-400 mb-1.5";
 
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -287,14 +287,14 @@ export default function ClaimSheet({
     const reservedTotal = reserved.count * priceCents;
     return (
       <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50">
-        <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
+        <div className="bg-tone-950 border border-tone-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
           {/* SAME FIRST LINE AS EVERY OTHER SUCCESSFUL SUBMIT STATE, including
               here, where no money has arrived yet. This screen is the ONLY one
               a direct payer ever sees; leaving the thank-you off it means that
               contributor is never thanked at all. What has and has not
               happened is said below it, never mixed into it. */}
           <p className="text-base font-medium">{CONTRIBUTION_THANKS}</p>
-          <h2 className="mt-1 text-sm text-gray-300">
+          <h2 className="mt-1 text-sm text-tone-300">
             {reserved.count} {reserved.count === 1 ? u.one : u.many} reserved
           </h2>
           {/* NO CLAIM ABOUT DURATION, deliberately. "Nothing expires on a
@@ -302,11 +302,11 @@ export default function ClaimSheet({
               capped by the cash-hold window and by campaign close, and the
               scheduled close auto-releases whatever is unresolved. Do not put
               a duration here before the expiry semantics are settled. */}
-          <p className="mt-1 text-sm text-gray-400">
+          <p className="mt-1 text-sm text-tone-400">
             Payment due: {money(reservedTotal)}
           </p>
 
-          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3">
+          <div className="mt-4 rounded-lg border border-tone-800 bg-tone-900 p-3">
             <DirectPaymentHandles amountLabel={null} handles={handles} />
           </div>
 
@@ -315,7 +315,7 @@ export default function ClaimSheet({
               transfer there is nothing to match a payment to a reservation.
               Uses the name already captured at reservation — no new field, no
               placeholder. */}
-          <p className="mt-3 text-sm text-gray-300">
+          <p className="mt-3 text-sm text-tone-300">
             Include the name &ldquo;{name.trim()}&rdquo; in the payment note.
           </p>
 
@@ -326,10 +326,10 @@ export default function ClaimSheet({
               no reference, and a host reconciling app notifications by hand -
               without a name on the transfer there is nothing to match a
               payment to a reservation. */}
-          <p className="mt-4 text-sm text-gray-400">{AWAITING_HOST_CONFIRMATION}</p>
+          <p className="mt-4 text-sm text-tone-400">{AWAITING_HOST_CONFIRMATION}</p>
 
           {wantsToHelp && (
-            <p className="mt-4 text-sm text-gray-400">
+            <p className="mt-4 text-sm text-tone-400">
               Volunteer sign-up link is included with the confirmation email.
             </p>
           )}
@@ -337,7 +337,7 @@ export default function ClaimSheet({
           {/* STAYS, AND STAYS VISIBLE. On the direct-payment path this screen
               is the pre-payment moment, and the money doc requires the
               no-refund policy be disclosed before payment. Quiet, not absent. */}
-          <p className="mt-4 text-xs text-gray-600 leading-relaxed">
+          <p className="mt-4 text-xs text-tone-600 leading-relaxed">
             Contributions are final and cannot be refunded once confirmed.
           </p>
 
@@ -347,7 +347,7 @@ export default function ClaimSheet({
               onClose();
               window.location.reload();
             }}
-            className="mt-4 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+            className="mt-4 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
           >
             Done
           </button>
@@ -358,7 +358,7 @@ export default function ClaimSheet({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center z-50">
-      <div className="bg-gray-950 border border-gray-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
+      <div className="bg-tone-950 border border-tone-800 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[92vh] overflow-y-auto p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
           {/* The heading used to duplicate the first control. With a
               quantity-first flow the question IS the heading. */}
@@ -366,15 +366,15 @@ export default function ClaimSheet({
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-500 hover:text-white text-sm"
+            className="text-tone-500 hover:text-tone-fg text-sm"
           >
             Close
           </button>
         </div>
 
         {error && (
-          <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-3 mb-4">
-            <p className="text-sm text-red-400">{error}</p>
+          <div className="rounded-lg border border-bad-900/50 bg-bad-950/30 p-3 mb-4">
+            <p className="text-sm text-bad-400">{error}</p>
           </div>
         )}
 
@@ -418,7 +418,7 @@ export default function ClaimSheet({
             }}
             className={inputClass}
           />
-          <p className="text-xs text-gray-600 mt-1.5">
+          <p className="text-xs text-tone-600 mt-1.5">
             {maxQuantity} {maxQuantity === 1 ? `${u.one} is` : `${u.many} are`} left.
           </p>
         </div>
@@ -430,7 +430,7 @@ export default function ClaimSheet({
           <div className="mb-4">
             <label className={labelClass} htmlFor="claim-donation">
               Add a donation{" "}
-              <span className="text-gray-600">(optional, $5 minimum)</span>
+              <span className="text-tone-600">(optional, $5 minimum)</span>
             </label>
             <input
               id="claim-donation"
@@ -440,7 +440,7 @@ export default function ClaimSheet({
               placeholder="0"
               className={inputClass}
             />
-            <p className="text-xs text-gray-600 mt-1.5">
+            <p className="text-xs text-tone-600 mt-1.5">
               This is one payment. If your hold expires, nothing is charged —
               including the extra donation.
             </p>
@@ -449,7 +449,7 @@ export default function ClaimSheet({
 
         {/* What you are getting, by number. Shown before checkout so the
             assignment is never a surprise on the receipt. */}
-        <div className="rounded-lg bg-gray-900 border border-gray-800 px-3 py-3 mb-4">
+        <div className="rounded-lg bg-tone-900 border border-tone-800 px-3 py-3 mb-4">
           <p className="text-sm">
             {count} {count === 1 ? u.one : u.many} —{" "}
             <span className="font-semibold">{money(squareTotal)}</span>
@@ -461,7 +461,7 @@ export default function ClaimSheet({
             </p>
           )}
           {donationCents > 0 && (
-            <p className="text-sm mt-1 border-t border-gray-800 pt-1">
+            <p className="text-sm mt-1 border-t border-tone-800 pt-1">
               Total — <span className="font-semibold">{money(total)}</span>
             </p>
           )}
@@ -477,7 +477,7 @@ export default function ClaimSheet({
               its entry line the same way. This makes the sheet agree with it
               instead of promising numbers that then disappear. */}
           {hasPrize && selectedPositions.length > 0 && (
-            <p className="text-xs text-gray-500 mt-1 tabular-nums">
+            <p className="text-xs text-tone-500 mt-1 tabular-nums">
               {/* Summarised past a dozen. Ninety-seven numbers is not
                   information, it is a wall — and reintroducing a purchase cap
                   to avoid rendering it would be solving a display problem with
@@ -542,7 +542,7 @@ export default function ClaimSheet({
               type="checkbox"
               checked={donateAdmissions}
               onChange={(e) => setDonateAdmissions(e.target.checked)}
-              className="mt-0.5 accent-green-500"
+              className="mt-0.5 accent-brand-line"
             />
             <span>
               {/* "Donate my tickets" read as giving them to another person, or
@@ -550,7 +550,7 @@ export default function ClaimSheet({
                   contribution stands, no passes are minted, and the headcount
                   drops by one. Say that. */}
               <span className="block text-sm">I won&apos;t be attending</span>
-              <span className="block text-xs text-gray-600 mt-0.5">
+              <span className="block text-xs text-tone-600 mt-0.5">
                 {/* The pairing read as a contradiction because the LABEL is an
                     action ("I won't be attending") while this line described
                     current state ("1 ticket, one per square"). The specified
@@ -579,13 +579,13 @@ export default function ClaimSheet({
               type="checkbox"
               checked={wantsToHelp}
               onChange={(e) => setWantsToHelp(e.target.checked)}
-              className="mt-0.5 accent-green-500"
+              className="mt-0.5 accent-brand-line"
             />
             <span>
               <span className="block text-sm">
                 I&apos;d like to help with the event
               </span>
-              <span className="block text-xs text-gray-600 mt-0.5">
+              <span className="block text-xs text-tone-600 mt-0.5">
                 Volunteer sign-up details will be sent with tickets after payment is confirmed.
               </span>
             </span>
@@ -602,10 +602,10 @@ export default function ClaimSheet({
             board routed to a Zelle/CashApp flow with no label — worse than a
             picker, because the contributor learned the method after committing. */}
         {!(stripeConnected && cashModeEnabled) && (
-          <div className="rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 mb-4">
-            <p className="text-sm text-gray-300">
+          <div className="rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5 mb-4">
+            <p className="text-sm text-tone-300">
               Payment:{" "}
-              <span className="text-white">
+              <span className="text-tone-fg">
                 {stripeConnected
                   ? "Credit or debit card"
                   : "Zelle, Cash App, Venmo, or PayPal"}
@@ -625,8 +625,8 @@ export default function ClaimSheet({
                   onClick={() => setMethod(m)}
                   className={`w-full text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                     method === m
-                      ? "border-green-500 bg-green-950/20 text-white"
-                      : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
+                      ? "border-brand-line bg-brand-wash/20 text-tone-fg"
+                      : "border-tone-800 bg-tone-900 text-tone-400 hover:border-tone-700"
                   }`}
                 >
                   {m === "card" ? "Card" : "Zelle, CashApp, Venmo, or PayPal"}
@@ -637,16 +637,16 @@ export default function ClaimSheet({
         )}
 
         {method === "cash" && (
-          <div className="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-4">
+          <div className="rounded-lg border border-tone-800 bg-tone-900 p-3 mb-4">
             <DirectPaymentHandles amountLabel={money(total)} handles={handles} />
-            <p className="text-xs text-gray-600 mt-2.5 leading-relaxed">
+            <p className="text-xs text-tone-600 mt-2.5 leading-relaxed">
               Your {u.many} are held until the host marks your payment received.
             </p>
           </div>
         )}
 
         {/* The no-refund policy must be visible before payment — money doc §8 */}
-        <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+        <p className="text-xs text-tone-600 mb-4 leading-relaxed">
           Contributions are final. Once your payment is confirmed it cannot be
           refunded.
         </p>
@@ -655,7 +655,7 @@ export default function ClaimSheet({
           type="button"
           onClick={submit}
           disabled={loading || count === 0}
-          className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {loading ? "Working…" : `Continue — ${money(total)}`}
         </button>

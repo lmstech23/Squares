@@ -39,8 +39,8 @@ export interface PanelRail {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
-const labelClass = "block text-sm text-gray-400 mb-1.5";
+  "w-full rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5 text-sm text-tone-fg placeholder:text-tone-600 outline-none focus:border-tone-600 transition-colors";
+const labelClass = "block text-sm text-tone-400 mb-1.5";
 
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -160,19 +160,19 @@ export default function PurchasePanel({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-gray-800 bg-gray-950 p-5 max-h-[92vh] overflow-y-auto">
+      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-tone-800 bg-tone-950 p-5 max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <h2 className="text-base font-medium">Get your tickets</h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-300 text-sm"
+            className="text-tone-500 hover:text-tone-300 text-sm"
           >
             Close
           </button>
         </div>
 
-        <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+        <p className="mt-1 text-xs text-tone-500 leading-relaxed">
           Admission to the event. Each ticket admits one person.
         </p>
 
@@ -181,13 +181,13 @@ export default function PurchasePanel({
           {tiers.map((t) => (
             <div
               key={t.tier}
-              className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5"
             >
               <div className="min-w-0">
-                <p className="text-sm text-gray-200">{t.label}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-sm text-tone-200">{t.label}</p>
+                <p className="text-xs text-tone-500">
                   {money(t.priceCents)}
-                  {t.note && <span className="text-gray-600"> · {t.note}</span>}
+                  {t.note && <span className="text-tone-600"> · {t.note}</span>}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -196,7 +196,7 @@ export default function PurchasePanel({
                   aria-label={`One fewer ${t.label}`}
                   onClick={() => bump(t.tier, -1)}
                   disabled={qty(t.tier) === 0}
-                  className="h-9 w-9 rounded-lg border border-gray-800 text-lg text-gray-300 disabled:text-gray-700 hover:border-gray-700 transition-colors"
+                  className="h-9 w-9 rounded-lg border border-tone-800 text-lg text-tone-300 disabled:text-tone-700 hover:border-tone-700 transition-colors"
                 >
                   −
                 </button>
@@ -205,7 +205,7 @@ export default function PurchasePanel({
                   type="button"
                   aria-label={`One more ${t.label}`}
                   onClick={() => bump(t.tier, 1)}
-                  className="h-9 w-9 rounded-lg border border-gray-800 text-lg text-gray-300 hover:border-gray-700 transition-colors"
+                  className="h-9 w-9 rounded-lg border border-tone-800 text-lg text-tone-300 hover:border-tone-700 transition-colors"
                 >
                   +
                 </button>
@@ -217,10 +217,10 @@ export default function PurchasePanel({
         {/* ---- optional donation ---- */}
         <div className="mt-4">
           <label className={labelClass} htmlFor="panel-donation">
-            Add a donation <span className="text-gray-600">(optional)</span>
+            Add a donation <span className="text-tone-600">(optional)</span>
           </label>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">$</span>
+            <span className="text-sm text-tone-500">$</span>
             <input
               id="panel-donation"
               inputMode="decimal"
@@ -230,27 +230,27 @@ export default function PurchasePanel({
               className={inputClass}
             />
           </div>
-          <p className="mt-1 text-xs text-gray-600">
+          <p className="mt-1 text-xs text-tone-600">
             Sent in the same transfer. It buys no ticket — it goes straight to
             the cause.
           </p>
         </div>
 
         {/* ---- running total ---- */}
-        <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 p-3.5">
+        <div className="mt-4 rounded-lg border border-tone-800 bg-tone-900 p-3.5">
           <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="text-gray-400">
+            <span className="text-tone-400">
               {ticketCount} {ticketCount === 1 ? "ticket" : "tickets"}
             </span>
-            <span className="tabular-nums text-gray-200">{money(ticketCents)}</span>
+            <span className="tabular-nums text-tone-200">{money(ticketCents)}</span>
           </div>
           {donationCents > 0 && (
             <div className="mt-1.5 flex items-baseline justify-between gap-3 text-sm">
-              <span className="text-gray-400">Donation</span>
-              <span className="tabular-nums text-gray-200">{money(donationCents)}</span>
+              <span className="text-tone-400">Donation</span>
+              <span className="tabular-nums text-tone-200">{money(donationCents)}</span>
             </div>
           )}
-          <div className="mt-2.5 flex items-baseline justify-between border-t border-gray-800 pt-2.5">
+          <div className="mt-2.5 flex items-baseline justify-between border-t border-tone-800 pt-2.5">
             <span className="text-sm font-medium">Total to send</span>
             <span className="text-xl font-bold tabular-nums">{money(totalCents)}</span>
           </div>
@@ -267,15 +267,15 @@ export default function PurchasePanel({
                 onClick={() => setRail(r.rail)}
                 className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                   rail === r.rail
-                    ? "border-white bg-white text-gray-950 font-medium"
-                    : "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700"
+                    ? "border-brand bg-brand text-on-brand font-medium"
+                    : "border-tone-800 bg-tone-900 text-tone-300 hover:border-tone-700"
                 }`}
               >
                 {r.label}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">
+          <p className="mt-1.5 text-xs text-tone-600 leading-relaxed">
             You send the money directly to the host. Nothing is charged here.
           </p>
         </div>
@@ -305,7 +305,7 @@ export default function PurchasePanel({
               onChange={(e) => setEmail(e.target.value)}
               className={inputClass}
             />
-            <p className="mt-1 text-xs text-gray-600">
+            <p className="mt-1 text-xs text-tone-600">
               Your passes are emailed here once the host confirms.
             </p>
           </div>
@@ -344,26 +344,26 @@ export default function PurchasePanel({
               type="checkbox"
               checked={wantsToHelp}
               onChange={(e) => setWantsToHelp(e.target.checked)}
-              className="mt-0.5 accent-green-500"
+              className="mt-0.5 accent-brand-line"
             />
             <span>
               <span className="block text-sm">
                 I&apos;d like to help with the event
               </span>
-              <span className="block text-xs text-gray-600 mt-0.5">
+              <span className="block text-xs text-tone-600 mt-0.5">
                 Volunteer sign-up details will be sent with tickets after payment is confirmed.
               </span>
             </span>
           </label>
         )}
 
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-3 text-sm text-bad-400">{error}</p>}
 
         <button
           type="button"
           onClick={submit}
           disabled={loading || ticketCount === 0}
-          className="mt-5 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+          className="mt-5 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-50 transition-colors"
         >
           {loading
             ? "One moment…"

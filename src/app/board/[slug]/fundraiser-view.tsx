@@ -416,7 +416,7 @@ export default function FundraiserView({
       : null;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-tone-950 text-tone-fg">
       <div className="max-w-lg mx-auto px-4 py-6">
         {/* What is this */}
         <h1 className="text-xl font-bold leading-tight">{title}</h1>
@@ -424,7 +424,7 @@ export default function FundraiserView({
           /* The reason a stranger gives. Someone arriving from a group text
              reads this before anything else, so it is body copy, not the
              metadata line it used to be under the title. */
-          <p className="text-base text-gray-200 mt-2.5 leading-relaxed">
+          <p className="text-base text-tone-200 mt-2.5 leading-relaxed">
             {causeDescription}
           </p>
         )}
@@ -446,27 +446,27 @@ export default function FundraiserView({
             sells no tickets is the clearest possible statement of a product
             that is not on offer, so the whole block is absent, not blank. */}
         {squareProduct && (squareProduct.price.earlyBird ? (
-          <div className="mt-3 rounded-lg border border-green-800/60 bg-green-950/30 px-3.5 py-3">
+          <div className="mt-3 rounded-lg border border-ok-800/60 bg-ok-950/30 px-3.5 py-3">
             <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-300">
+              <span className="rounded-full bg-ok-500/15 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-ok-300">
                 Early bird
               </span>
-              <span className="text-xl font-bold text-white tabular-nums">
+              <span className="text-xl font-bold text-tone-fg tabular-nums">
                 {money(squareProduct.price.amountCents)}
               </span>
-              <span className="text-sm text-gray-400">per {u.one}</span>
+              <span className="text-sm text-tone-400">per {u.one}</span>
             </div>
-            <p className="text-xs text-gray-400 mt-1.5">
+            <p className="text-xs text-tone-400 mt-1.5">
               Through {shortDate(squareProduct.price.deadline, timezone)}
             </p>
           </div>
         ) : (
-          <p className="text-sm text-gray-500 mt-2">
+          <p className="text-sm text-tone-500 mt-2">
             {money(squareProduct.price.amountCents)} per {u.one}
           </p>
         ))}
         {hostName && (
-          <p className="text-xs text-gray-600 mt-2">hosted by {hostName}</p>
+          <p className="text-xs text-tone-600 mt-2">hosted by {hostName}</p>
         )}
 
         {/* How's it going. `raised` is a sum of pricePaidCents, never a count
@@ -477,14 +477,14 @@ export default function FundraiserView({
             <span className="text-2xl font-bold tabular-nums">
               {money(raisedCents)}
             </span>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-tone-500">
               {goalCents ? <>raised of {money(goalCents)}</> : <>raised</>}
             </span>
           </div>
           {pct !== null && (
-            <div className="mt-2 h-2.5 bg-gray-800 rounded-full overflow-hidden">
+            <div className="mt-2 h-2.5 bg-tone-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-green-500 rounded-full transition-all duration-500"
+                className="h-full bg-brand-line rounded-full transition-all duration-500"
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -510,11 +510,11 @@ export default function FundraiserView({
             that has not confirmed - the poll above is refreshing, and if the
             webhook never lands the contributor is not told a falsehood. */}
         {donation && (
-          <div className="rounded-lg border border-green-900/50 bg-green-950/30 p-4 mt-5">
-            <p className="text-sm font-medium text-green-100">
+          <div className="rounded-lg border border-ok-900/50 bg-ok-950/30 p-4 mt-5">
+            <p className="text-sm font-medium text-ok-100">
               {CONTRIBUTION_THANKS}
             </p>
-            <p className="text-sm text-green-200/80 mt-1">
+            <p className="text-sm text-ok-200/80 mt-1">
               {donation.settled ? "Payment received" : "Payment is still processing"}
             </p>
           </div>
@@ -524,7 +524,7 @@ export default function FundraiserView({
             Never says "ticket" on a no-prize board: ticket to what? The word
             only means something when there is a drawing, and Phase A has none. */}
         {sellsSquares && confirmation && confirmation.positions.length > 0 && (
-          <div className="rounded-lg border border-green-900/50 bg-green-950/30 p-4 mt-5">
+          <div className="rounded-lg border border-ok-900/50 bg-ok-950/30 p-4 mt-5">
             {/* The "🎉 Square #4 is yours." line is deliberately absent. A
                 fundraiser contributor bought a ticket, not a grid position; the
                 square number names an internal detail they never chose and
@@ -533,11 +533,11 @@ export default function FundraiserView({
                 Four of them exist across three components; the sentence is a
                 constant so they cannot drift apart. What actually happened is
                 the line underneath, never mixed into the thank-you. */}
-            <p className="text-sm font-medium text-green-100">
+            <p className="text-sm font-medium text-ok-100">
               {CONTRIBUTION_THANKS}
             </p>
-            <p className="text-sm text-green-200/80 mt-1">Payment received</p>
-            <p className="text-sm text-green-200/80 mt-1">
+            <p className="text-sm text-ok-200/80 mt-1">Payment received</p>
+            <p className="text-sm text-ok-200/80 mt-1">
               {confirmation.positions.length}{" "}
               {confirmation.positions.length === 1 ? u.one : u.many} confirmed
             </p>
@@ -545,13 +545,13 @@ export default function FundraiserView({
             {/* Entry lines only on a prize board — "Entry #23" means nothing
                 when there is no drawing. Gated on the prize, not board type. */}
             {hasPrize && (
-              <p className="text-sm text-green-200/80 mt-2">
+              <p className="text-sm text-ok-200/80 mt-2">
                 {confirmation.positions.length === 1 ? "Entry" : "Entries"}{" "}
                 {confirmation.positions.map((p) => `#${p}`).join(" · ")}
               </p>
             )}
             {confirmation.hasEvent && confirmation.admissionPasses > 0 && (
-              <p className="text-sm text-green-200/80 mt-1">
+              <p className="text-sm text-ok-200/80 mt-1">
                 {confirmation.admissionPasses}{" "}
                 {confirmation.admissionPasses === 1 ? ADMISSION.One : ADMISSION.Many}
                 {confirmation.passesUrl && (
@@ -559,7 +559,7 @@ export default function FundraiserView({
                     {" · "}
                     <a
                       href={confirmation.passesUrl}
-                      className="underline underline-offset-4 hover:text-green-100"
+                      className="underline underline-offset-4 hover:text-ok-100"
                     >
                       View your passes
                     </a>
@@ -572,11 +572,11 @@ export default function FundraiserView({
                 comment on the removed effect above. Only a supporter who
                 ticked the help box sees any of this. */}
             {confirmation.wantsToHelp && (
-              <div className="mt-3 border-t border-green-800/40 pt-3">
+              <div className="mt-3 border-t border-ok-800/40 pt-3">
                 {confirmation.signupUrl ? (
                   <a
                     href={confirmation.signupUrl}
-                    className="inline-block rounded-lg bg-green-200 px-3 py-2 text-sm font-medium text-gray-950 hover:bg-green-100 transition-colors"
+                    className="inline-block rounded-lg bg-ok-200 px-3 py-2 text-sm font-medium text-tone-950 hover:bg-ok-100 transition-colors"
                   >
                     Sign up to volunteer
                   </a>
@@ -585,12 +585,12 @@ export default function FundraiserView({
                      budget. Do NOT offer a link: there is no token yet,
                      because there is no active supporter yet, and a CTA that
                      404s is worse than a sentence that tells the truth. */
-                  <p className="text-sm text-green-200/80">
+                  <p className="text-sm text-ok-200/80">
                     We&apos;ll email your sign-up link as soon as your payment
                     finishes processing.
                   </p>
                 ) : (
-                  <p className="text-sm text-green-200/80">
+                  <p className="text-sm text-ok-200/80">
                     Setting up your sign-up link…
                   </p>
                 )}
@@ -604,7 +604,7 @@ export default function FundraiserView({
                 the confirmation does not rebuild on arrival. */}
             <a
               href={`/board/${slug}`}
-              className="inline-block mt-3 text-sm underline underline-offset-4 text-green-200/70 hover:text-green-100"
+              className="inline-block mt-3 text-sm underline underline-offset-4 text-ok-200/70 hover:text-ok-100"
             >
               Back to the fundraiser
             </a>
@@ -636,7 +636,7 @@ export default function FundraiserView({
               }
             />
             {holdError && (
-              <p className="text-sm text-red-400 mt-2" role="alert">
+              <p className="text-sm text-bad-400 mt-2" role="alert">
                 {holdError}
               </p>
             )}
@@ -655,9 +655,9 @@ export default function FundraiserView({
           <>
         {/* What do I do */}
         {status !== "open" ? (
-          <div className="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4">
+          <div className="mt-5 rounded-lg border border-tone-800 bg-tone-900 p-4">
             <p className="text-sm font-medium">This campaign has closed.</p>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+            <p className="text-xs text-tone-500 mt-1 leading-relaxed">
               Thank you to everyone who contributed.
               {hasEvent
                 ? " Tickets already issued still work at the event."
@@ -675,7 +675,7 @@ export default function FundraiserView({
               type="button"
               onClick={() => setClaiming(true)}
               disabled={squareProduct.openCount === 0}
-              className="w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {squareProduct.openCount === 0 ? `Every ${u.one} is claimed` : ctaLabel}
             </button>
@@ -702,7 +702,7 @@ export default function FundraiserView({
             <button
               type="button"
               onClick={() => setBuyingEntry(true)}
-              className="mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+              className="mt-2 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
             >
               Buy Tickets
             </button>
@@ -722,8 +722,8 @@ export default function FundraiserView({
             onClick={() => setDonating(true)}
             className={
               offers.length === 0 && (squareProduct ? squareProduct.openCount === 0 : true)
-                ? "mt-2 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
-                : "mt-2 w-full rounded-lg border border-gray-800 bg-gray-900 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-700 transition-colors"
+                ? "mt-2 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
+                : "mt-2 w-full rounded-lg border border-tone-800 bg-tone-900 px-4 py-3 text-sm font-medium text-tone-200 hover:border-tone-700 transition-colors"
             }
           >
             Donate Only

@@ -42,11 +42,11 @@ export default function PassViewer({ passes }: { passes: Pass[] }) {
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-tone-400">
           {ADMISSION.One} {clamped + 1} of {total}
         </p>
         {remaining !== total && (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-tone-500">
             {remaining} of {total} left
           </p>
         )}
@@ -73,7 +73,7 @@ export default function PassViewer({ passes }: { passes: Pass[] }) {
             type="button"
             onClick={() => setIndex(clamped - 1)}
             disabled={clamped === 0}
-            className="flex-1 rounded-lg border border-gray-700 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 rounded-lg border border-tone-700 px-4 py-3 text-sm font-medium text-tone-200 hover:border-tone-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             Previous
           </button>
@@ -81,7 +81,7 @@ export default function PassViewer({ passes }: { passes: Pass[] }) {
             type="button"
             onClick={() => setIndex(clamped + 1)}
             disabled={clamped === total - 1}
-            className="flex-1 rounded-lg border border-gray-700 px-4 py-3 text-sm font-medium text-gray-200 hover:border-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 rounded-lg border border-tone-700 px-4 py-3 text-sm font-medium text-tone-200 hover:border-tone-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             Next
           </button>
@@ -89,7 +89,7 @@ export default function PassViewer({ passes }: { passes: Pass[] }) {
       )}
 
       {total > 1 && (
-        <p className="mt-3 text-xs text-gray-600 leading-relaxed">
+        <p className="mt-3 text-xs text-tone-600 leading-relaxed">
           One at a time, so the scanner reads the right one. Tap Next for the
           next person.
         </p>

@@ -34,8 +34,8 @@ export interface EntryTierOffer {
 }
 
 const inputClass =
-  "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
-const labelClass = "block text-sm text-gray-400 mb-1.5";
+  "w-full rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5 text-sm text-tone-fg placeholder:text-tone-600 outline-none focus:border-tone-600 transition-colors";
+const labelClass = "block text-sm text-tone-400 mb-1.5";
 
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -128,19 +128,19 @@ export default function EntrySheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-gray-800 bg-gray-950 p-5 max-h-[92vh] overflow-y-auto">
+      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-tone-800 bg-tone-950 p-5 max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <h2 className="text-base font-medium">Buy entry tickets</h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-300 text-sm"
+            className="text-tone-500 hover:text-tone-300 text-sm"
           >
             Close
           </button>
         </div>
 
-        <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+        <p className="mt-1 text-xs text-tone-500 leading-relaxed">
           Admission to the event. Each ticket admits one person. This
           doesn&apos;t claim a spot on the board.
         </p>
@@ -149,13 +149,13 @@ export default function EntrySheet({
           {offers.map((o) => (
             <div
               key={o.tier}
-              className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5"
+              className="flex items-center justify-between gap-3 rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5"
             >
               <div className="min-w-0">
-                <p className="text-sm text-gray-200">{o.label}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-sm text-tone-200">{o.label}</p>
+                <p className="text-xs text-tone-500">
                   {money(o.priceCents)}
-                  {o.note && <span className="text-gray-600"> · {o.note}</span>}
+                  {o.note && <span className="text-tone-600"> · {o.note}</span>}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -164,7 +164,7 @@ export default function EntrySheet({
                   aria-label={`One fewer ${o.label}`}
                   onClick={() => bump(o.tier, -1)}
                   disabled={qty(o.tier) === 0}
-                  className="h-8 w-8 rounded-lg border border-gray-800 text-gray-300 disabled:text-gray-700 hover:border-gray-700 transition-colors"
+                  className="h-8 w-8 rounded-lg border border-tone-800 text-tone-300 disabled:text-tone-700 hover:border-tone-700 transition-colors"
                 >
                   −
                 </button>
@@ -175,7 +175,7 @@ export default function EntrySheet({
                   type="button"
                   aria-label={`One more ${o.label}`}
                   onClick={() => bump(o.tier, 1)}
-                  className="h-8 w-8 rounded-lg border border-gray-800 text-gray-300 hover:border-gray-700 transition-colors"
+                  className="h-8 w-8 rounded-lg border border-tone-800 text-tone-300 hover:border-tone-700 transition-colors"
                 >
                   +
                 </button>
@@ -185,7 +185,7 @@ export default function EntrySheet({
         </div>
 
         {totalPasses > 0 && (
-          <p className="mt-3 text-sm text-gray-300">
+          <p className="mt-3 text-sm text-tone-300">
             {totalPasses} {totalPasses === 1 ? "pass" : "passes"} ·{" "}
             <span className="font-medium">{money(totalCents)}</span>
           </p>
@@ -215,7 +215,7 @@ export default function EntrySheet({
               onChange={(e) => setEmail(e.target.value)}
               className={inputClass}
             />
-            <p className="mt-1 text-xs text-gray-600">
+            <p className="mt-1 text-xs text-tone-600">
               Your passes are emailed here.
             </p>
           </div>
@@ -254,26 +254,26 @@ export default function EntrySheet({
               type="checkbox"
               checked={wantsToHelp}
               onChange={(e) => setWantsToHelp(e.target.checked)}
-              className="mt-0.5 accent-green-500"
+              className="mt-0.5 accent-brand-line"
             />
             <span>
               <span className="block text-sm">
                 I&apos;d like to help with the event
               </span>
-              <span className="block text-xs text-gray-600 mt-0.5">
+              <span className="block text-xs text-tone-600 mt-0.5">
                 Volunteer sign-up details will be sent with tickets after payment is confirmed.
               </span>
             </span>
           </label>
         )}
 
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        {error && <p className="mt-3 text-sm text-bad-400">{error}</p>}
 
         <button
           type="button"
           onClick={submit}
           disabled={loading || totalPasses === 0}
-          className="mt-5 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+          className="mt-5 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-50 transition-colors"
         >
           {loading
             ? "One moment…"

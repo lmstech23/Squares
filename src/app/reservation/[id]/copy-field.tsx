@@ -40,14 +40,14 @@ export default function CopyField({
   }
 
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900 px-3.5 py-3">
-      <p className="text-[11px] uppercase tracking-wider text-gray-500">{label}</p>
+    <div className="rounded-lg border border-tone-800 bg-tone-900 px-3.5 py-3">
+      <p className="text-[11px] uppercase tracking-wider text-tone-500">{label}</p>
       <div className="mt-1 flex items-center justify-between gap-3">
         <span
           className={
             size === "large"
-              ? "font-bold tabular-nums tracking-wider text-2xl text-white select-all break-all"
-              : "text-base text-gray-100 select-all break-all"
+              ? "font-bold tabular-nums tracking-wider text-2xl text-tone-fg select-all break-all"
+              : "text-base text-tone-100 select-all break-all"
           }
         >
           {value}
@@ -55,14 +55,14 @@ export default function CopyField({
         <button
           type="button"
           onClick={copy}
-          className="shrink-0 rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:border-gray-500 transition-colors"
+          className="shrink-0 rounded-lg border border-tone-700 px-3 py-1.5 text-xs text-tone-300 hover:border-tone-500 transition-colors"
         >
           {state === "copied" ? "Copied" : state === "failed" ? "Select it" : "Copy"}
         </button>
       </div>
-      {hint && <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs text-tone-500 leading-relaxed">{hint}</p>}
       {state === "failed" && (
-        <p className="mt-1.5 text-xs text-amber-300/80">
+        <p className="mt-1.5 text-xs text-caution-300/80">
           This browser blocked copying. Press and hold the text above to select it.
         </p>
       )}

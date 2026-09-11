@@ -25,8 +25,8 @@ const PRESETS = [1000, 2500, 5000, 10000];
 const MIN_CENTS = 500;
 
 const inputClass =
-  "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
-const labelClass = "block text-sm text-gray-400 mb-1.5";
+  "w-full rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5 text-sm text-tone-fg placeholder:text-tone-600 outline-none focus:border-tone-600 transition-colors";
+const labelClass = "block text-sm text-tone-400 mb-1.5";
 
 function money(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-US", {
@@ -168,34 +168,34 @@ export default function DonateSheet({
   if (declared !== null) {
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-        <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-gray-800 bg-gray-950 p-5 max-h-[92vh] overflow-y-auto">
+        <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-tone-800 bg-tone-950 p-5 max-h-[92vh] overflow-y-auto">
           {/* SAME FIRST LINE AS EVERY OTHER SUCCESSFUL SUBMIT STATE, including
               here, where no money has arrived yet. This screen is the ONLY one
               a direct payer ever sees; leaving the thank-you off it means that
               contributor is never thanked at all. What has and has not
               happened is the next-step line at the bottom. */}
           <p className="text-base font-medium">{CONTRIBUTION_THANKS}</p>
-          <h2 className="mt-1 text-sm text-gray-300">
+          <h2 className="mt-1 text-sm text-tone-300">
             Send {money(declared.amountCents)} by {declared.railLabel}
           </h2>
           {/* ONE DESTINATION. This screen used to list every handle the host
               had, which left the donor choosing between the host's payment
               identities at the moment they were trying to send money. The
               choice is made up front now, and this shows only its answer. */}
-          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3.5 py-3">
-            <p className="text-[11px] uppercase tracking-wider text-gray-500">
+          <div className="mt-4 rounded-lg border border-tone-800 bg-tone-900 px-3.5 py-3">
+            <p className="text-[11px] uppercase tracking-wider text-tone-500">
               {declared.railLabel} to
             </p>
-            <p className="mt-1 text-base text-gray-100 select-all break-all">
+            <p className="mt-1 text-base text-tone-100 select-all break-all">
               {declared.handle}
             </p>
           </div>
-          <p className="mt-4 text-sm text-gray-400">{AWAITING_HOST_CONFIRMATION}</p>
+          <p className="mt-4 text-sm text-tone-400">{AWAITING_HOST_CONFIRMATION}</p>
 
           <button
             type="button"
             onClick={onClose}
-            className="mt-5 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+            className="mt-5 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
           >
             Done
           </button>
@@ -206,19 +206,19 @@ export default function DonateSheet({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4">
-      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-gray-800 bg-gray-950 p-5 max-h-[92vh] overflow-y-auto">
+      <div className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-tone-800 bg-tone-950 p-5 max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <h2 className="text-base font-medium">Make a donation</h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-300 text-sm"
+            className="text-tone-500 hover:text-tone-300 text-sm"
           >
             Close
           </button>
         </div>
 
-        <p className="mt-1 text-xs text-gray-500 leading-relaxed">
+        <p className="mt-1 text-xs text-tone-500 leading-relaxed">
           A donation goes straight to the cause. It doesn&apos;t claim a spot on
           the board.
         </p>
@@ -233,8 +233,8 @@ export default function DonateSheet({
                 onClick={() => setPreset(cents)}
                 className={`rounded-lg border px-2 py-2.5 text-sm transition-colors ${
                   preset === cents
-                    ? "border-white bg-white text-gray-950 font-medium"
-                    : "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700"
+                    ? "border-brand bg-brand text-on-brand font-medium"
+                    : "border-tone-800 bg-tone-900 text-tone-300 hover:border-tone-700"
                 }`}
               >
                 {money(cents)}
@@ -245,8 +245,8 @@ export default function DonateSheet({
               onClick={() => setPreset("other")}
               className={`rounded-lg border px-2 py-2.5 text-sm transition-colors ${
                 preset === "other"
-                  ? "border-white bg-white text-gray-950 font-medium"
-                  : "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700"
+                  ? "border-brand bg-brand text-on-brand font-medium"
+                  : "border-tone-800 bg-tone-900 text-tone-300 hover:border-tone-700"
               }`}
             >
               Other
@@ -325,8 +325,8 @@ export default function DonateSheet({
                   onClick={() => setMethod(m)}
                   className={`w-full text-left rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                     method === m
-                      ? "border-green-500 bg-green-950/20 text-white"
-                      : "border-gray-800 bg-gray-900 text-gray-400 hover:border-gray-700"
+                      ? "border-brand-line bg-brand-wash/20 text-tone-fg"
+                      : "border-tone-800 bg-tone-900 text-tone-400 hover:border-tone-700"
                   }`}
                 >
                   {m === "card" ? "Card" : "Send it directly"}
@@ -337,9 +337,9 @@ export default function DonateSheet({
         )}
 
         {stripeConnected && !anyHandle && (
-          <div className="mt-4 rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5">
-            <p className="text-sm text-gray-300">
-              Payment: <span className="text-white">Credit or debit card</span>
+          <div className="mt-4 rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5">
+            <p className="text-sm text-tone-300">
+              Payment: <span className="text-tone-fg">Credit or debit card</span>
             </p>
           </div>
         )}
@@ -356,15 +356,15 @@ export default function DonateSheet({
                   onClick={() => setRail(r.rail)}
                   className={`rounded-lg border px-3 py-2.5 text-sm transition-colors ${
                     rail === r.rail
-                      ? "border-white bg-white text-gray-950 font-medium"
-                      : "border-gray-800 bg-gray-900 text-gray-300 hover:border-gray-700"
+                      ? "border-brand bg-brand text-on-brand font-medium"
+                      : "border-tone-800 bg-tone-900 text-tone-300 hover:border-tone-700"
                   }`}
                 >
                   {r.label}
                 </button>
               ))}
             </div>
-            <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">
+            <p className="mt-1.5 text-xs text-tone-600 leading-relaxed">
               You send the money directly to the host. Nothing is charged here,
               and your donation counts toward the total once they mark it
               received.
@@ -373,13 +373,13 @@ export default function DonateSheet({
         )}
 
         {error && (
-          <p className="mt-3 text-sm text-red-400" role="alert">
+          <p className="mt-3 text-sm text-bad-400" role="alert">
             {error}
           </p>
         )}
 
-        <div className="mt-5 flex items-center justify-between rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5">
-          <span className="text-sm text-gray-400">Total</span>
+        <div className="mt-5 flex items-center justify-between rounded-lg border border-tone-800 bg-tone-900 px-3 py-2.5">
+          <span className="text-sm text-tone-400">Total</span>
           <span className="text-sm font-medium">{money(amountCents)}</span>
         </div>
 
@@ -387,7 +387,7 @@ export default function DonateSheet({
           type="button"
           onClick={submit}
           disabled={loading}
-          className="mt-4 w-full rounded-lg bg-white px-4 py-3 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-40 transition-colors"
+          className="mt-4 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-40 transition-colors"
         >
           {loading
             ? method === "card"
@@ -398,7 +398,7 @@ export default function DonateSheet({
               : `I'll send ${money(amountCents)}`}
         </button>
 
-        <p className="mt-3 text-[11px] text-gray-600 leading-relaxed">
+        <p className="mt-3 text-[11px] text-tone-600 leading-relaxed">
           Your donation goes to the host running this fundraiser. Daali collects
           it on their behalf.
         </p>

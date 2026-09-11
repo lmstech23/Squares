@@ -136,9 +136,9 @@ export default async function ReservationPage({ params }: Props) {
   const pending = reservation.status === "pending";
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-tone-950 text-tone-fg">
       <div className="max-w-lg mx-auto px-4 py-6">
-        <p className="text-sm text-gray-400">{board.gameName}</p>
+        <p className="text-sm text-tone-400">{board.gameName}</p>
 
         {/* WHAT HAPPENED, AND WHAT IS STILL REQUIRED, ABOVE EVERYTHING ELSE.
             The page used to open on a small-caps "Your reservation" label and a
@@ -154,7 +154,7 @@ export default async function ReservationPage({ params }: Props) {
         {pending ? (
           <>
             <h1 className="mt-1 text-2xl font-bold leading-tight">Reservation saved</h1>
-            <p className="mt-1.5 text-sm text-gray-300 leading-relaxed">
+            <p className="mt-1.5 text-sm text-tone-300 leading-relaxed">
               Send {money(totalCents)} by {railLabel} to finish. Your passes are
               emailed once the host marks the payment received.
             </p>
@@ -164,9 +164,9 @@ export default async function ReservationPage({ params }: Props) {
             <h1 className="mt-1 text-2xl font-bold leading-tight">
               Reservation released
             </h1>
-            <p className="mt-1.5 text-sm text-gray-300 leading-relaxed">
+            <p className="mt-1.5 text-sm text-tone-300 leading-relaxed">
               Nothing is owed and nothing was charged.{" "}
-              <span className="text-gray-400">
+              <span className="text-tone-400">
                 Reserved {reservedOn}. If you did send payment, contact the host
                 — do not send it again.
               </span>
@@ -174,10 +174,10 @@ export default async function ReservationPage({ params }: Props) {
           </>
         ) : (
           <>
-            <h1 className="mt-1 text-2xl font-bold leading-tight text-green-300">
+            <h1 className="mt-1 text-2xl font-bold leading-tight text-ok-300">
               You&apos;re all set
             </h1>
-            <p className="mt-1.5 text-sm text-gray-300 leading-relaxed">
+            <p className="mt-1.5 text-sm text-tone-300 leading-relaxed">
               Passes emailed to {reservation.contributorEmail}.
             </p>
           </>
@@ -185,8 +185,8 @@ export default async function ReservationPage({ params }: Props) {
 
         {/* What they reserved. Per-line prices, because a total alone cannot be
             checked against what they chose. */}
-        <div className="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4">
-          <p className="text-[11px] uppercase tracking-wider text-gray-500">
+        <div className="mt-5 rounded-lg border border-tone-800 bg-tone-900 p-4">
+          <p className="text-[11px] uppercase tracking-wider text-tone-500">
             Your reservation
           </p>
           <ul className="mt-2 space-y-1.5">
@@ -195,26 +195,26 @@ export default async function ReservationPage({ params }: Props) {
                 key={`${l.tier}:${l.priceBasis}`}
                 className="flex items-baseline justify-between gap-3 text-sm"
               >
-                <span className="text-gray-300">
+                <span className="text-tone-300">
                   {l.quantity} × {TIER_LABEL[l.tier] ?? l.tier}
                   {l.priceBasis === "EARLY" && (
-                    <span className="text-gray-600"> · early bird</span>
+                    <span className="text-tone-600"> · early bird</span>
                   )}
-                  <span className="text-gray-600"> @ {money(l.unitPriceCents)}</span>
+                  <span className="text-tone-600"> @ {money(l.unitPriceCents)}</span>
                 </span>
-                <span className="tabular-nums text-gray-200">
+                <span className="tabular-nums text-tone-200">
                   {money(l.unitPriceCents * l.quantity)}
                 </span>
               </li>
             ))}
           </ul>
           {donationCents > 0 && (
-            <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-gray-800 pt-2 text-sm">
-              <span className="text-gray-300">Donation</span>
-              <span className="tabular-nums text-gray-200">{money(donationCents)}</span>
+            <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-tone-800 pt-2 text-sm">
+              <span className="text-tone-300">Donation</span>
+              <span className="tabular-nums text-tone-200">{money(donationCents)}</span>
             </div>
           )}
-          <div className="mt-3 flex items-baseline justify-between border-t border-gray-800 pt-2.5">
+          <div className="mt-3 flex items-baseline justify-between border-t border-tone-800 pt-2.5">
             <span className="text-sm font-medium">Total</span>
             <span className="text-lg font-bold tabular-nums">{money(totalCents)}</span>
           </div>
@@ -238,11 +238,11 @@ export default async function ReservationPage({ params }: Props) {
               ) : (
                 // The host cleared the handle after this was reserved. Say so
                 // plainly rather than rendering a blank field to copy.
-                <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 px-3.5 py-3">
-                  <p className="text-sm text-amber-200">
+                <div className="rounded-lg border border-caution-900/60 bg-caution-950/20 px-3.5 py-3">
+                  <p className="text-sm text-caution-200">
                     This host&apos;s {railLabel} details are no longer set up.
                   </p>
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-tone-400">
                     Contact them before sending anything.
                   </p>
                 </div>
@@ -260,7 +260,7 @@ export default async function ReservationPage({ params }: Props) {
                 platform goes through a card form; this one does not, and
                 someone who assumes it did will sit waiting for a charge that
                 never comes. */}
-            <p className="mt-4 text-xs text-gray-500 leading-relaxed">
+            <p className="mt-4 text-xs text-tone-500 leading-relaxed">
               Nothing is charged through Daali. You send the money directly to
               the host with the app above, and they mark it received — usually
               within a day or two. Your passes are emailed to you then.
@@ -268,7 +268,7 @@ export default async function ReservationPage({ params }: Props) {
           </>
         )}
 
-        <p className="mt-6 text-[11px] text-gray-600 leading-relaxed">
+        <p className="mt-6 text-[11px] text-tone-600 leading-relaxed">
           Reserved by {reservation.contributorName}. Keep this link — it is the
           way back to your reservation.
         </p>

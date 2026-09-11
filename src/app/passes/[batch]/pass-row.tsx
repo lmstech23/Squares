@@ -47,15 +47,15 @@ export default function PassRow({ token, ordinal, total, used, label }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
+    <div className="rounded-lg border border-tone-800 bg-tone-900 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">
             {ADMISSION.One} {ordinal} of {total}
           </p>
-          {label && <p className="text-xs text-gray-500 mt-0.5">{label}</p>}
+          {label && <p className="text-xs text-tone-500 mt-0.5">{label}</p>}
           {used && (
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-tone-500 mt-0.5">
               Already scanned at the gate
             </p>
           )}
@@ -63,7 +63,7 @@ export default function PassRow({ token, ordinal, total, used, label }: Props) {
         <button
           type="button"
           onClick={share}
-          className="flex-shrink-0 rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:text-white hover:border-gray-600 transition-colors"
+          className="flex-shrink-0 rounded-lg border border-tone-700 px-3 py-1.5 text-xs text-tone-300 hover:text-tone-fg hover:border-tone-600 transition-colors"
         >
           {copied ? "Link copied" : "Share"}
         </button>

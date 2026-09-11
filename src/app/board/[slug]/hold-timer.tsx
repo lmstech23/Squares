@@ -85,23 +85,23 @@ export default function HoldTimer({
     // contributor can act on rather than asserting a state we haven't
     // confirmed. An explanation, not a dead end (§6).
     return (
-      <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-5">
+      <div className="rounded-lg border border-tone-800 bg-tone-900 p-4 mb-5">
         <p className="text-sm font-medium">Your hold expired.</p>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-tone-500 mt-1">
           Your {unit.many} are being released. Claim them again?
         </p>
         <div className="flex gap-2 mt-3">
           <button
             type="button"
             onClick={onReclaim}
-            className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 transition-colors"
+            className="rounded-lg bg-brand px-3 py-2 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
           >
             Claim them again
           </button>
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-lg px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+            className="rounded-lg px-3 py-2 text-sm text-tone-400 hover:text-tone-fg transition-colors"
           >
             No thanks
           </button>
@@ -115,14 +115,14 @@ export default function HoldTimer({
   const seconds = totalSeconds % 60;
 
   return (
-    <div className="rounded-lg border border-yellow-900/50 bg-yellow-950/30 p-4 mb-5">
-      <p className="text-sm text-yellow-200">
+    <div className="rounded-lg border border-warn-900/50 bg-warn-950/30 p-4 mb-5">
+      <p className="text-sm text-warn-200">
         Your {unit.many} are held for{" "}
         <span className="font-semibold tabular-nums">
           {minutes}:{String(seconds).padStart(2, "0")}
         </span>
       </p>
-      <p className="text-xs text-yellow-200/60 mt-1">
+      <p className="text-xs text-warn-200/60 mt-1">
         Finish checkout before the timer runs out and they are yours.
       </p>
 
@@ -136,7 +136,7 @@ export default function HoldTimer({
             type="button"
             onClick={actions.onResume}
             disabled={actions.busy !== null}
-            className="rounded-lg bg-yellow-200 px-3 py-2 text-sm font-medium text-gray-950 hover:bg-yellow-100 disabled:opacity-40 transition-colors"
+            className="rounded-lg bg-warn-200 px-3 py-2 text-sm font-medium text-tone-950 hover:bg-warn-100 disabled:opacity-40 transition-colors"
           >
             {actions.busy === "resume" ? "Opening…" : "Finish card payment"}
           </button>
@@ -145,7 +145,7 @@ export default function HoldTimer({
               type="button"
               onClick={actions.onSwitchToCash}
               disabled={actions.busy !== null}
-              className="rounded-lg border border-yellow-800 px-3 py-2 text-sm text-yellow-100 hover:border-yellow-600 disabled:opacity-40 transition-colors"
+              className="rounded-lg border border-warn-800 px-3 py-2 text-sm text-warn-100 hover:border-warn-600 disabled:opacity-40 transition-colors"
             >
               {actions.busy === "cash" ? "Switching…" : "Pay another way"}
             </button>
@@ -154,7 +154,7 @@ export default function HoldTimer({
             type="button"
             onClick={actions.onRelease}
             disabled={actions.busy !== null}
-            className="rounded-lg px-3 py-2 text-sm text-yellow-200/70 hover:text-yellow-100 disabled:opacity-40 transition-colors"
+            className="rounded-lg px-3 py-2 text-sm text-warn-200/70 hover:text-warn-100 disabled:opacity-40 transition-colors"
           >
             {actions.busy === "release" ? "Releasing…" : `Release these ${unit.many}`}
           </button>

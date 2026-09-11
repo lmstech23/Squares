@@ -98,25 +98,25 @@ export default async function PassesPage({ params }: Props) {
   }).format(event.startsAt);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-tone-950 text-tone-fg">
       <div className="max-w-lg mx-auto px-4 py-6">
         <h1 className="text-xl font-bold leading-tight">{eventName}</h1>
-        <p className="text-sm text-gray-400 mt-1.5">{when}</p>
+        <p className="text-sm text-tone-400 mt-1.5">{when}</p>
         {event.venue && (
-          <p className="text-sm text-gray-500 mt-0.5">{event.venue}</p>
+          <p className="text-sm text-tone-500 mt-0.5">{event.venue}</p>
         )}
 
         {passes.length === 0 ? (
-          <div className="mt-6 rounded-lg border border-gray-800 bg-gray-900 p-4">
+          <div className="mt-6 rounded-lg border border-tone-800 bg-tone-900 p-4">
             <p className="text-sm">No passes on this purchase.</p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-tone-500 mt-1">
               Admissions were donated. Your contribution still counts toward the
               goal.
             </p>
           </div>
         ) : (
           <>
-            <p className="text-sm text-gray-400 mt-5">
+            <p className="text-sm text-tone-400 mt-5">
               {passes.length} {passes.length === 1 ? ADMISSION.one : ADMISSION.many}. Each
               admits one person — share one on its own and keep the rest.
             </p>
@@ -132,7 +132,7 @@ export default async function PassesPage({ params }: Props) {
           </>
         )}
 
-        <p className="text-xs text-gray-600 mt-6 leading-relaxed">
+        <p className="text-xs text-tone-600 mt-6 leading-relaxed">
           Keep this link. It always shows your current passes, so you can come
           back to it if the email is gone.
         </p>
