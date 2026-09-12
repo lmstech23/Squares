@@ -310,9 +310,11 @@ have accepted the wrong one both times.
   which no longer exist — except 49, which is amended by the same document.
 
 **Numbering is allocated by `invariant-registry.md`, not by whoever writes next.**
-Next free number: **110**. Environment invariants **E1–E5** are lettered and
-consume no product number. Never reuse a retired number; a renumbering leaves the
-old number dead, not available.
+The next free number is the one the registry's last line names — read it there.
+This file names no number on purpose: it said 110 while the registry had reached
+120, and any number written here goes stale the same way. Environment invariants
+**E1–E5** are lettered and consume no product number. Never reuse a retired
+number; a renumbering leaves the old number dead, not available.
 - Any Game Day flow, route, or test.
 - Adding admission columns to `Board` or `Square`. The model deliberately puts none there. If the code seems to need one, the model is being misread.
 
