@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.2 — reconciled against the repo
+**Version:** 1.2.3 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -308,9 +308,9 @@ Confirmed in the repo:
 |---|---|
 | `prisma/schema.prisma` | §8. The CHECK cannot be expressed here; it goes in the generated migration.sql by hand |
 | `contributions.ts:149` | Stripe creation — write `STRIPE` + `CARD` |
-| `contributions.ts:301` | Second creator. **Open it before M0 and report what it writes** |
-| `cash-donation` route:195 + `cash-donation-form.tsx` | Picker, required |
-| `donations/confirm-button.tsx` | Picker, required |
+| `contributions.ts:301` | `recordCashDonation` — Record donation creates here, confirmed in one host action |
+| `cash-donation` route + `cash-donation-form.tsx` | Record donation. Picker, required; creates through `recordCashDonation`, `contributions.ts:301` |
+| `cash-donation` route:195 + `donations/confirm-button.tsx` | Confirm a declared donation. Updates the existing pending contribution; M2 writes tender into that update. Picker, required |
 | `confirm-cash` route:189 | Picker, required |
 | `entry-reservation.ts:168` | Picker, required |
 | `donate` route:177 | **No picker.** Leaves tender null |
