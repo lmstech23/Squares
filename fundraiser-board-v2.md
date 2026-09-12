@@ -197,7 +197,6 @@ Free entries occupy no square, so they cannot be Square rows.
 
 `settlement` is system-written and is constrained against `tender`, by invariant 121: Stripe requires Card, and Offline may not use Card. The independence rule above applies to the declared rail only.
 
-- `CARD` is Stripe's alone. `STRIPE` pairs only with `CARD`, and `OFFLINE` never with `CARD` — a check constraint enforces the legal pairs.
 - `tender` is null on contributions recorded before this change and on declared donations not yet confirmed. Every offline contribution confirmed from now on carries one.
 
 ---
