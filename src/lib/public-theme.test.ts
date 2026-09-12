@@ -7,6 +7,7 @@ import {
   DARK_SURFACE_COLOR,
   composite,
   contrastRatio,
+  relativeLuminance,
   deriveBrandTokens,
   normalizeOrganizerLabel,
   normalizePrimaryColor,
@@ -149,6 +150,20 @@ describe("LIGHT table — contrast (spec §3.2: text at 4.5:1)", () => {
     for (const bg of ["ok-200", "ok-100", "warn-200", "warn-100"] as const) {
       assert.ok(contrastRatio(T("tone-950"), T(bg)) >= 4.5, bg);
     }
+  });
+
+  test("control boundaries: tone-800 and tone-700 ≥ 3:1 on the page and on cards (WCAG 1.4.11)", () => {
+    for (const t of ["tone-800", "tone-700"] as const) {
+      for (const [name, bg] of [["page", surface], ["card", card]] as const) {
+        const r = contrastRatio(T(t), bg);
+        assert.ok(r >= 3, `${t} border on ${name}: ${r.toFixed(2)}:1`);
+      }
+    }
+  });
+
+  test("hover borders still step darker: tone-600 < tone-700 < tone-800", () => {
+    assert.ok(relativeLuminance(T("tone-600")) < relativeLuminance(T("tone-700")));
+    assert.ok(relativeLuminance(T("tone-700")) < relativeLuminance(T("tone-800")));
   });
 
   test("a 100 step is distinct from its 200, so LIGHT hover still changes colour", () => {

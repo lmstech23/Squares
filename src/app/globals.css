@@ -103,8 +103,8 @@ input[type="date"]:hover::-webkit-calendar-picker-indicator {
 [data-surface="light"] {
   --color-tone-950: #FFFFFF;
   --color-tone-900: #F3F4F6;
-  --color-tone-800: #E5E7EB;
-  --color-tone-700: #D1D5DB;
+  --color-tone-800: #868B96;
+  --color-tone-700: #757A87;
   --color-tone-600: #686E7C;
   --color-tone-500: #5B6472;
   --color-tone-400: #4B5563;

@@ -41,6 +41,12 @@ function assertNever(value: never): never {
  * (tone-950), cards and inputs (tone-900), and its own status panel. Hues are
  * the stock hue of the family they replace.
  *
+ * Every token that draws a CONTROL BOUNDARY meets 3:1 against both the page and
+ * a card (WCAG 1.4.11): tone-800 is the border on buttons, chips, inputs and
+ * steppers; tone-700 is the secondary-button border and the hover step. On
+ * LIGHT a fill barely differs from the page, so the border is what makes a
+ * control read as a control. Hover still steps darker: 600 < 700 < 800.
+ *
  * MIRRORED as literals into globals.css `[data-surface="light"]`. The test
  * parses that rule and fails if the two ever disagree, so this object is the
  * single source and the CSS is its rendering.
@@ -50,8 +56,8 @@ function assertNever(value: never): never {
 export const LIGHT_TABLE = {
   "tone-950": "#FFFFFF",
   "tone-900": "#F3F4F6",
-  "tone-800": "#E5E7EB",
-  "tone-700": "#D1D5DB",
+  "tone-800": "#868B96",
+  "tone-700": "#757A87",
   "tone-600": "#686E7C",
   "tone-500": "#5B6472",
   "tone-400": "#4B5563",
