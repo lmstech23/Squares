@@ -46,6 +46,8 @@ function assertNever(value: never): never {
  * steppers; tone-700 is the secondary-button border and the hover step. On
  * LIGHT a fill barely differs from the page, so the border is what makes a
  * control read as a control. Hover still steps darker: 600 < 700 < 800.
+ * tone-800 and tone-700 are BORDERS ONLY; the one fill that used tone-800,
+ * the progress track, has its own token, tone-track (amendment, Sep 12).
  *
  * MIRRORED as literals into globals.css `[data-surface="light"]`. The test
  * parses that rule and fails if the two ever disagree, so this object is the
@@ -65,6 +67,9 @@ export const LIGHT_TABLE = {
   "tone-200": "#1F2937",
   "tone-100": "#111827",
   "tone-fg": "#030712",
+  // The progress TRACK — a fill, not a border. Light, so the organizer's fill
+  // reads against it; validateTheme holds every accent at 3:1 to it.
+  "tone-track": "#E5E7EB",
   "ok-950": "#DCFCE7",
   "ok-900": "#86EFAC",
   "ok-800": "#4ADE80",
@@ -92,6 +97,9 @@ export type LightToken = keyof typeof LIGHT_TABLE;
 /** The DARK page surface — stock gray-950, today's background. */
 export const DARK_SURFACE_COLOR = "#030712";
 
+/** The DARK progress track — stock gray-800, as the build emits it. */
+export const DARK_TRACK_COLOR = "#1E2939";
+
 /** The colour a theme's accent is measured against (spec §3.4). */
 export function surfaceColor(surface: ThemeSurfaceName): string {
   switch (surface) {
@@ -99,6 +107,19 @@ export function surfaceColor(surface: ThemeSurfaceName): string {
       return LIGHT_TABLE["tone-950"];
     case "DARK":
       return DARK_SURFACE_COLOR;
+    default:
+      return assertNever(surface);
+  }
+}
+
+/** The progress track the organizer's fill is drawn over. An accent must
+ *  read against it at 3:1, or the bar stops saying how much was raised. */
+export function trackColor(surface: ThemeSurfaceName): string {
+  switch (surface) {
+    case "LIGHT":
+      return LIGHT_TABLE["tone-track"];
+    case "DARK":
+      return DARK_TRACK_COLOR;
     default:
       return assertNever(surface);
   }
@@ -216,13 +237,24 @@ export function deriveBrandTokens(primaryColor: string): BrandTokens | null {
 }
 
 export type ThemeValidation =
-  | { ok: true; theme: PublicThemeInput; tokens: BrandTokens; accentContrast: number }
+  | {
+      ok: true;
+      theme: PublicThemeInput;
+      tokens: BrandTokens;
+      accentContrast: number;
+      trackContrast: number;
+    }
   | { ok: false; reason: string };
 
 /**
  * The write-time gate (spec §3.4). An accent under 3:1 against its own surface
  * is REJECTED — never silently lightened or darkened into something the
  * organizer did not choose.
+ *
+ * It must ALSO reach 3:1 against that surface's progress track (amendment,
+ * Sep 12): the accent is the bar's fill, and a fill that disappears into its
+ * track tells nobody how much was raised. Both surfaces: a light accent fails
+ * against LIGHT's pale track, a very dark one against DARK's gray-800 track.
  */
 export function validateTheme(input: { primaryColor: string; surface: string }): ThemeValidation {
   if (!isThemeSurface(input.surface)) {
@@ -243,11 +275,26 @@ export function validateTheme(input: { primaryColor: string; surface: string }):
         `the minimum is 3:1. Choose a colour with more contrast — it is not adjusted automatically.`,
     };
   }
+  const trackContrast = contrastRatio(primaryColor, trackColor(input.surface));
+  if (trackContrast < 3) {
+    return {
+      ok: false,
+      reason:
+        `${primaryColor} is ${trackContrast.toFixed(2)}:1 against the ${input.surface} progress track; ` +
+        `the minimum is 3:1, or the bar's fill disappears into its track. Choose a colour with more contrast.`,
+    };
+  }
   const tokens = deriveBrandTokens(primaryColor);
   if (!tokens) {
     return { ok: false, reason: `${primaryColor} cannot carry readable button text at 4.5:1` };
   }
-  return { ok: true, theme: { primaryColor, surface: input.surface }, tokens, accentContrast };
+  return {
+    ok: true,
+    theme: { primaryColor, surface: input.surface },
+    tokens,
+    accentContrast,
+    trackContrast,
+  };
 }
 
 // ------------------------------------------------------------ rendering ----

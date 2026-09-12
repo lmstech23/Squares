@@ -508,7 +508,7 @@ export default function FundraiserView({
             </span>
           </div>
           {pct !== null && (
-            <div className="mt-2 h-2.5 bg-tone-800 rounded-full overflow-hidden">
+            <div className="mt-2 h-2.5 bg-tone-track rounded-full overflow-hidden">
               <div
                 className="h-full bg-brand-line rounded-full transition-all duration-500"
                 style={{ width: `${pct}%` }}

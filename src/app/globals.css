@@ -63,6 +63,9 @@ input[type="date"]:hover::-webkit-calendar-picker-indicator {
   --color-tone-900: var(--color-gray-900);
   --color-tone-950: var(--color-gray-950);
   --color-tone-fg: var(--color-white);
+  /* The progress track is a FILL, so it has its own value on LIGHT;
+     tone-800 and tone-700 are borders only. Spec amendment, Sep 12. */
+  --color-tone-track: var(--color-gray-800);
 
   /* Brand roles. The organizer colour feeds ONLY these five (spec §3.2); the
      defaults below are exactly the stock values each one replaced. */
@@ -112,6 +115,7 @@ input[type="date"]:hover::-webkit-calendar-picker-indicator {
   --color-tone-200: #1F2937;
   --color-tone-100: #111827;
   --color-tone-fg: #030712;
+  --color-tone-track: #E5E7EB;
   --color-ok-950: #DCFCE7;
   --color-ok-900: #86EFAC;
   --color-ok-800: #4ADE80;

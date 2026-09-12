@@ -13,6 +13,8 @@ import {
   normalizePrimaryColor,
   organizerAttribution,
   surfaceColor,
+  trackColor,
+  DARK_TRACK_COLOR,
   themeStyle,
   validateTheme,
   type LightToken,
@@ -161,6 +163,14 @@ describe("LIGHT table — contrast (spec §3.2: text at 4.5:1)", () => {
     }
   });
 
+  test("tone-800 and tone-700 are borders only — no fill anywhere uses them", () => {
+    const fills = [...walk("src")].filter((f) => f.endsWith(".tsx"))
+      .flatMap((f) => [...read(f).matchAll(/(?:^|[\s"'`{:])(?:[a-z-]+:)*(?:bg|from|via|to|fill|stroke|ring)-tone-(?:800|700)\b/g)].map(() => f));
+    assert.deepEqual(fills, []);
+    const track = [...walk("src")].filter((f) => f.endsWith(".tsx") && read(f).includes("bg-tone-track"));
+    assert.deepEqual(track, ["src/app/board/[slug]/fundraiser-view.tsx"]);
+  });
+
   test("hover borders still step darker: tone-600 < tone-700 < tone-800", () => {
     assert.ok(relativeLuminance(T("tone-600")) < relativeLuminance(T("tone-700")));
     assert.ok(relativeLuminance(T("tone-700")) < relativeLuminance(T("tone-800")));
@@ -173,7 +183,7 @@ describe("LIGHT table — contrast (spec §3.2: text at 4.5:1)", () => {
 
   test("globals.css [data-surface=light] matches LIGHT_TABLE exactly", () => {
     const declared = Object.fromEntries(
-      [...lightRule().matchAll(/--color-([a-z]+-(?:\d+|fg)):\s*(#[0-9A-Fa-f]{6});/g)].map((m) => [m[1], m[2]])
+      [...lightRule().matchAll(/--color-([a-z]+-(?:\d+|fg|track)):\s*(#[0-9A-Fa-f]{6});/g)].map((m) => [m[1], m[2]])
     );
     assert.deepEqual(declared, { ...LIGHT_TABLE });
   });
@@ -190,6 +200,8 @@ describe("LIGHT table — contrast (spec §3.2: text at 4.5:1)", () => {
       if (m) assert.equal(ref, `${STOCK[m[1] as keyof typeof STOCK]}-${m[2]}`, tok);
     }
     assert.equal(defs["tone-fg"], "white");
+    // Unthemed, the track is exactly the stock gray-800 it replaced.
+    assert.equal(defs["tone-track"], "gray-800");
     assert.equal(defs["brand"], "white");
     assert.equal(defs["brand-hover"], "gray-200");
     assert.equal(defs["on-brand"], "gray-950");
@@ -202,6 +214,48 @@ describe("LIGHT table — contrast (spec §3.2: text at 4.5:1)", () => {
 // ------------------------------------------------------------ validation
 
 describe("theme validation (spec §3.4)", () => {
+  test("track colours: LIGHT is the LIGHT_TABLE literal, DARK is stock gray-800", () => {
+    assert.equal(trackColor("LIGHT"), "#E5E7EB");
+    assert.equal(trackColor("DARK"), DARK_TRACK_COLOR);
+    assert.equal(DARK_TRACK_COLOR, "#1E2939");
+  });
+
+  test("#004AAD passes both checks: 8.13:1 on white, 6.57:1 on the LIGHT track", () => {
+    const v = validateTheme({ primaryColor: "#004AAD", surface: "LIGHT" });
+    assert.ok(v.ok);
+    assert.equal(v.accentContrast.toFixed(2), "8.13");
+    assert.equal(v.trackContrast.toFixed(2), "6.57");
+  });
+
+  test("an accent that clears the surface but not the track is rejected — both surfaces", () => {
+    // LIGHT: a bright blue clears white at 3:1 but vanishes into the pale track.
+    assert.ok(contrastRatio("#3A86FF", surfaceColor("LIGHT")) >= 3);
+    assert.ok(contrastRatio("#3A86FF", trackColor("LIGHT")) < 3);
+    const light = validateTheme({ primaryColor: "#3A86FF", surface: "LIGHT" });
+    assert.equal(light.ok, false);
+    assert.match(!light.ok ? light.reason : "", /track/);
+    // DARK: a deep violet clears gray-950 but not the gray-800 track.
+    assert.ok(contrastRatio("#7C3AED", surfaceColor("DARK")) >= 3);
+    assert.ok(contrastRatio("#7C3AED", trackColor("DARK")) < 3);
+    const dark = validateTheme({ primaryColor: "#7C3AED", surface: "DARK" });
+    assert.equal(dark.ok, false);
+    assert.match(!dark.ok ? dark.reason : "", /track/);
+  });
+
+  test("fill vs track ≥ 3:1 on both surfaces, for every accent validation accepts", () => {
+    const steps = [0, 51, 102, 153, 204, 255].map((v) => v.toString(16).padStart(2, "0").toUpperCase());
+    let accepted = 0;
+    for (const surface of ["LIGHT", "DARK"] as const) for (const r of steps) for (const g of steps) for (const b of steps) {
+      const c = `#${r}${g}${b}`;
+      const v = validateTheme({ primaryColor: c, surface });
+      if (!v.ok) continue;
+      accepted++;
+      assert.ok(contrastRatio(c, trackColor(surface)) >= 3, `${c} on ${surface} track`);
+      assert.ok(contrastRatio(c, surfaceColor(surface)) >= 3, `${c} on ${surface} surface`);
+    }
+    assert.ok(accepted > 50, `sweep should accept a real range, accepted ${accepted}`);
+  });
+
   test("Hampton Blue #004AAD: 8.13:1 on white, on-brand resolves to white (spec §10)", () => {
     assert.equal(contrastRatio("#004AAD", "#FFFFFF").toFixed(2), "8.13");
     const v = validateTheme({ primaryColor: "#004AAD", surface: "LIGHT" });

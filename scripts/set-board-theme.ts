@@ -202,7 +202,7 @@ async function main(): Promise<void> {
       if (!v.ok) refuse(v.reason);
       tokens = v.tokens;
       console.log(`  theme              NEW ${v.theme.primaryColor} ${v.theme.surface} ` +
-        `(accent ${v.accentContrast.toFixed(2)}:1 on its surface; organizer ${organizerUserId})`);
+        `(accent ${v.accentContrast.toFixed(2)}:1 on its surface, ${v.trackContrast.toFixed(2)}:1 on its track; organizer ${organizerUserId})`);
       console.log(`                     brand ${tokens.brand}  hover ${tokens.brandHover}  on-brand ${tokens.onBrand}`);
       break;
     }
