@@ -2,6 +2,7 @@
 
 **Status:** Authority for invariant numbering. **Created at freeze, 2026-09-03.**
 **Rule:** every addendum appends to this file in the **same commit** that adds its invariants. A document that adds an invariant without a registry row is not merged.
+**Exception:** a spec imported byte-exact arrives with its invariants already written. Its registry rows land in a later commit on the same branch. Nothing merges without them.
 
 ---
 
