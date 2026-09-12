@@ -1,13 +1,26 @@
-# Public Theme — Spec (v3.1)
+# Public Theme — Spec (v3.2)
 
-**Status:** v3.1 approved September 11, 2026, as the implementation authority for
-Deploy 1. It incorporates the §11 inventory, the browser spike, and the approved
-organizer label.
-**Location:** Commit as `docs/public-theme-spec.md` before any code.
+**Status:** v3.2, September 12, 2026. **This repository copy is authoritative.**
+The Google Drive copies (v3, v3.1) are superseded; do not work from them. v3.1
+was approved September 11, 2026, as the implementation authority for Deploy 1;
+v3.2 folds in the amendments approved September 12 (§11), verified against the
+Deploy 1 build.
+**Location:** `docs/public-theme-spec.md`. Change it here, in a commit.
 **Authority:** This document is the flow authority for public-page theming.
 `fundraiser-board-v2.md` remains the authority for fundraiser flows,
 `fundraiser-money-state-machine.md` for money, and `SYSTEM-FLOW.md` for Game Day.
 Nothing here amends any of them.
+
+**Changes from v3.1**
+- **Progress track has its own token, `tone-track`** (default gray-800, LIGHT
+  `#E5E7EB`). `tone-800` and `tone-700` are borders only, at LIGHT `#868B96`
+  and `#757A87`, so control boundaries reach 3:1 (§3.2, §11).
+- **Accents are also checked against the progress track** at write, which
+  fixes the surface for most brand colours (§3.4, §3.4.1).
+- **`src/lib/donation-presets.ts`** holds the presets, pure; `contributions.ts`
+  re-exports it (§5, §6, §11).
+- **Do not ship a LIGHT theme on a raffle-enabled board** (§11).
+- The repository copy is authoritative; Drive copies are superseded.
 
 **Changes from v3:** the organizer label is approved (§2.1, §9), the placeholder
 decision is recorded, and the `brand-*` rename note is corrected.
@@ -251,10 +264,33 @@ because it would alter the dark render.
 |---|---|
 | **Null theme = today** | No `data-surface`, no style. Every token resolves to the stock value it replaced |
 | Organizer scope | `primary_color` feeds only the five `brand*` tokens |
-| Too-light accent | Under 3:1 against its surface is rejected at write. Never silently altered |
+| Too-light accent | Under 3:1 against its surface, or against that surface's progress track, is rejected at write. Never silently altered |
 | Status meaning | Status hues never derive from `primary_color` |
 | `surface` switches | Exhaustive, ending in `assertNever` |
 | One source | Components use token classes and accept no color props |
+
+### 3.4.1 Which surface a brand colour gets
+
+The track check means surface is not a free choice once the colour is fixed.
+Measured September 12, 2026, against the validator in `src/lib/public-theme.ts`:
+
+- **Deep colours qualify for LIGHT only.** Navy (`#1F2A44`), maroon (`#800000`,
+  `#6D1A36`), deep forest (`#154734`), school purple (`#4B2E83`), crimson
+  (`#9E1B32`), royal blue (`#0033A0`), and Hampton Blue (`#004AAD`). They are
+  too dark for DARK's gray-950 surface.
+- **Bright and warm colours qualify for DARK only.** Gold (`#FFC72C`), old gold
+  (`#B3A369`), orange (`#FF8200`), sky blue (`#4B9CD3`). They wash out against
+  LIGHT's white surface or its pale track.
+- **Mid-tone violets and teals qualify for LIGHT only.** `#7C3AED` and `#00758F`
+  clear DARK's surface but not its gray-800 track.
+- **Mid-luminance colours qualify for both.** Burnt orange (`#BF5700`), red
+  (`#E4002B`), kelly green (`#00843D`), web forest (`#228B22`).
+- **A narrow band qualifies for neither.** Near relative luminance 0.18 (e.g.
+  `#767676`), no hover step keeps black button text at 4.5:1.
+
+Across a 262,144-colour sweep: LIGHT only 32.6%, DARK only 53.8%, both 12.0%,
+neither 1.6%. The write script's refusal names the surface a rejected colour
+would pass on.
 
 ### 3.5 Known accessibility gap (not fixed in v1)
 
@@ -506,8 +542,7 @@ field on one row.
 - Remove the `square.updateMany` render-time write (L88). Out of scope here;
   flagged by the preflight.
 
-**Amendments approved September 12, 2026.** Recorded here; the header stays
-v3.1 until the product owner versions it.
+**Amendments approved September 12, 2026.** Folded into v3.2.
 1. **§6 — `src/lib/donation-presets.ts`.** A pure module with no imports holds
    `DONATION_PRESETS_CENTS` and `initialDonationCents`. `contributions.ts`
    re-exports both, so existing importers are unchanged. `donate-sheet.tsx`
