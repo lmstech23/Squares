@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2 — reconciled against the repo
+**Version:** 1.2.2 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -281,7 +281,7 @@ Registry-allocated 120–125. Cite by name.
 124. Every offline contribution confirmed after this change carries a non-null `tender`, enforced in the confirmation transaction. Null is legal on pre-migration rows and on declared-but-unconfirmed rows, and the set of pre-migration nulls can only shrink.
 125. Tender and reference are correctable; settlement, amount, and status are not correctable through that path. Every correction writes an audit row naming the host, both values, and the time.
 
-**`payment_rail` and `tender` are never derived from, synced with, or constrained against each other.** Filed as a rule rather than an invariant because it forbids a mechanism rather than asserting a state.
+**`payment_rail` and `tender` are never derived from, synced with, or constrained against each other.** Filed as a rule rather than an invariant because it forbids a mechanism rather than asserting a state. This independence is scoped to the declared rail. `settlement` and `tender` are constrained against each other by invariant 121.
 
 ---
 
@@ -306,7 +306,7 @@ Confirmed in the repo:
 
 | File | Change |
 |---|---|
-| `prisma/schema.prisma` | §8. Note the CHECK cannot be expressed here — §12 of the brief |
+| `prisma/schema.prisma` | §8. The CHECK cannot be expressed here; it goes in the generated migration.sql by hand |
 | `contributions.ts:149` | Stripe creation — write `STRIPE` + `CARD` |
 | `contributions.ts:301` | Second creator. **Open it before M0 and report what it writes** |
 | `cash-donation` route:195 + `cash-donation-form.tsx` | Picker, required |
