@@ -506,6 +506,40 @@ field on one row.
 - Remove the `square.updateMany` render-time write (L88). Out of scope here;
   flagged by the preflight.
 
+**Amendments approved September 12, 2026.** Recorded here; the header stays
+v3.1 until the product owner versions it.
+1. **§6 — `src/lib/donation-presets.ts`.** A pure module with no imports holds
+   `DONATION_PRESETS_CENTS` and `initialDonationCents`. `contributions.ts`
+   re-exports both, so existing importers are unchanged. `donate-sheet.tsx`
+   imports it directly, as §5 intends. `page.tsx` passes
+   `donationDefaultCents` and imports nothing dynamically.
+2. **§3.2 — progress-track token.** `tone-track` holds the one neutral fill,
+   the progress track in `fundraiser-view.tsx`. Its default is
+   `var(--color-gray-800)`, and its LIGHT literal is `#E5E7EB`.
+   - `tone-800` and `tone-700` are borders only.
+   - Their LIGHT values are `#868B96` and `#757A87`, so control boundaries
+     reach 3:1 on the page and on cards.
+3. **§3.4 — accent against the track.** At write, an accent under 3:1 against
+   its surface's progress track is rejected. This is in addition to the
+   surface check.
+   - The LIGHT track is `#E5E7EB`; the DARK track is stock gray-800,
+     `#1E2939`.
+   - Effective range: relative luminance at most about 0.23 on LIGHT, and at
+     least about 0.165 on DARK.
+   - A narrow band near 0.18 is excluded on both, because no hover step there
+     keeps black button text at 4.5:1.
+   - `#004AAD` measures 8.13:1 on white and 6.57:1 on the LIGHT track.
+
+**Do not ship a LIGHT theme on a raffle-enabled board** (recorded September 12,
+2026).
+- On LIGHT, `warn-200` is `#251604`. The hold timer uses it for its text,
+  its 60%-opacity helper line, and its status-coloured button.
+- The hold timer renders only on raffle-enabled boards
+  (`fundraiser-view.tsx:638`, gated by `square-product.ts:42`). A LIGHT
+  theme on such a board would show it.
+- Until the warn scale is fixed, do not combine `surface = LIGHT` with
+  `raffle_enabled = true`. Hampton (`xv8yuwhd`) has the raffle off.
+
 **Known reconciliation item.** When the Event package merges, its id generation
 may be `@default(uuid())` rather than this repo's `gen_random_uuid()`.
 `public_themes` follows this repo.
