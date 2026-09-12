@@ -247,6 +247,21 @@ rather than a gap in it.** An unbound invite has no recipient identity before
 acceptance, so revoking a collaborator cannot determine that an outstanding
 bearer link belongs to that person. See §7.
 
+### 120–125 · Payment method addendum — v1.2.1
+
+| # | Invariant | Authoritative statement |
+|---|---|---|
+| 120 | `settlement` is written by the system and never chosen by a human | `fundraiser-payment-method-addendum.md` §11 |
+| 121 | Settlement and tender pair only as enumerated — `STRIPE + CARD`, `OFFLINE +` non-`CARD`, `OFFLINE + NULL` — enforced by CHECK | `fundraiser-payment-method-addendum.md` §11 |
+| 122 | No dollar figure, state transition, fee, eligibility check, or prize computation reads `tender` | `fundraiser-payment-method-addendum.md` §11 |
+| 123 | Writing `tender` never creates or advances a path to confirmed | `fundraiser-payment-method-addendum.md` §11 |
+| 124 | Every offline contribution confirmed after this change carries a non-null `tender` | `fundraiser-payment-method-addendum.md` §11 |
+| 125 | Tender and reference are correctable; settlement, amount and status are not, and every correction is logged | `fundraiser-payment-method-addendum.md` §11 |
+
+An INDEX, as above. Allocated 2026-09-12 from the next free number; nothing
+renumbered. The addendum drafted these as 58–63, which belong to the donations
+addendum; v1.2 moved them here before any code cited them.
+
 ## Environment invariants — E1–E5
 
 **Not product invariants. They consume no number from the registry above and are never cited as invariant N.** They constrain how the repository is operated, and they are recorded here because this is the file every implementer reads first.
@@ -274,4 +289,4 @@ Environment-blocked tests are marked `REQUIRED — ENVIRONMENT BLOCKED, NOT EXEC
 2. Add the row here and the full statement in the owning document, in one commit.
 3. Amending an existing invariant does not consume a new number — mark the row `**Amended (§X)**` and point at the amending document.
 
-*Next free number: **120**.*
+*Next free number: **126**.*
