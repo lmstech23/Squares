@@ -20,6 +20,7 @@ import {
   type LightToken,
 } from "./public-theme.ts";
 import { DONATION_PRESETS_CENTS, initialDonationCents } from "./contributions.ts";
+import * as Presets from "./donation-presets.ts";
 import { parseArgs } from "../../scripts/set-board-theme.ts";
 
 // docs/public-theme-spec.md v3.1. Invariant numbers below are that spec's §7.
@@ -376,6 +377,20 @@ describe("donation default (spec §5)", () => {
   test("a non-preset falls back to $25 — it never preselects Other", () => {
     assert.equal(initialDonationCents(3000), 2500);
     assert.equal(initialDonationCents(0), 2500);
+  });
+
+  test("donation-presets.ts is pure — it imports nothing at all", () => {
+    assert.ok(!/^\s*import\s/m.test(read("src/lib/donation-presets.ts")));
+  });
+
+  test("contributions.ts re-exports the same objects — importers are unchanged", () => {
+    assert.equal(DONATION_PRESETS_CENTS, Presets.DONATION_PRESETS_CENTS);
+    assert.equal(initialDonationCents, Presets.initialDonationCents);
+  });
+
+  test("the donate sheet imports the pure module, and page.tsx no longer imports dynamically", () => {
+    assert.ok(read("src/app/board/[slug]/donate-sheet.tsx").includes('from "@/lib/donation-presets"'));
+    assert.ok(!/await import\(/.test(read("src/app/board/[slug]/page.tsx")));
   });
 
   test("donate-sheet keeps no preset list of its own", () => {

@@ -117,10 +117,9 @@ interface Props {
   /// gets no data-surface and no style (public-theme spec invariant 1). Applied
   /// once, at the root, through themeStyle — never read for a colour here.
   theme: PublicThemeInput | null;
-  /// Donate Only's presets and first-open selection, from the single source in
-  /// src/lib/contributions.ts, resolved on the server (spec §5).
-  donationPresets: readonly number[];
-  initialDonationCents: number;
+  /// The board's configured Donate Only default, or null for today's $25.
+  /// Handed to the donate sheet, which resolves it (spec §5).
+  donationDefaultCents: number | null;
   /// Board attribution (spec §2.1, §9). Independent of the theme.
   publicOrganizerLabel: string | null;
   /// Set on return from a completed checkout — v2 §6.
@@ -171,8 +170,7 @@ export default function FundraiserView({
   handles,
   confirmation,
   theme,
-  donationPresets,
-  initialDonationCents,
+  donationDefaultCents,
   publicOrganizerLabel,
 }: Props) {
   const [claiming, setClaiming] = useState(false);
@@ -807,8 +805,7 @@ export default function FundraiserView({
             cashModeEnabled={cashModeEnabled}
             stripeConnected={stripeConnected}
             rails={rails}
-            donationPresets={donationPresets}
-            initialDonationCents={initialDonationCents}
+            donationDefaultCents={donationDefaultCents}
             onClose={() => setDonating(false)}
           />
         )}

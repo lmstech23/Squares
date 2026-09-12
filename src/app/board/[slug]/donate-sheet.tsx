@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PanelRail } from "./purchase-panel";
+import { DONATION_PRESETS_CENTS, initialDonationCents } from "@/lib/donation-presets";
 import {
   CONTRIBUTION_THANKS,
   AWAITING_HOST_CONFIRMATION,
@@ -39,8 +40,7 @@ export default function DonateSheet({
   cashModeEnabled,
   stripeConnected,
   rails,
-  donationPresets,
-  initialDonationCents,
+  donationDefaultCents,
   onClose,
 }: {
   slug: string;
@@ -53,18 +53,17 @@ export default function DonateSheet({
    */
   rails: PanelRail[];
   /**
-   * The amount presets and the first-open selection. Both come from the single
-   * source in src/lib/contributions.ts (public-theme spec §5), resolved on the
-   * server and passed down: that module imports the Prisma client, so it
-   * cannot be imported into this client component.
+   * The board's configured Donate Only default, or null for today's $25. The
+   * presets and the first-open rule come from src/lib/donation-presets.ts —
+   * the single source, and pure, so this client component imports it
+   * directly (public-theme spec §5, §6 amendment).
    */
-  donationPresets: readonly number[];
-  initialDonationCents: number;
+  donationDefaultCents: number | null;
   onClose: () => void;
 }) {
   // `Other` is a peer option, not a smaller link — the person giving $250
   // should not have to hunt for it (§6).
-  const [preset, setPreset] = useState<number | "other">(initialDonationCents);
+  const [preset, setPreset] = useState<number | "other">(initialDonationCents(donationDefaultCents));
   const [otherText, setOtherText] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -235,7 +234,7 @@ export default function DonateSheet({
         <div className="mt-4">
           <span className={labelClass}>Amount</span>
           <div className="grid grid-cols-5 gap-2">
-            {donationPresets.map((cents) => (
+            {DONATION_PRESETS_CENTS.map((cents) => (
               <button
                 key={cents}
                 type="button"
