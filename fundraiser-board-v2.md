@@ -181,6 +181,25 @@ Free entries occupy no square, so they cannot be Square rows.
 | `cashModeEnabled` | **Forced true** on fundraiser boards. No toggle — §6C |
 | `cashPin` | Unused on fundraiser boards. Never displayed |
 
+### Contribution — how it was paid
+
+`fundraiser-payment-method-addendum.md` is authoritative for these fields and owns invariants 120–125; this note is so a reader of this spec knows they exist. `contributions` only — Game Day's `squares.payment_method` and `payment_references.method` are untouched.
+
+| Field | Written | Means |
+|---|---|---|
+| `payment_rail` *(exists)* | At declaration, by the contributor | The rail they **said** they would use — `zelle` · `cashapp` · `venmo` · `paypal`. A promise, made before any money moves |
+| `settlement` *(new)* | By the system, never a person | `STRIPE` — the system watched the money settle — or `OFFLINE` — the host attests to it. Replaces `payment_method` |
+| `tender` *(new)* | At confirmation, by the host | What actually **arrived** — `CARD` · `CASH` · `VENMO` · `ZELLE` · `CASHAPP` · `PAYPAL` · `CHECK` · `OTHER` |
+
+**Tender records how a contributor paid and never participates in money math, state transitions, eligibility, fees, or prize calculation.**
+
+`payment_rail` is the contributor-declared rail. `tender` is the method the host confirmed actually arrived. These two are never derived from, synced with, or constrained against each other, and may intentionally disagree — a parent who declares Zelle and hands over cash is an ordinary case, and the disagreement is information.
+
+`settlement` is system-written and is constrained against `tender`, by invariant 121: Stripe requires Card, and Offline may not use Card. The independence rule above applies to the declared rail only.
+
+- `CARD` is Stripe's alone. `STRIPE` pairs only with `CARD`, and `OFFLINE` never with `CARD` — a check constraint enforces the legal pairs.
+- `tender` is null on contributions recorded before this change and on declared donations not yet confirmed. Every offline contribution confirmed from now on carries one.
+
 ---
 
 ## 4. Board type picker
@@ -765,6 +784,8 @@ On a Phase A board there is no prize pool line.
 **Awaiting payment panel:** confirm or release **per square**, never forced as a batch. Someone reserving 3 and arriving with $100 must be resolvable to 2 confirmed and 1 released — invariant 7.
 
 **Pending panel:** batch age visible ("3 squares, held 12 min"). Manual release only after the hold expires, and only through the resolution sequence — invariants 18–19.
+
+**Confirm actions also record a tender:** every host confirmation of offline money records how it actually arrived — Record donation, confirming a declared donation, confirming cash-reserved squares, and confirming an entry reservation line. One shared picker across all four: the board's configured handles plus Cash, Check and Other, read live at render; no default selection; `CARD` never offered. Where the contributor declared a rail it is shown as context — *"Contributor said: Zelle"* — and never pre-selects anything. The tender is written inside the confirmation the host is already making: no new step, route, transaction or state. A contributor's own declaration records no tender. §3, *Contribution — how it was paid*; `fundraiser-payment-method-addendum.md` §4.
 
 **Close:** early close requires resolving all outstanding cash inside the flow. Scheduled close needs no host action. Money doc §7.
 
