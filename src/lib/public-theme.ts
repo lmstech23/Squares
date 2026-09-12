@@ -297,6 +297,17 @@ export function validateTheme(input: { primaryColor: string; surface: string }):
   };
 }
 
+/**
+ * The surfaces a colour passes on (spec §3.4.1). The track check means most
+ * brand colours qualify for exactly one — deep colours for LIGHT, bright and
+ * warm ones for DARK — and mid-tones for both. Empty for a malformed colour
+ * or one no surface accepts.
+ */
+export function qualifyingSurfaces(primaryColor: string): ThemeSurfaceName[] {
+  const all: ThemeSurfaceName[] = ["LIGHT", "DARK"];
+  return all.filter((surface) => validateTheme({ primaryColor, surface }).ok);
+}
+
 // ------------------------------------------------------------ rendering ----
 
 export type ThemeAttributes = {

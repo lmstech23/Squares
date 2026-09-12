@@ -32,6 +32,8 @@ import { DONATION_PRESETS_CENTS } from "../src/lib/contributions.ts";
 import { deriveProjectRef } from "../src/lib/db-target.ts";
 import {
   normalizeOrganizerLabel,
+  normalizePrimaryColor,
+  qualifyingSurfaces,
   validateTheme,
   type BrandTokens,
   type PublicThemeInput,
@@ -95,7 +97,9 @@ export function parseArgs(argv: string[]): Plan {
       primaryColor: String(flags.get("--theme")),
       surface: String(flags.get("--surface")),
     });
-    if (!v.ok) refuse(v.reason);
+    if (!v.ok) {
+      refuse(v.reason + surfaceAdvice(String(flags.get("--theme")), String(flags.get("--surface"))));
+    }
     plan.theme = { kind: "set", value: v.theme };
   } else if (flags.has("--clear-theme")) {
     plan.theme = { kind: "clear" };
@@ -136,6 +140,22 @@ export function parseArgs(argv: string[]): Plan {
       "--clear-donation-default, --label, --clear-label");
   }
   return plan;
+}
+
+/** Which surface a rejected colour WOULD pass on (spec §3.4.1), so a refusal
+ *  says what to do rather than only that it failed. Silent for a malformed
+ *  colour: the reason already says why. */
+export function surfaceAdvice(color: string, requested: string): string {
+  try {
+    normalizePrimaryColor(color);
+  } catch {
+    return "";
+  }
+  const elsewhere = qualifyingSurfaces(color).filter((s) => s !== requested);
+  if (elsewhere.length) {
+    return ` It passes on ${elsewhere.join(" and ")} — rerun with --surface ${elsewhere[0]}.`;
+  }
+  return " It passes on neither surface; choose a different colour.";
 }
 
 function describeTarget(url: string): string {

@@ -13,6 +13,7 @@ import {
   normalizePrimaryColor,
   organizerAttribution,
   surfaceColor,
+  qualifyingSurfaces,
   trackColor,
   DARK_TRACK_COLOR,
   themeStyle,
@@ -295,6 +296,16 @@ describe("theme validation (spec §3.4)", () => {
     assert.match(!v.ok ? v.reason : "", /4\.5:1/);
   });
 
+  test("qualifyingSurfaces — deep LIGHT, bright/warm DARK, mid-tones both, the band neither (§3.4.1)", () => {
+    assert.deepEqual(qualifyingSurfaces("#004AAD"), ["LIGHT"]);
+    assert.deepEqual(qualifyingSurfaces("#800000"), ["LIGHT"]);
+    assert.deepEqual(qualifyingSurfaces("#FFC72C"), ["DARK"]);
+    assert.deepEqual(qualifyingSurfaces("#FF8200"), ["DARK"]);
+    assert.deepEqual(qualifyingSurfaces("#BF5700"), ["LIGHT", "DARK"]);
+    assert.deepEqual(qualifyingSurfaces("#767676"), []);
+    assert.deepEqual(qualifyingSurfaces("not-a-colour"), []);
+  });
+
   test("hex is normalized to the uppercase form the CHECK requires; junk is refused", () => {
     assert.equal(normalizePrimaryColor("#004aad"), "#004AAD");
     for (const bad of ["004AAD", "#04A", "#004AAG", "blue", "var(--color-blue-500)"]) {
@@ -424,6 +435,10 @@ describe("scripts/set-board-theme.ts — argument rules", () => {
     assert.throws(() => parseArgs(["b"]), /nothing to do/);
     assert.throws(() => parseArgs(["b", "--theme", "#004AAD"]), /--surface/);
     assert.throws(() => parseArgs(["b", "--theme", "#FFE14D", "--surface", "LIGHT"]), /3:1/);
+    // A refusal names the surface the colour WOULD pass on (§3.4.1).
+    assert.throws(() => parseArgs(["b", "--theme", "#FFC72C", "--surface", "LIGHT"]), /passes on DARK — rerun with --surface DARK/);
+    assert.throws(() => parseArgs(["b", "--theme", "#004AAD", "--surface", "DARK"]), /passes on LIGHT — rerun with --surface LIGHT/);
+    assert.throws(() => parseArgs(["b", "--theme", "#767676", "--surface", "LIGHT"]), /neither surface/);
     assert.throws(() => parseArgs(["b", "--donation-default", "3000"]), /one of/);
     assert.throws(() => parseArgs(["b", "--label", "x".repeat(61)]), /60/);
     assert.throws(() => parseArgs(["b", "--label", "a", "--clear-label"]), /conflict/);
