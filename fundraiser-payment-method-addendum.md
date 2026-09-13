@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.4 — reconciled against the repo
+**Version:** 1.2.5 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -210,6 +210,8 @@ Subtotals cover confirmed, unvoided rows — the population the ledger header al
 
 `payment_rail` is unchanged in name, values, meaning, and its existing constraint.
 
+A declared `payment_rail` implies `settlement = 'OFFLINE'`, and `CARD` requires `settlement = 'STRIPE'`. So a row with a declared rail cannot carry `tender = 'CARD'`. This is a consequence of two existing constraints, not a third constraint, and it does not narrow the independence rule: every non-`CARD` tender may still disagree with the declared rail. A host who takes a card on her own reader records `OTHER` — the CARD seam, §2.
+
 ### tender_correction_log — new
 
 `id` · `contribution_id` · `host_id` · `field` (`TENDER` · `REFERENCE`) · `old_value` · `new_value` · `created_at`
@@ -234,6 +236,8 @@ This constraint was written incorrectly twice before that rule was stated. Both 
 2. **v1.1 through v1.2.3** wrote the legal pairs out — `(settlement = 'STRIPE' AND tender = 'CARD') OR (settlement = 'OFFLINE' AND (tender IS NULL OR tender <> 'CARD'))` — and this section said that form was the one that held. It was not. With a null tender, `tender = 'CARD'` is UNKNOWN, the first clause is `TRUE AND UNKNOWN`, the second is FALSE, and the predicate is UNKNOWN. `STRIPE + NULL` was accepted again. M0 verification caught it on 2026-09-12: the one insert this constraint exists to reject returned `INSERT 0 1`.
 
 Writing the pairs out was necessary and not sufficient. The form above does both: the legal pairs, enumerated, each comparing `tender` null-safely.
+
+An explicit `IS NULL OR …` guard satisfies the null-safety rule as well — `tender_reference IS NULL OR char_length(tender_reference) <= 64` can never evaluate to UNKNOWN. What the rule forbids is a predicate that can be UNKNOWN, not a particular operator.
 
 | Settlement | Tender | |
 |---|---|---|
