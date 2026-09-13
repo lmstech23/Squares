@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.3 — reconciled against the repo
+**Version:** 1.2.4 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -87,7 +87,7 @@ That rule buys safety by making one sentence above not quite true.
 What to do then, written now so it isn't rediscovered under deadline:
 
 - `settlement` splits into *witnessed* values (`STRIPE`, the new one) and *attested* (`OFFLINE`). That is the distinction §5's ledger marker actually draws.
-- The constraint relaxes from `settlement = 'STRIPE'` to `settlement IN (witnessed)`, and `CARD` becomes legal on any of them.
+- Any additional witnessed settlement value requires its own explicit, null-safe pair clause in the constraint when it is implemented. §8.
 - `OFFLINE + CARD` stays rejected. A host-attested card is still an unverified claim, and that is the case the rule exists for.
 - No backfill. Existing rows are unaffected.
 
@@ -214,17 +214,26 @@ Subtotals cover confirmed, unvoided rows — the population the ledger header al
 
 `id` · `contribution_id` · `host_id` · `field` (`TENDER` · `REFERENCE`) · `old_value` · `new_value` · `created_at`
 
+**Locked down like every table in `public`.** Row-level security is enabled; `PUBLIC`, `anon` and `authenticated` hold no privileges on it, and only `service_role` is granted — the containment block every new table gets, applied in the same migration. The migration's closing gate reads `relrowsecurity` from the catalog and aborts if it is off. No policy is written, because nothing reads this table over the Data API.
+
 ### Constraint
 
 ```sql
 ALTER TABLE contributions ADD CONSTRAINT contributions_settlement_tender_valid CHECK (
-  (settlement = 'STRIPE'  AND tender = 'CARD')
+  (settlement = 'STRIPE'  AND tender IS NOT DISTINCT FROM 'CARD')
   OR
-  (settlement = 'OFFLINE' AND (tender IS NULL OR tender <> 'CARD'))
+  (settlement = 'OFFLINE' AND tender IS DISTINCT FROM 'CARD')
 );
 ```
 
-**Write the legal pairs out. Never as an equality between two boolean tests.** v1.0 used `(paymentRail = 'STRIPE') = (tender = 'CARD')`, correct only if `tender` were `NOT NULL`. It isn't. With a null tender the right side is UNKNOWN, the equality is UNKNOWN, and Postgres passes a CHECK that isn't false — so `STRIPE + NULL` walks straight through the one case the constraint exists to stop.
+**Every comparison against a nullable column in a CHECK must be null-safe — `IS DISTINCT FROM` / `IS NOT DISTINCT FROM`, never `=` or `<>`.** PostgreSQL accepts any CHECK result that is not FALSE, so UNKNOWN is effectively accepted. A plain comparison against a null is UNKNOWN, and the row goes in.
+
+This constraint was written incorrectly twice before that rule was stated. Both failures stay here, because they are the reason the rule is believable.
+
+1. **v1.0** wrote it as an equality between two boolean tests: `(paymentRail = 'STRIPE') = (tender = 'CARD')`. With a null tender the right side is UNKNOWN, so the equality is UNKNOWN, and `STRIPE + NULL` was accepted.
+2. **v1.1 through v1.2.3** wrote the legal pairs out — `(settlement = 'STRIPE' AND tender = 'CARD') OR (settlement = 'OFFLINE' AND (tender IS NULL OR tender <> 'CARD'))` — and this section said that form was the one that held. It was not. With a null tender, `tender = 'CARD'` is UNKNOWN, the first clause is `TRUE AND UNKNOWN`, the second is FALSE, and the predicate is UNKNOWN. `STRIPE + NULL` was accepted again. M0 verification caught it on 2026-09-12: the one insert this constraint exists to reject returned `INSERT 0 1`.
+
+Writing the pairs out was necessary and not sufficient. The form above does both: the legal pairs, enumerated, each comparing `tender` null-safely.
 
 | Settlement | Tender | |
 |---|---|---|
@@ -289,14 +298,16 @@ Registry-allocated 120–125. Cite by name.
 
 | # | Step | Note |
 |---|---|---|
-| M0 | Schema + backfill + constraint, §9 | Ships alone. No UI. The only irreversible step. **Assert all three rejected pairs fail at the database, `STRIPE + NULL` first** |
-| M1 | Move reads `payment_method` → `settlement`; rewrite the two dependent CHECKs; drop the column | Behavior unchanged. Larger than it sounds — the CHECKs are the reason |
+| M0 | **Expand: schema + writers.** Schema, backfill and constraint, §9. Every contribution writer dual-writes `settlement` beside `payment_method`; the Stripe writer also writes `tender = CARD` at creation | No UI and no read changes. The only irreversible step. **Assert all three rejected pairs fail at the database, `STRIPE + NULL` first** |
+| M1 | **Contract: reads, then drop.** Move reads `payment_method` → `settlement` and rewrite the two dependent CHECKs; then drop the column, in a separate migration | Behavior unchanged. Larger than it sounds — the CHECKs are the reason |
 | M2 | Shared picker component; wire into all four confirm paths, §4 | First step that writes a tender. `donate` route gets none |
 | M3 | Ledger Method column, offline marker, detail reveal | The screen that started this |
 | M4 | Inline correction + audit log | Lets the host fix the 62 |
 | M5 | Close-flow tender breakdown | §7. The payoff |
 
 M0 and M1 land before any UI. Renaming underneath live UI is the failure mode the Feb 26 rule exists for.
+
+**Release gate.** M0, M1 and M2 release together, after M2 is complete. Merging to `main` deploys production, so none of them merges before M2: in between, every offline contribution confirmed would record a null tender. The branch is not pushed either. Every pushed branch gets a Vercel Preview deployment, and Preview deployments share the production `DATABASE_URL`, so a pushed M0 would run its writers against a production database that does not have the columns yet.
 
 ---
 
