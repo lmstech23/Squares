@@ -378,7 +378,7 @@ export default async function HostBoardPage({ params }: Props) {
         status: { in: ["confirmed", "pending"] },
         squareAmountCents: 0,
       },
-      select: { status: true, paymentMethod: true, voidedAt: true },
+      select: { status: true, settlement: true, voidedAt: true },
     });
     // THE SAME SOURCE THE CLOSE GUARD COUNTS. A reservation is not in the
     // ledger until it is confirmed, so this cannot come from `counterDonations`

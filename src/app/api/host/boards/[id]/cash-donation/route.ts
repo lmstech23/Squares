@@ -192,7 +192,7 @@ export async function PATCH(
         id: body.contributionId,
         boardId: board.boardId,
         status: "pending",
-        paymentMethod: "cash",
+        settlement: "OFFLINE",
         squareAmountCents: 0,
         donationAmountCents: { gt: 0 },
       },
@@ -258,7 +258,7 @@ export async function GET(
       select: {
         id: true,
         status: true,
-        paymentMethod: true,
+        settlement: true,
         squareAmountCents: true,
         donationAmountCents: true,
         totalPaidCents: true,

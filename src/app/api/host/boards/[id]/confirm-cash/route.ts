@@ -83,7 +83,7 @@ export async function POST(
             id: true,
             boardId: true,
             status: true,
-            paymentMethod: true,
+            settlement: true,
             voidedAt: true,
             squareAmountCents: true,
             _count: { select: { squares: true } },
@@ -124,7 +124,7 @@ export async function POST(
             { status: 409 }
           );
         }
-        if (linked.paymentMethod !== "cash") {
+        if (linked.settlement !== "OFFLINE") {
           return NextResponse.json(
             { error: "This square is linked to a confirmed card contribution. Contact support." },
             { status: 409 }

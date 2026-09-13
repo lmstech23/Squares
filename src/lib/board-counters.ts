@@ -44,11 +44,11 @@ export interface CounterSquare {
  *
  * The two kinds are not distinguished below because nothing in these four
  * counters depends on which it is: both count one, and both move between the
- * same three states by `status` and `paymentMethod`.
+ * same three states by `status` and `settlement`.
  */
 export interface CounterDonation {
   status: string;
-  paymentMethod: string;
+  settlement: string;
   voidedAt: Date | null;
 }
 
@@ -90,7 +90,7 @@ export function boardCounters(
   // A declared direct payment: the contributor said they would send it and the
   // host has not marked it received. The same thing a reserved_cash square is.
   const awaitingDonations = donations.filter(
-    (d) => d.status === "pending" && d.paymentMethod === "cash"
+    (d) => d.status === "pending" && d.settlement === "OFFLINE"
   ).length;
 
   // ONE PER RESERVATION, matching how a donation and an entry purchase are
@@ -109,7 +109,7 @@ export function boardCounters(
   // box forever. It never reaches `raised` — that reads confirmed only — so
   // this is a display defect, not a money one.
   const inCheckoutDonations = donations.filter(
-    (d) => d.status === "pending" && d.paymentMethod === "stripe"
+    (d) => d.status === "pending" && d.settlement === "STRIPE"
   ).length;
 
   return {

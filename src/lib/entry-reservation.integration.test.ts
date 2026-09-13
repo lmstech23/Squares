@@ -153,7 +153,7 @@ describe(
       assert.equal(c.donationAmountCents, 0);
       assert.equal(c.totalPaidCents, 9500);
       assert.equal(c.status, "confirmed");
-      assert.equal(c.paymentMethod, "cash");
+      assert.equal(c.settlement, "OFFLINE");
       assert.equal(c.confirmedByHostId, hostId);
       assert.equal(c.postCloseAt, null, "the board is open");
     });

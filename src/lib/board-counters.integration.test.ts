@@ -42,7 +42,7 @@ describe(
           squareAmountCents: 0,
           donationAmountCents: { gt: 0 },
         },
-        select: { status: true, paymentMethod: true, voidedAt: true },
+        select: { status: true, settlement: true, voidedAt: true },
       });
       // Mirrors the host page exactly, including the reservation count - which
       // comes from its own table because a reservation has no Contribution

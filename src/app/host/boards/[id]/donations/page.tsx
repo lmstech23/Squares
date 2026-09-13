@@ -114,7 +114,7 @@ export default async function DonationsPage({
     select: {
       id: true,
       status: true,
-      paymentMethod: true,
+      settlement: true,
       paymentRail: true,
       squareAmountCents: true,
       donationAmountCents: true,
@@ -228,7 +228,7 @@ export default async function DonationsPage({
   const awaitingCash = contributions.filter(
     (c) =>
       c.status === "pending" &&
-      c.paymentMethod === "cash" &&
+      c.settlement === "OFFLINE" &&
       c.squareAmountCents === 0 &&
       c.donationAmountCents > 0
   );
@@ -473,7 +473,7 @@ export default async function DonationsPage({
                     )}
                   </td>
                   <td className="py-2 pr-3 text-gray-400">
-                    {c.paymentMethod === "cash" ? "cash" : "card"}
+                    {c.settlement === "OFFLINE" ? "cash" : "card"}
                   </td>
                   <td className="py-2 pr-3">
                     <span

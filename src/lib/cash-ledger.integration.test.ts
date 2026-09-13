@@ -208,7 +208,7 @@ describe(
         select: {
           id: true,
           status: true,
-          paymentMethod: true,
+          settlement: true,
           squareAmountCents: true,
           checkoutSessionId: true,
           releasedAt: true,
@@ -263,7 +263,7 @@ describe(
       const rows = await ledgerRows();
       assert.equal(rows.length, 1);
       assert.equal(rows[0].status, "confirmed");
-      assert.equal(rows[0].paymentMethod, "cash");
+      assert.equal(rows[0].settlement, "OFFLINE");
       assert.equal(rows[0].squareAmountCents, PRICE);
       await assertReconciled();
     });
@@ -284,14 +284,14 @@ describe(
 
       const old = rows.find((r) => r.id === oldId)!;
       assert.equal(old.status, "released", "provenance intact");
-      assert.equal(old.paymentMethod, "stripe");
+      assert.equal(old.settlement, "STRIPE");
       assert.ok(old.checkoutSessionId, "still carries its Stripe session");
       assert.equal(old.confirmedAt, null, "never converted");
       assert.equal(old._count.squares, 0, "detached");
 
       const fresh = rows.find((r) => r.id !== oldId)!;
       assert.equal(fresh.status, "confirmed");
-      assert.equal(fresh.paymentMethod, "cash");
+      assert.equal(fresh.settlement, "OFFLINE");
       assert.equal(fresh.checkoutSessionId, null, "cash rows carry no session id");
       assert.equal(fresh.squareAmountCents, PRICE);
 
