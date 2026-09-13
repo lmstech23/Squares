@@ -98,13 +98,21 @@ Vercel and silently moves a deadline. `npm test` covers the DST boundaries.
 Concurrency guarantees are covered by real-database tests, not mocks:
 
 ```
-npm run test:db:up        disposable Postgres in Docker, schema built by db push
+npm run test:db:up        disposable Postgres in Docker, schema rebuilt by replaying prisma/migrations
 npm run test:integration  the 8 confirmation/minting cases
 npm run test:db:down
 ```
 
 `npm test` alone reports **1 skipped** when that database is absent — the skip
 is the signal that concurrency went unverified, not noise.
+
+**The test database is rebuilt by replaying migrations. Never provision it with
+`db push`.** `db push` builds DDL from the Prisma models and does not preserve
+CHECK constraints that exist only in migration SQL — which is every CHECK this
+project relies on — so a pushed database silently accepts the rows those
+constraints exist to reject, and a test asserting the rejection passes or fails
+for the wrong reason. `scripts/test-db.mjs` replays, then asserts the replayed
+database matches `schema.prisma`.
 
 **No gate on fundraiser creation.** An allowlist was built and removed — it
 protected a population that does not exist, since there are no Game Day
