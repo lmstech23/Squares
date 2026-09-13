@@ -33,6 +33,7 @@ model Host {
   invitesCreated         BoardInvite[]       @relation("InviteCreatedBy")
   invitesAccepted        BoardInvite[]       @relation("InviteAcceptedBy")
   invitesRevoked         BoardInvite[]       @relation("InviteRevokedBy")
+  tenderCorrections      TenderCorrectionLog[]
 
   paymentPreference         String?             @map("payment_preference")
 
@@ -748,11 +749,34 @@ model Contribution {
   /// NULL means "not recorded", never "none".
   paymentRail         PaymentRail?       @map("payment_rail")
 
+  /// Did the system watch the money settle, or is the host attesting to it?
+  /// Payment-method addendum §2. System-written, never chosen by a person.
+  /// Replaces `paymentMethod`, which every writer dual-writes until M1 drops it.
+  settlement          Settlement
+  /// What actually arrived, recorded by the host at confirmation.
+  ///
+  /// DISPLAY AND RECONCILIATION ONLY. No dollar figure, state transition,
+  /// fee, eligibility check or prize computation reads it.
+  ///
+  /// NULL on rows recorded before this change and on declared donations not
+  /// yet confirmed. Never derived from, synced with, or constrained against
+  /// `paymentRail`. Constrained against `settlement` by
+  /// contributions_settlement_tender_valid, which lives in the migration SQL
+  /// because Prisma cannot express a CHECK.
+  tender              Tender?
+  /// Free text, at most 64 characters (a CHECK in the migration SQL). Never
+  /// parsed, never matched against anything, never public.
+  tenderReference     String?            @map("tender_reference")
+  /// When a host recorded an offline confirmation. Written from M2; NULL on
+  /// every earlier row, and not backfilled.
+  recordedAt          DateTime?          @map("recorded_at") @db.Timestamptz(6)
+
   reservationLines EntryReservationLine[]
 
   board          Board           @relation(fields: [boardId], references: [boardId], onDelete: Restrict, onUpdate: NoAction)
   squares        Square[]
   admissionGrant AdmissionGrant?
+  tenderCorrections TenderCorrectionLog[]
 
   @@unique([checkoutSessionId], map: "contributions_checkout_session_key")
   @@index([boardId, status], map: "idx_contributions_board_status")
@@ -1412,6 +1436,58 @@ enum BoardPaymentMethod {
   paypal
 
   @@map("board_payment_method")
+}
+
+/// How a contribution settled — payment-method addendum §2. STRIPE: the system
+/// watched it settle. OFFLINE: the host attests to it.
+enum Settlement {
+  STRIPE
+  OFFLINE
+
+  @@map("settlement")
+}
+
+/// What actually arrived — payment-method addendum §2. CARD belongs to STRIPE
+/// alone (contributions_settlement_tender_valid, migration SQL).
+enum Tender {
+  CARD
+  CASH
+  VENMO
+  ZELLE
+  CASHAPP
+  PAYPAL
+  CHECK
+  OTHER
+
+  @@map("tender")
+}
+
+enum TenderCorrectionField {
+  TENDER
+  REFERENCE
+
+  @@map("tender_correction_field")
+}
+
+/// Every inline correction of a tender or reference — payment-method addendum
+/// §6. Written from M4; empty until then.
+///
+/// FKs are NON-NULLABLE under Restrict, the SignupLog convention: the trail is
+/// kept by refusing to delete the rows it names.
+model TenderCorrectionLog {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contributionId String                @map("contribution_id") @db.Uuid
+  hostId         String                @map("host_id") @db.Uuid
+  field          TenderCorrectionField
+  oldValue       String?               @map("old_value")
+  newValue       String?               @map("new_value")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  contribution Contribution @relation(fields: [contributionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  host         Host         @relation(fields: [hostId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([contributionId, createdAt], map: "idx_tender_correction_log_contribution_created")
+  @@map("tender_correction_log")
 }
 
 // ---------------------------------------------------------------------------

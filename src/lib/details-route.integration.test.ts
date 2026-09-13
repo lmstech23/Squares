@@ -117,6 +117,7 @@ describe(
           boardId,
           status: "confirmed",
           paymentMethod: "cash",
+          settlement: "OFFLINE",
           squareAmountCents: 5000,
           donationAmountCents: 0,
           totalPaidCents: 5000,

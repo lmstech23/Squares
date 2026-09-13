@@ -59,6 +59,8 @@ describe(
           boardId: opts.board ?? boardId,
           status: opts.status as never,
           paymentMethod: "stripe",
+          settlement: "STRIPE",
+          tender: "CARD",
           squareAmountCents: square,
           donationAmountCents: 2500,
           totalPaidCents: 2500 + square,

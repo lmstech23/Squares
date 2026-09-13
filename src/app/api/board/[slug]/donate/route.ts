@@ -179,6 +179,10 @@ export async function POST(
           boardId: board.boardId,
           status: "pending",
           paymentMethod: "cash",
+          // Dual-written until M1 drops paymentMethod. No tender, ever, on this
+          // path: a declaration records a promise, and the host records what
+          // arrived when she confirms it.
+          settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: amountCents,
           totalPaidCents: amountCents,

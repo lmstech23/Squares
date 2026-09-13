@@ -147,6 +147,8 @@ describe(
           boardId: opts.board ?? boardId,
           status: status as never,
           paymentMethod: opts.method ?? "stripe",
+          settlement: (opts.method ?? "stripe") === "stripe" ? "STRIPE" : "OFFLINE",
+          tender: (opts.method ?? "stripe") === "stripe" ? "CARD" : null,
           squareAmountCents: cents,
           donationAmountCents: 0,
           totalPaidCents: cents,

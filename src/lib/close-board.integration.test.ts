@@ -266,6 +266,7 @@ describe(
           boardId,
           status: "pending",
           paymentMethod: "cash",
+          settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: 2500,
           totalPaidCents: 2500,

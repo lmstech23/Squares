@@ -61,6 +61,7 @@ describe(
           boardId,
           status: (opts.status ?? "confirmed") as never,
           paymentMethod: "cash",
+          settlement: "OFFLINE",
           squareAmountCents: sqc,
           donationAmountCents: cents,
           totalPaidCents: cents + sqc,

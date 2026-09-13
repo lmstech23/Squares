@@ -91,6 +91,7 @@ describe(
             boardId,
             status: "confirmed",
             paymentMethod: "cash",
+            settlement: "OFFLINE",
             squareAmountCents: 0,
             donationAmountCents: 0,
             entryAmountCents: quote.totalCents,
@@ -176,7 +177,7 @@ describe(
       });
       const squareContribution = await db.contribution.create({
         data: {
-          boardId, status: "confirmed", paymentMethod: "cash",
+          boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
           squareAmountCents: 10000, donationAmountCents: 0, entryAmountCents: 0,
           totalPaidCents: 10000, contributorName: CONTACT.name,
           contributorEmail: CONTACT.email, contributorPhone: CONTACT.phone,
@@ -263,7 +264,7 @@ describe(
       });
       await db.contribution.create({
         data: {
-          boardId, status: "confirmed", paymentMethod: "cash",
+          boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
           squareAmountCents: 5000, donationAmountCents: 0,
           totalPaidCents: 5000, contributorName: "X", contributorEmail: "x@e.com",
           contributorPhone: "6785550000", confirmedAt: new Date(),
@@ -288,7 +289,7 @@ describe(
       });
       await db.contribution.create({
         data: {
-          boardId, status: "confirmed", paymentMethod: "cash",
+          boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
           squareAmountCents: 0, donationAmountCents: 2500, totalPaidCents: 2500,
           contributorName: "D", contributorEmail: "d@e.com",
           contributorPhone: "6785550001", confirmedAt: new Date(),
@@ -385,7 +386,7 @@ describe(
       await seedBoard();
       const c = await db.contribution.create({
         data: {
-          boardId, status: "confirmed", paymentMethod: "cash",
+          boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
           squareAmountCents: 0, donationAmountCents: 0, entryAmountCents: 1500,
           totalPaidCents: 1500, contributorName: "E", contributorEmail: "e@e.com",
           contributorPhone: "6785550002", confirmedAt: new Date(),
@@ -399,7 +400,7 @@ describe(
       await assert.rejects(() =>
         db.contribution.create({
           data: {
-            boardId, status: "pending", paymentMethod: "cash",
+            boardId, status: "pending", paymentMethod: "cash", settlement: "OFFLINE",
             squareAmountCents: 0, donationAmountCents: 2500, entryAmountCents: -1,
             totalPaidCents: 2499, contributorName: "N", contributorEmail: "n@e.com",
             contributorPhone: "6785550003",
@@ -413,7 +414,7 @@ describe(
       await assert.rejects(() =>
         db.contribution.create({
           data: {
-            boardId, status: "pending", paymentMethod: "cash",
+            boardId, status: "pending", paymentMethod: "cash", settlement: "OFFLINE",
             squareAmountCents: 0, donationAmountCents: 0, entryAmountCents: 1500,
             totalPaidCents: 0, contributorName: "M", contributorEmail: "m@e.com",
             contributorPhone: "6785550004",
@@ -481,7 +482,7 @@ describe(
       await seedBoard();
       const c = await db.contribution.create({
         data: {
-          boardId, status: "confirmed", paymentMethod: "cash",
+          boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
           squareAmountCents: 0, donationAmountCents: 0, entryAmountCents: 9999,
           totalPaidCents: 9999, contributorName: "Z", contributorEmail: "z@e.com",
           contributorPhone: "6785550008", confirmedAt: new Date(),
@@ -543,7 +544,7 @@ describe(
       await seedBoard();
       const c = await db.contribution.create({
         data: {
-          boardId, status: "pending", paymentMethod: "stripe",
+          boardId, status: "pending", paymentMethod: "stripe", settlement: "STRIPE", tender: "CARD",
           squareAmountCents: 0, donationAmountCents: 0, entryAmountCents: 4000,
           totalPaidCents: 4000, contributorName: "Pend", contributorEmail: "pend@e.com",
           contributorPhone: "6785550009",
@@ -609,7 +610,7 @@ describe(
         () =>
           db.contribution.create({
             data: {
-              boardId, status: "confirmed", paymentMethod: "cash",
+              boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
               squareAmountCents: 0, donationAmountCents: 0, entryAmountCents: 4000,
               totalPaidCents: 4000, entryTicketCount: 0,
               contributorName: "Zero", contributorEmail: "zero@example.com",
@@ -627,7 +628,7 @@ describe(
         () =>
           db.contribution.create({
             data: {
-              boardId, status: "confirmed", paymentMethod: "cash",
+              boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
               squareAmountCents: 0, donationAmountCents: 2500, entryAmountCents: 0,
               totalPaidCents: 2500, entryTicketCount: 2,
               contributorName: "Bad", contributorEmail: "bad@example.com",
