@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.6 — reconciled against the repo
+**Version:** 1.2.7 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -123,6 +123,17 @@ v1.1 put the picker on Record donation and stopped. Offline contributions confir
 
 One shared picker component across the four confirm paths. Four copies will drift.
 
+### What one confirmation covers
+
+**`confirm-cash` confirms exactly one square per action.** The route takes a single `squareId`, and both host surfaces render one button per square. One tender selection therefore covers one square and nothing else.
+
+- When that confirmation **writes a new contribution** — the square has no linked row, or a `pending` or `released` one — the tender is written to the contribution that action creates.
+- When the square already points at a **confirmed contribution that matches it exactly**, `writeLedger` is false and **no contribution row is written**. Nothing is corrected and no confirmed row is overwritten in order to store a tender.
+
+**Fundraiser `confirm-cash` validates tender for every confirmation action even when an already-confirmed matching contribution means `writeLedger = false`. The host-facing action should have one invariant regardless of the linked row's persistence state. When no contribution write occurs, the validated tender is not persisted.**
+
+**The "one method for this whole action" line belongs to entry reservations.** A reservation collapses every tier line into ONE contribution, so a single selection covers every pass and the donation with it, and the picker says so. Per-square `confirm-cash` needs no such line: one action, one square, at most one row.
+
 ### The picker
 
 ```
@@ -133,6 +144,7 @@ Reference  ________________________          (optional)
 ```
 
 - **Options = the board's configured payment handles, plus Cash, Check, and Other.** Read live from the board at render time. Never offer a method the host cannot receive.
+  - The resolver already exists: **`acceptedRails(board)` in `src/lib/accepted-payments.ts`**. It returns a rail only when the board lists it in `acceptedPaymentMethods` AND the matching handle — `hostZelle`, `hostCashapp`, `hostVenmo`, `hostPaypal` — is set. The picker takes its middle section from that call and adds Cash, Check and Other, which need no handle. Both host surfaces resolve it per render, so a handle added mid-session appears on the next one.
 - **No default selection, including no pre-fill from the declared rail.** The declared rail is shown as context and nothing else. A pre-filled picker is a picker the host taps past, and the row it produces says *fact* while meaning *she didn't correct the guess*. That is the exact failure this document exists to end.
 - `CARD` never appears.
 - Reference is optional free text, max 64, shown only when tender ≠ `CASH`. Never parsed, never validated, never matched against anything, never public.
