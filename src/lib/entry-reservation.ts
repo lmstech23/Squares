@@ -12,6 +12,7 @@
 import type { Prisma } from "@prisma/client";
 import type { EntryPrice, EntryTier, EntryPriceBasis } from "./entry-pricing.ts";
 import { confirmEntryPurchase } from "./entry-purchase.ts";
+import type { OfflineTender } from "./tender.ts";
 
 export interface ReservationLine {
   tier: EntryTier;
@@ -89,7 +90,14 @@ export class ReservationNotPending extends Error {
  */
 export async function confirmEntryReservation(
   tx: Prisma.TransactionClient,
-  input: { reservationId: string; hostId: string }
+  input: {
+    reservationId: string;
+    hostId: string;
+    /// One tender for the whole reservation: confirm resolves every line
+    /// on it into ONE contribution - payment-method addendum §4.
+    tender: OfflineTender;
+    tenderReference: string | null;
+  }
 ): Promise<{
   contributionId: string;
   passesMinted: number;
@@ -169,8 +177,9 @@ export async function confirmEntryReservation(
     data: {
       boardId: reservation.boardId,
       status: "confirmed",
-      // The tender arrives in M2.
       settlement: "OFFLINE",
+      tender: input.tender,
+      tenderReference: input.tenderReference,
       squareAmountCents: 0,
       donationAmountCents: donationCents,
       entryAmountCents: ticketCents,
@@ -192,6 +201,7 @@ export async function confirmEntryReservation(
       // Attributed to whoever confirmed. The contributor declared it; the host
       // is the one asserting the money arrived.
       recordedByHostId: input.hostId,
+      recordedAt: new Date(),
       confirmedByHostId: input.hostId,
       postCloseAt: postClose ? new Date() : null,
     },

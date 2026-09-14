@@ -7,6 +7,7 @@ import type { Prisma } from "@prisma/client";
 // the raised total on three surfaces and has to be testable.
 import { prisma } from "./prisma.ts";
 import { resolveSupporter } from "./admission.ts";
+import type { OfflineTender } from "./tender.ts";
 
 // Contributions — fundraiser-donations-addendum.md v2.3, invariants 51-70.
 //
@@ -300,14 +301,20 @@ export async function recordCashDonation(input: {
   contributorPhone: string | null;
   recordedByHostId: string;
   isHostEntry: boolean;
+  /// What actually arrived, chosen by the host at record time. This path
+  /// creates and confirms in one action, so the tender is written with the
+  /// row - payment-method addendum §4.
+  tender: OfflineTender;
+  tenderReference: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
     const contribution = await tx.contribution.create({
       data: {
         boardId: input.boardId,
         status: "confirmed",
-        // The tender arrives in M2.
         settlement: "OFFLINE",
+        tender: input.tender,
+        tenderReference: input.tenderReference,
         squareAmountCents: 0,
         donationAmountCents: input.amountCents,
         totalPaidCents: input.amountCents,
@@ -317,6 +324,7 @@ export async function recordCashDonation(input: {
         isHostEntry: input.isHostEntry,
         confirmedAt: new Date(),
         recordedByHostId: input.recordedByHostId,
+        recordedAt: new Date(),
         confirmedByHostId: input.recordedByHostId,
       },
     });

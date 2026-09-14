@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { purchaseUnit } from "@/lib/board-vocabulary";
+import ConfirmWithTender from "@/components/confirm-with-tender";
+import type { DirectRail } from "@/lib/accepted-payments";
 
 // Fundraiser host dashboard — fundraiser-board-v2.md §9.
 //
@@ -41,6 +43,8 @@ interface Props {
   openCount: number;
   awaitingSquares: AwaitingSquare[];
   pendingBatches: PendingBatch[];
+  /// Configured rails, resolved live at render by the page - §4.
+  rails: DirectRail[];
 }
 
 /** One counter box. Extracted so the grouped side and the lone box match. */
@@ -84,6 +88,7 @@ export default function FundraiserPanel({
   openCount,
   awaitingSquares,
   pendingBatches,
+  rails,
 }: Props) {
   // Same resolver as the contributor board: host and contributor never see
   // different nouns for the same purchase unit.
@@ -188,7 +193,7 @@ export default function FundraiserPanel({
             {awaitingSquares.map((sq) => (
               <div
                 key={sq.squareId}
-                className="flex items-center justify-between gap-2 text-xs bg-yellow-950/40 border border-yellow-900/30 rounded-lg px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 text-xs bg-yellow-950/40 border border-yellow-900/30 rounded-lg px-3 py-2"
               >
                 <span className="min-w-0 truncate">
                   <span className="font-medium">#{sq.position + 1}</span>{" "}
@@ -206,20 +211,22 @@ export default function FundraiserPanel({
                   )}
                 </span>
                 <span className="flex gap-1.5 flex-shrink-0">
-                  <button
-                    type="button"
-                    disabled={busy === sq.squareId}
-                    onClick={() =>
+                  <ConfirmWithTender
+                    rails={rails}
+                    idPrefix={`sq-${sq.squareId}`}
+                    label="Mark as received"
+                    confirmLabel="Confirm received"
+                    pendingLabel="…"
+                    busy={busy === sq.squareId}
+                    className="rounded-md bg-green-800 px-2 py-1 font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    onConfirm={(tender, tenderReference) =>
                       post(
                         `/api/host/boards/${boardId}/confirm-cash`,
-                        { squareId: sq.squareId },
+                        { squareId: sq.squareId, tender, tenderReference },
                         sq.squareId
                       )
                     }
-                    className="rounded-md bg-green-800 px-2 py-1 font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-                  >
-                    {busy === sq.squareId ? "…" : "Mark as received"}
-                  </button>
+                  />
                   <button
                     type="button"
                     disabled={busy === sq.squareId}

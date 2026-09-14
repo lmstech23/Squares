@@ -17,9 +17,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBoardAccess } from "@/lib/board-access";
 import { confirmSquares } from "@/lib/confirm-square";
+import { parseTender, type OfflineTender } from "@/lib/tender";
 
 interface ConfirmCashBody {
   squareId: string;
+  tender?: unknown;
+  tenderReference?: unknown;
 }
 
 export async function POST(
@@ -97,6 +100,42 @@ export async function POST(
     }
 
     const isFundraiser = board.boardType === "fundraiser";
+
+    // FUNDRAISER ONLY, AND THAT IS THE WHOLE REASON THIS BRANCH EXISTS.
+    //
+    // Game Day confirms a square and writes NO contribution, so there is no
+    // row for a tender to live on. The payment-method addendum is scoped to
+    // `contributions` and Game Day was declared out of scope; requiring a
+    // tender here would change a Game Day flow this work has no mandate to
+    // touch, on a table it does not write. A Game Day confirm therefore
+    // succeeds with no tender, and a test pins that so this branch is not
+    // simplified away later by someone who cannot see why it is here.
+    //
+    // THE CONDITION READS THE BOARD, not the presence of a linked
+    // contribution: `board.boardType`, fetched above. The two are not the
+    // same question. A fundraiser square can already carry a confirmed
+    // ledger row (writeLedger goes false below), and that confirm still
+    // validates a tender it will not write - refusing late, after the
+    // square flipped, is the end state this route was rewritten to avoid.
+    //
+    // VALIDATED ON EVERY FUNDRAISER CONFIRMATION, INCLUDING THE ONE THAT
+    // WRITES NOTHING. When an already-confirmed matching contribution makes
+    // `writeLedger` false below, a tender is still required: the host-facing
+    // action has one invariant regardless of the linked row's persistence
+    // state. The validated tender is simply not persisted in that case -
+    // nothing is corrected, and no confirmed row is overwritten to store it.
+    //
+    // Validated before anything is flipped, like every other refusal here.
+    let tender: OfflineTender | null = null;
+    let tenderReference: string | null = null;
+    if (isFundraiser) {
+      const parsed = parseTender(body.tender, body.tenderReference);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: 400 });
+      }
+      tender = parsed.tender;
+      tenderReference = parsed.reference;
+    }
     const cents = sq.pricePaidCents ?? board.squarePrice;
     const linked = sq.contribution;
 
@@ -190,8 +229,9 @@ export async function POST(
         data: {
           boardId,
           status: "confirmed",
-          // The tender arrives in M2.
           settlement: "OFFLINE",
+          tender,
+          tenderReference,
           squareAmountCents: cents,
           donationAmountCents: 0,
           totalPaidCents: cents,
@@ -200,6 +240,7 @@ export async function POST(
           contributorPhone: sq.playerPhone,
           confirmedAt: new Date(),
           recordedByHostId: access.hostId,
+          recordedAt: new Date(),
           confirmedByHostId: access.hostId,
         },
       });

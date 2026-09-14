@@ -118,7 +118,7 @@ describe(
       await seed();
       const id = await reserve();
       const out = await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       assert.equal(out.passesMinted, 3, "2 adult + 1 child, not 2 lines");
 
@@ -143,7 +143,7 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const rows = await db.contribution.findMany({ where: { boardId } });
       assert.equal(rows.length, 1, "one per reservation, not one per line");
@@ -162,7 +162,7 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const lines = await db.entryReservationLine.findMany({
         where: { reservationId: id },
@@ -183,7 +183,7 @@ describe(
       assert.equal(await db.eventSupporter.count({ where: { eventId } }), 0);
 
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const s = await db.eventSupporter.findFirstOrThrow({ where: { eventId } });
       assert.equal(s.status, "active");
@@ -197,12 +197,12 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       await assert.rejects(
         () =>
           db.$transaction((tx) =>
-            confirmEntryReservation(tx, { reservationId: id, hostId })
+            confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
           ),
         (e: unknown) => e instanceof ReservationNotPending
       );
@@ -217,7 +217,7 @@ describe(
       await seed({ status: "closed", finalRaisedCents: 12345 });
       const id = await reserve();
       const out = await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       assert.equal(out.postClose, true);
 
@@ -240,7 +240,7 @@ describe(
       await seed({ earlyBirdEndsAt: new Date(Date.now() - 864e5) });
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const adults = await db.admissionPass.findMany({
         where: { supporter: { eventId }, tier: "ADULT" },
@@ -293,7 +293,7 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const { released } = await db.$transaction((tx) =>
         releaseEntryReservation(tx, { reservationId: id, reason: "too late" })
@@ -314,7 +314,7 @@ describe(
       });
 
       const out = await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       assert.equal(out.ticketCents, 9500);
       assert.equal(out.donationCents, 2500);
@@ -338,7 +338,7 @@ describe(
         data: { donationAmountCents: 2500 },
       });
       const out = await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       assert.equal(out.passesMinted, 3, "still 2 adult + 1 child");
       const passes = await db.admissionPass.findMany({
@@ -357,7 +357,7 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
       assert.equal(c.donationAmountCents, 0);
@@ -398,7 +398,7 @@ describe(
       const id = await reserve();
       await db.entryReservation.update({ where: { id }, data: { wantsToHelp: true } });
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
 
       const grant = await db.admissionGrant.findFirstOrThrow({ where: { eventId } });
@@ -412,7 +412,7 @@ describe(
       const id = await reserve();
       await db.entryReservation.update({ where: { id }, data: { wantsToHelp: true } });
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       assert.equal(
         await db.helperSignup.count({ where: { supporter: { eventId } } }),
@@ -428,7 +428,7 @@ describe(
       assert.equal(r.wantsToHelp, false, "defaulted at reserve, never null");
 
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const grant = await db.admissionGrant.findFirstOrThrow({ where: { eventId } });
       assert.equal(grant.wantsToHelp, false);
@@ -442,7 +442,7 @@ describe(
       const yes = await reserve();
       await db.entryReservation.update({ where: { id: yes }, data: { wantsToHelp: true } });
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: yes, hostId })
+        confirmEntryReservation(tx, { reservationId: yes, hostId, tender: "ZELLE", tenderReference: null })
       );
       const grants = await db.admissionGrant.findMany({ where: { eventId } });
       assert.equal(grants.length, 1);
@@ -471,7 +471,7 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
       // 2 adult + 1 child.
@@ -489,7 +489,7 @@ describe(
       await seed();
       const id = await reserve();
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       await db.admissionPass.updateMany({
         where: { supporter: { eventId } },
@@ -505,7 +505,7 @@ describe(
         { tier: "CHILD" as const, priceBasis: "FLAT" as const, unitPriceCents: 1500, quantity: 4 },
       ]);
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
       assert.equal(c.entryTicketCount, 4);
@@ -521,7 +521,7 @@ describe(
         data: { donationAmountCents: 2500 },
       });
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       const c = await db.contribution.findFirstOrThrow({ where: { boardId } });
       assert.equal(c.entryTicketCount, 3);
@@ -533,7 +533,7 @@ describe(
         { tier: "CHILD" as const, priceBasis: "FLAT" as const, unitPriceCents: 1500, quantity: 4 },
       ]);
       const out = await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
       );
       assert.equal(out.passesMinted, 4);
       const c = await db.contribution.findFirstOrThrow({ where: { boardId } });

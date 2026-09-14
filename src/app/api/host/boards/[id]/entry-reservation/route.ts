@@ -9,6 +9,7 @@ import {
   ReservationNotPending,
 } from "@/lib/entry-reservation";
 import { sendPendingConfirmations } from "@/lib/confirmation-email";
+import { parseTender } from "@/lib/tender";
 
 // ============================================================
 // HOST: resolve a direct-payment Entry Ticket reservation.
@@ -41,6 +42,8 @@ interface Body {
   reservationId?: string;
   action?: "confirm" | "release";
   reason?: string;
+  tender?: unknown;
+  tenderReference?: unknown;
 }
 
 export async function PATCH(
@@ -136,10 +139,23 @@ export async function PATCH(
     }
 
     // ------------------------------------------------------------ confirm ---
+    // ONE TENDER FOR THE WHOLE RESERVATION. Confirm resolves every line on
+    // it into one contribution, so one selection covers every pass and the
+    // donation with it - §4. Validated here as well as in the picker.
+    const tender = parseTender(body.tender, body.tenderReference);
+    if (!tender.ok) {
+      return NextResponse.json({ error: tender.error }, { status: 400 });
+    }
+
     let result;
     try {
       result = await prisma.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: reservation.id, hostId: access.hostId })
+        confirmEntryReservation(tx, {
+          reservationId: reservation.id,
+          hostId: access.hostId,
+          tender: tender.tender,
+          tenderReference: tender.reference,
+        })
       );
     } catch (err) {
       if (err instanceof ReservationNotPending) {

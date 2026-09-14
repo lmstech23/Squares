@@ -30,6 +30,7 @@ import {
   mergeLedger,
 } from "@/lib/ledger-row";
 import ConfirmButton from "./confirm-button";
+import { acceptedRails } from "@/lib/accepted-payments";
 
 export const dynamic = "force-dynamic";
 
@@ -89,6 +90,14 @@ export default async function DonationsPage({
       boardType: true,
       status: true,
       prizePoolPercent: true,
+      // THE RAILS THE PICKER MAY OFFER, read LIVE at render - §4. A host who
+      // adds Zelle in week three sees Zelle in the picker in week three;
+      // nothing is captured at mount.
+      acceptedPaymentMethods: true,
+      hostZelle: true,
+      hostCashapp: true,
+      hostVenmo: true,
+      hostPaypal: true,
       // The Date column renders in the BOARD's zone, never the viewer's - a
       // host in another timezone reading her own ledger must see the day the
       // payment happened where the event is.
@@ -106,6 +115,11 @@ export default async function DonationsPage({
   if (board.boardType !== "fundraiser") notFound();
 
   const totals = await boardTotals(board.boardId);
+
+  // Resolved on every render from the row just read: a rail counts only if
+  // the board lists it AND its handle is set - §4, never offer a method the
+  // host cannot receive.
+  const rails = acceptedRails(board);
 
   const contributions = await prisma.contribution.findMany({
     where: { boardId: board.boardId },
@@ -198,6 +212,7 @@ export default async function DonationsPage({
     contributorName: r.contributorName,
     contributorEmail: r.contributorEmail,
     railLabel: RAIL_LABEL[r.paymentRail] ?? r.paymentRail,
+    declaredRail: r.paymentRail,
     // From the STORED unit prices. Never re-quoted, so a reservation taken
     // before the early-bird cutoff still reads at the price it was taken at.
     ticketCents: r.lines.reduce((n, l) => n + l.unitPriceCents * l.quantity, 0),
@@ -340,7 +355,12 @@ export default async function DonationsPage({
                       </span>
                     )}
                   </span>
-                  <ConfirmButton boardId={board.boardId} contributionId={c.id} />
+                  <ConfirmButton
+                    boardId={board.boardId}
+                    contributionId={c.id}
+                    rails={rails}
+                    declaredRail={c.paymentRail}
+                  />
                 </li>
               ))}
             </ul>
@@ -350,10 +370,11 @@ export default async function DonationsPage({
         <ReservationWorklist
           boardId={board.boardId}
           reservations={reservationRows}
+          rails={rails}
         />
 
         <div className="mt-5">
-          <CashDonationForm boardId={board.boardId} />
+          <CashDonationForm boardId={board.boardId} rails={rails} />
         </div>
 
         <h2 className="mt-6 text-sm font-medium">Ledger</h2>

@@ -65,7 +65,10 @@ describe(
       const req = new Request("http://localhost/api/host/boards/" + id + "/confirm-cash", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ squareId }),
+        // A tender is required on a fundraiser board since M2. This suite is
+        // about the ledger, not the tender, so it sends a fixed one; the
+        // tender rules are pinned in tender-routes.integration.test.ts.
+        body: JSON.stringify({ squareId, tender: "CASH" }),
       });
       const res = await POST(req, { params: Promise.resolve({ id }) });
       return { status: res.status, json: await res.json() };

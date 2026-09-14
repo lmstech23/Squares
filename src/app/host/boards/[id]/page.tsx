@@ -1,7 +1,7 @@
 import { getHost } from "@/lib/auth";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { cardCapable } from "@/lib/accepted-payments";
+import { acceptedRails, cardCapable } from "@/lib/accepted-payments";
 import { requireBoardAccess, roleHas } from "@/lib/board-access";
 import ManagersPanel from "./managers-panel";
 import { isNotified } from "@/lib/winner-notification";
@@ -151,6 +151,11 @@ export default async function HostBoardPage({ params }: Props) {
   // at creation and the toggle never renders: switching it off would make card
   // the only way to contribute, and direct payment is how most people will pay.
   const isFundraiser = board.boardType === "fundraiser";
+
+  // Live at render, from the board row already loaded: a rail counts only if
+  // the board lists it AND its handle is set - §4. Component scope, because
+  // both panels that take it render outside the fundraiser branch.
+  const rails = acceptedRails(board);
   // Built from this deployment's own host, so a preview's share panel and QR
   // point at the preview rather than at production.
   const boardUrl = `${await baseUrlFromHeaders()}/board/${board.slug}`;
@@ -567,6 +572,7 @@ export default async function HostBoardPage({ params }: Props) {
 
         <FundraiserPanel
           boardId={board.boardId}
+          rails={rails}
           status={board.status}
           hasEvent={board.event != null}
           hasPrize={board.prizePoolPercent > 0}
@@ -825,6 +831,7 @@ export default async function HostBoardPage({ params }: Props) {
       {isOpen && board.cashModeEnabled && (
         <CashReservePanel
           boardId={board.boardId}
+          rails={rails}
           squares={board.squares.map((s) => ({
             squareId: s.squareId,
             position: s.position,

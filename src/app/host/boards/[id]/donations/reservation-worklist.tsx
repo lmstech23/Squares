@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { reservationSearchTerms } from "@/lib/reference-code";
+import ConfirmWithTender from "@/components/confirm-with-tender";
+import type { DirectRail } from "@/lib/accepted-payments";
 
 // The host's direct-payment reservation worklist — v2 §20.2.
 //
@@ -24,6 +26,9 @@ export interface ReservationRow {
   contributorName: string;
   contributorEmail: string;
   railLabel: string;
+  /// The rail the contributor DECLARED. Context for the picker and nothing
+  /// else: it never preselects a tender - §2, §4.
+  declaredRail: DirectRail | null;
   ticketCents: number;
   /// Zero when there is none. Its own line, so the total is legible.
   donationCents: number;
@@ -42,18 +47,26 @@ function money(cents: number): string {
 
 const TIER_LABEL: Record<string, string> = { ADULT: "Adult", CHILD: "Child" };
 
+/** Passes on a reservation. ONE TENDER COVERS ALL OF THEM: confirm resolves
+ *  every line into one contribution - payment-method addendum §4. */
+function passCount(r: ReservationRow): number {
+  return r.lines.reduce((n, l) => n + l.quantity, 0);
+}
+
 export default function ReservationWorklist({
   boardId,
   reservations,
+  rails,
 }: {
   boardId: string;
   reservations: ReservationRow[];
+  /// Configured rails, live at render - §4.
+  rails: DirectRail[];
 }) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
 
   const pendingTotal = reservations.reduce((n, r) => n + r.totalCents, 0);
 
@@ -78,14 +91,19 @@ export default function ReservationWorklist({
     );
   }, [query, reservations]);
 
-  async function act(id: string, action: "confirm" | "release") {
+  async function act(
+    id: string,
+    action: "confirm" | "release",
+    tender: string | null = null,
+    tenderReference: string | null = null
+  ) {
     setError(null);
     setBusy(id);
     try {
       const res = await fetch(`/api/host/boards/${boardId}/entry-reservation`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservationId: id, action }),
+        body: JSON.stringify({ reservationId: id, action, tender, tenderReference }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -93,7 +111,6 @@ export default function ReservationWorklist({
         setBusy(null);
         return;
       }
-      setConfirming(null);
       router.refresh();
     } catch {
       setError("Something went wrong.");
@@ -184,53 +201,38 @@ export default function ReservationWorklist({
               {r.railLabel} · reserved {r.ageLabel}
             </p>
 
-            {confirming === r.id ? (
-              // Confirming mints passes and writes money. One extra tap, because
-              // the undo for this is a void and a support conversation.
-              <div className="mt-2.5">
-                <p className="text-xs text-gray-300">
-                  Confirm you received {money(r.totalCents)} from{" "}
-                  {r.contributorName}?
-                </p>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={busy === r.id}
-                    onClick={() => act(r.id, "confirm")}
-                    className="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                  >
-                    {busy === r.id ? "Confirming…" : "Yes, received"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy === r.id}
-                    onClick={() => setConfirming(null)}
-                    className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-gray-500 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-2.5 flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy === r.id}
-                  onClick={() => setConfirming(r.id)}
-                  className="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                >
-                  Confirm payment
-                </button>
-                <button
-                  type="button"
-                  disabled={busy === r.id}
-                  onClick={() => act(r.id, "release")}
-                  className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-gray-500 disabled:opacity-50 transition-colors"
-                >
-                  Release
-                </button>
-              </div>
-            )}
+            {/* Confirming mints passes and writes money, so it takes the
+                extra tap the picker already asks for: the undo is a void and
+                a support conversation. ONE TENDER FOR THE WHOLE
+                RESERVATION - every line resolves into one contribution. */}
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              <ConfirmWithTender
+                rails={rails}
+                declaredRail={r.declaredRail}
+                appliesTo={`this reservation — ${passCount(r)} ${
+                  passCount(r) === 1 ? "pass" : "passes"
+                }${r.donationCents > 0 ? " and the donation" : ""}`}
+                idPrefix={`res-${r.id}`}
+                label="Confirm payment"
+                confirmLabel="Yes, received"
+                pendingLabel="Confirming…"
+                prompt={`Confirm you received ${money(r.totalCents)} from ${r.contributorName}?`}
+                busy={busy === r.id}
+                className="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                confirmClassName="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
+                onConfirm={(tender, tenderReference) =>
+                  act(r.id, "confirm", tender, tenderReference)
+                }
+              />
+              <button
+                type="button"
+                disabled={busy === r.id}
+                onClick={() => act(r.id, "release")}
+                className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:border-gray-500 disabled:opacity-50 transition-colors"
+              >
+                Release
+              </button>
+            </div>
           </li>
         ))}
       </ul>

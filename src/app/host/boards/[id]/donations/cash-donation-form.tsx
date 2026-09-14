@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import TenderPicker from "@/components/tender-picker";
+import { TENDER_REQUIRED_ERROR, type OfflineTender } from "@/lib/tender";
+import type { DirectRail } from "@/lib/accepted-payments";
 
 // Record a cash donation — donations §7, invariant 65.
 //
@@ -15,12 +18,23 @@ const inputClass =
   "w-full rounded-lg border border-gray-800 bg-gray-900 px-3 py-2.5 text-sm text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors";
 const labelClass = "block text-sm text-gray-400 mb-1.5";
 
-export default function CashDonationForm({ boardId }: { boardId: string }) {
+export default function CashDonationForm({
+  boardId,
+  rails,
+}: {
+  boardId: string;
+  /// The board's configured rails, resolved LIVE at render by the page.
+  /// Cash, Check and Other are always offered on top of these, so a board
+  /// with nothing configured still has three honest answers.
+  rails: DirectRail[];
+}) {
   const router = useRouter();
   const [amountText, setAmountText] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [tender, setTender] = useState<OfflineTender | null>(null);
+  const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,6 +59,12 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
       setError("A phone number is required.");
       return;
     }
+    // No default selection, so an unanswered picker is an error rather than
+    // a guess - payment-method addendum §4. The route refuses it too.
+    if (!tender) {
+      setError(TENDER_REQUIRED_ERROR);
+      return;
+    }
     setError(null);
     setOk(null);
     setLoading(true);
@@ -57,6 +77,8 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
           donorName: name.trim(),
           donorEmail: email.trim(),
           donorPhone: phone.trim() || null,
+          tender,
+          tenderReference: reference.trim() || null,
         }),
       });
       const data = await res.json();
@@ -70,6 +92,8 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
       setName("");
       setEmail("");
       setPhone("");
+      setTender(null);
+      setReference("");
       setLoading(false);
       router.refresh();
     } catch {
@@ -134,6 +158,22 @@ export default function CashDonationForm({ boardId }: { boardId: string }) {
             className={inputClass}
           />
         </div>
+      </div>
+
+      <div className="mt-4">
+        <span className={labelClass}>How the money arrived</span>
+        <TenderPicker
+          rails={rails}
+          value={tender}
+          onChange={(t) => {
+            setTender(t);
+            setError(null);
+          }}
+          reference={reference}
+          onReferenceChange={setReference}
+          idPrefix="cd"
+          disabled={loading}
+        />
       </div>
 
       {error && (

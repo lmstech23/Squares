@@ -8,6 +8,7 @@ import {
   countsTowardRaised,
   activateDonorSupporter,
 } from "@/lib/contributions";
+import { parseTender } from "@/lib/tender";
 
 // ============================================================
 // HOST: record a cash donation — donations §7, invariant 65.
@@ -39,6 +40,8 @@ interface CashDonationBody {
   donorEmail?: string | null;
   donorPhone?: string | null;
   isHostEntry?: boolean;
+  tender?: unknown;
+  tenderReference?: unknown;
 }
 
 async function loadOwnedBoard(boardId: string) {
@@ -131,6 +134,15 @@ export async function POST(
       );
     }
 
+    // EVERY CONFIRM PATH VALIDATES THE TENDER ITSELF - §4. The picker
+    // cannot offer CARD and cannot submit nothing, but a route that trusted
+    // the picker would be one fetch away from a row the ledger cannot
+    // explain.
+    const tender = parseTender(body.tender, body.tenderReference);
+    if (!tender.ok) {
+      return NextResponse.json({ error: tender.error }, { status: 400 });
+    }
+
     const contribution = await recordCashDonation({
       boardId: board.boardId,
       eventId: board.event?.id ?? null,
@@ -140,6 +152,8 @@ export async function POST(
       contributorPhone: donorPhone,
       recordedByHostId: host.id,
       isHostEntry: body.isHostEntry ?? false,
+      tender: tender.tender,
+      tenderReference: tender.reference,
     });
 
     return NextResponse.json({
@@ -179,12 +193,20 @@ export async function PATCH(
     if ("error" in loaded) return loaded.error;
     const { host, board } = loaded;
 
-    const body: { contributionId?: string } = await request.json();
+    const body: { contributionId?: string; tender?: unknown; tenderReference?: unknown } =
+      await request.json();
     if (!body.contributionId) {
       return NextResponse.json(
         { error: "A contribution id is required." },
         { status: 400 }
       );
+    }
+
+    // The host is recording what arrived, on a row the contributor
+    // declared. Validated here as well as in the picker - §4.
+    const tender = parseTender(body.tender, body.tenderReference);
+    if (!tender.ok) {
+      return NextResponse.json({ error: tender.error }, { status: 400 });
     }
 
     const { count } = await prisma.contribution.updateMany({
@@ -200,6 +222,11 @@ export async function PATCH(
         status: "confirmed",
         confirmedAt: new Date(),
         confirmedByHostId: host.id,
+        tender: tender.tender,
+        tenderReference: tender.reference,
+        // WHEN the host recorded what arrived. `recordedByHostId` stays as
+        // it is: the contributor declared this row, so nobody recorded it.
+        recordedAt: new Date(),
       },
     });
 

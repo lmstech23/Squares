@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import ConfirmWithTender from "@/components/confirm-with-tender";
+import type { DirectRail } from "@/lib/accepted-payments";
 
 type SquareData = {
   squareId: string;
@@ -45,12 +47,16 @@ interface CashReservePanelProps {
   squares: SquareData[];
   /// Fundraiser boards use the direct-payment string set — §6C.
   isFundraiser?: boolean;
+  /// Configured rails, live at render. Empty on Game Day, which asks for
+  /// no tender at all - see the confirm-cash route.
+  rails?: DirectRail[];
 }
 
 export default function CashReservePanel({
   isFundraiser = false,
   boardId,
   squares,
+  rails = [],
 }: CashReservePanelProps) {
   const copy = COPY[isFundraiser ? "fundraiser" : "game"];
   const router = useRouter();
@@ -102,7 +108,11 @@ export default function CashReservePanel({
     }
   }
 
-  async function handleConfirm(squareId: string) {
+  async function handleConfirm(
+    squareId: string,
+    tender: string | null = null,
+    tenderReference: string | null = null
+  ) {
     setActionLoading(squareId);
     setError("");
 
@@ -110,7 +120,7 @@ export default function CashReservePanel({
       const res = await fetch(`/api/host/boards/${boardId}/confirm-cash`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ squareId }),
+        body: JSON.stringify({ squareId, tender, tenderReference }),
       });
 
       if (!res.ok) {
@@ -210,20 +220,38 @@ export default function CashReservePanel({
             {reservedCashSquares.map((s) => (
               <div
                 key={s.squareId}
-                className="flex items-center justify-between text-xs bg-yellow-950/40 border border-yellow-900/30 rounded-lg px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-2 text-xs bg-yellow-950/40 border border-yellow-900/30 rounded-lg px-3 py-2"
               >
                 <span>
                   <span className="text-gray-500">#{s.position + 1}</span>{" "}
                   <span className="text-white font-medium">{s.playerName}</span>
                 </span>
                 <div className="flex gap-1.5">
-                  <button
-                    onClick={() => handleConfirm(s.squareId)}
-                    disabled={actionLoading === s.squareId}
-                    className="text-green-400 hover:text-green-300 font-medium transition-colors disabled:opacity-50"
-                  >
-                    {actionLoading === s.squareId ? "…" : copy.confirm}
-                  </button>
+                  {isFundraiser ? (
+                    <ConfirmWithTender
+                      rails={rails}
+                      idPrefix={`crp-${s.squareId}`}
+                      label={copy.confirm}
+                      confirmLabel="Confirm received"
+                      pendingLabel="…"
+                      busy={actionLoading === s.squareId}
+                      className="text-green-400 hover:text-green-300 font-medium transition-colors disabled:opacity-50"
+                      onConfirm={(tender, tenderReference) =>
+                        handleConfirm(s.squareId, tender, tenderReference)
+                      }
+                    />
+                  ) : (
+                    // GAME DAY KEEPS ITS ONE-TAP CONFIRM. That path writes no
+                    // contribution, so there is no tender to record and the
+                    // route asks for none.
+                    <button
+                      onClick={() => handleConfirm(s.squareId)}
+                      disabled={actionLoading === s.squareId}
+                      className="text-green-400 hover:text-green-300 font-medium transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading === s.squareId ? "…" : copy.confirm}
+                    </button>
+                  )}
                   <span className="text-gray-700">|</span>
                   <button
                     onClick={() => handleRelease(s.squareId)}
