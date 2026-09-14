@@ -190,8 +190,7 @@ export async function POST(
         data: {
           boardId,
           status: "confirmed",
-          paymentMethod: "cash",
-          // Dual-written until M1 drops paymentMethod. The tender arrives in M2.
+          // The tender arrives in M2.
           settlement: "OFFLINE",
           squareAmountCents: cents,
           donationAmountCents: 0,

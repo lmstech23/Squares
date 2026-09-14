@@ -794,7 +794,6 @@ describe(
         data: {
           boardId,
           status: "confirmed",
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: 5000,
           donationAmountCents: 0,
@@ -813,7 +812,7 @@ describe(
       await seedBoard(undefined, GOAL, { hostZelle: "555-0100", hostCashapp: "$h" });
       await db.contribution.create({
         data: {
-          boardId, status: "confirmed", paymentMethod: "cash", settlement: "OFFLINE",
+          boardId, status: "confirmed", settlement: "OFFLINE",
           squareAmountCents: 5000, donationAmountCents: 0, totalPaidCents: 5000,
           contributorName: "Payer", contributorEmail: "payer@example.com",
           confirmedAt: new Date(),

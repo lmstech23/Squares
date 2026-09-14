@@ -89,7 +89,6 @@ describe(
         data: {
           boardId,
           status: "confirmed",
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: 0,
@@ -290,7 +289,6 @@ describe(
         data: {
           boardId,
           status: "confirmed",
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: 0,

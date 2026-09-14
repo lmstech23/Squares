@@ -121,7 +121,6 @@ describe(
         data: {
           boardId,
           status: (opts.status ?? "confirmed") as never,
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: sqc,
           donationAmountCents: 2500,
@@ -245,7 +244,6 @@ describe(
         data: {
           boardId,
           status: status as never,
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: donationCents,

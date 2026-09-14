@@ -265,7 +265,6 @@ describe(
         data: {
           boardId,
           status: "pending",
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: 2500,

@@ -96,11 +96,10 @@ describe(
       const name = `${c.settlement} + ${c.tender ?? "NULL"}`;
       test(`${i + 1}. ${name} is ${c.legal ? "accepted" : "rejected"} by the database`, async () => {
         const insert = () => db.$executeRaw`
-          INSERT INTO contributions (board_id, status, payment_method, settlement, tender,
+          INSERT INTO contributions (board_id, status, settlement, tender,
                                      total_paid_cents, donation_amount_cents,
                                      contributor_name, contributor_email)
           VALUES (${boardId}::uuid, 'pending',
-                  ${c.settlement === "STRIPE" ? "stripe" : "cash"}::"PaymentMethod",
                   ${c.settlement}::settlement, ${c.tender}::tender,
                   100, 100, ${`case ${i + 1}: ${name}`}, 'case@example.invalid')`;
         if (c.legal) {

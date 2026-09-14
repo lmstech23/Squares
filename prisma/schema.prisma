@@ -628,10 +628,6 @@ model Contribution {
   id                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   boardId             String             @map("board_id") @db.Uuid
   status              ContributionStatus @default(pending)
-  /// Reuses the existing `PaymentMethod` enum (`stripe` | `cash`). Donations §5
-  /// writes "card"; the physical enum has said `stripe` since 0_init, and a
-  /// second enum meaning the same thing is worse than the wording gap.
-  paymentMethod       PaymentMethod      @map("payment_method")
 
   squareAmountCents   Int                @default(0) @map("square_amount_cents")
   donationAmountCents Int                @default(0) @map("donation_amount_cents")
@@ -751,7 +747,7 @@ model Contribution {
 
   /// Did the system watch the money settle, or is the host attesting to it?
   /// Payment-method addendum §2. System-written, never chosen by a person.
-  /// Replaces `paymentMethod`, which every writer dual-writes until M1 drops it.
+  /// Replaces `paymentMethod`, which M1b dropped.
   settlement          Settlement
   /// What actually arrived, recorded by the host at confirmation.
   ///

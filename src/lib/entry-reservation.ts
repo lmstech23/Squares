@@ -169,8 +169,7 @@ export async function confirmEntryReservation(
     data: {
       boardId: reservation.boardId,
       status: "confirmed",
-      paymentMethod: "cash",
-      // Dual-written until M1 drops paymentMethod. The tender arrives in M2.
+      // The tender arrives in M2.
       settlement: "OFFLINE",
       squareAmountCents: 0,
       donationAmountCents: donationCents,

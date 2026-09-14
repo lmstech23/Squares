@@ -112,7 +112,6 @@ describe(
         data: {
           boardId,
           status: opts.status as never,
-          paymentMethod: opts.method ?? "cash",
           settlement: (opts.method ?? "cash") === "stripe" ? "STRIPE" : "OFFLINE",
           tender: (opts.method ?? "cash") === "stripe" ? "CARD" : null,
           squareAmountCents: sqc,

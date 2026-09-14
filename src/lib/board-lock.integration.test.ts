@@ -165,7 +165,6 @@ describe("pricingLocks (integration)", { skip: !url && "TEST_DATABASE_URL not se
       data: {
         boardId,
         status,
-        paymentMethod: "cash",
         settlement: "OFFLINE",
         squareAmountCents: square,
         donationAmountCents: donation,

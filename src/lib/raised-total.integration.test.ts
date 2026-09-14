@@ -65,7 +65,6 @@ describe(
         data: {
           boardId,
           status: "confirmed",
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: cents,
           donationAmountCents: 0,
@@ -91,7 +90,6 @@ describe(
         data: {
           boardId,
           status: (opts.status ?? "confirmed") as never,
-          paymentMethod: "cash",
           settlement: "OFFLINE",
           squareAmountCents: 0,
           donationAmountCents: cents,

@@ -150,10 +150,9 @@ export async function createPendingCardContribution(
     data: {
       boardId: input.boardId,
       status: "pending",
-      paymentMethod: "stripe",
       // Written at creation, before the money settles: settlement and tender
       // describe the channel, status says whether it arrived. Payment-method
-      // addendum §8. paymentMethod is dual-written until M1 drops it.
+      // addendum §8.
       settlement: "STRIPE",
       tender: "CARD",
       squareAmountCents: input.squareAmountCents,
@@ -307,8 +306,7 @@ export async function recordCashDonation(input: {
       data: {
         boardId: input.boardId,
         status: "confirmed",
-        paymentMethod: "cash",
-        // Dual-written until M1 drops paymentMethod. The tender arrives in M2.
+        // The tender arrives in M2.
         settlement: "OFFLINE",
         squareAmountCents: 0,
         donationAmountCents: input.amountCents,

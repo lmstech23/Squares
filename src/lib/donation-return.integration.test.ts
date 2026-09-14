@@ -58,7 +58,6 @@ describe(
         data: {
           boardId: opts.board ?? boardId,
           status: opts.status as never,
-          paymentMethod: "stripe",
           settlement: "STRIPE",
           tender: "CARD",
           squareAmountCents: square,
