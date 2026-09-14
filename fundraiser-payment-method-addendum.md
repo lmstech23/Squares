@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.5 — reconciled against the repo
+**Version:** 1.2.6 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -208,7 +208,7 @@ Subtotals cover confirmed, unvoided rows — the population the ledger header al
 | `tender_reference` | String? | Max 64. Free text. Never parsed |
 | `recorded_at` | DateTime? | New. `recorded_by_host_id` already exists |
 
-`payment_rail` is unchanged in name, values, meaning, and its existing constraint.
+`payment_rail` is unchanged in name, values, and meaning. Its constraint `contributions_rail_is_cash_only` keeps its name and its meaning — a declared rail exists only on a host-attested contribution — but its text was rewritten in M1a to read `settlement` instead of the dropped `payment_method`.
 
 A declared `payment_rail` implies `settlement = 'OFFLINE'`, and `CARD` requires `settlement = 'STRIPE'`. So a row with a declared rail cannot carry `tender = 'CARD'`. This is a consequence of two existing constraints, not a third constraint, and it does not narrow the independence rule: every non-`CARD` tender may still disagree with the declared rail. A host who takes a card on her own reader records `OTHER` — the CARD seam, §2.
 
