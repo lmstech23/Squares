@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.7 — reconciled against the repo
+**Version:** 1.2.8 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -175,6 +175,10 @@ Daaliyah Tate    Entry tickets      Card                released
 - **Null tender renders as *recorded by host*, never as *Cash*.**
 - Nothing here reaches the public board. Money doc §10 gives the public two numbers.
 
+**A ledger reservation row has no method to name.** Those rows are grouped from `squares` in `reserved_cash`, not from a contribution, and a square carries no declared rail: `payment_rail` is a column on `contributions` and `entry_reservations`, never on `squares`. Their Method cell renders an em dash. It read `cash` before, which asserted a method nobody recorded - the same defect the null-tender rule exists to prevent.
+
+**Declared rails belong to the entry-reservation worklist**, which is where that data exists: a pending `EntryReservation` carries the rail the contributor chose, and the worklist already shows it beside the reference code.
+
 ---
 
 ## 6. Correcting the record
@@ -184,6 +188,10 @@ Sixty-two rows on live boards predate this change. Some are wrong and the host i
 **Tender and reference are correctable inline. Settlement, amount, and status are not correctable through this path** — and the route rejects them explicitly rather than ignoring them.
 
 That asymmetry is the whole safety argument: a correction that cannot touch a dollar or a state cannot break reconciliation, so it needs no confirmation modal and no close-flow gate.
+
+**Correction requires `cash.record`** - the capability both OWNER and MANAGER hold. The board's existing authorization is the whole boundary, and nothing in the path consults `recorded_by_host_id`: **the original recorder does not own the row.** A row only its recorder could fix would be uncorrectable the day she is unavailable, which is exactly when a ledger gets fixed.
+
+**A correction never changes `recorded_by_host_id`.** That column answers who recorded the money; the correction log answers who later changed how it is described. Two questions, two answers, kept apart on purpose.
 
 Every correction writes a `tender_correction_log` row — host, contribution, field, old, new, timestamp. Same shape and reasoning as `SignupLog`.
 
