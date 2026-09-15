@@ -59,6 +59,17 @@ Game Day is unchanged in every respect. This spec adds a parallel path.
 | `src/lib/cron/release-expired.ts` | Resolve, don't release — invariant 18 |
 | `prisma/schema.prisma` | Section 3, plus admission addendum §2 |
 
+**Payment method — the host surfaces** (`fundraiser-payment-method-addendum.md`):
+
+| File | Change |
+|------|--------|
+| `src/lib/tender.ts` | **NEW** — the labels, the picker's option list, and the parser every confirm route calls |
+| `src/components/tender-picker.tsx` | **NEW** — the one picker, on all four confirm paths |
+| `src/components/confirm-with-tender.tsx` | **NEW** — open-then-confirm wrapper |
+| `src/app/host/boards/[id]/donations/ledger-method.tsx` | **NEW** — Method cell, detail reveal, inline correction |
+| `src/app/api/host/boards/[id]/contribution-tender/route.ts` | **NEW** — the correction, and its audit rows |
+| `src/lib/tender-breakdown.ts` | **NEW** — the close panel's deposit list |
+
 **Admission (only on boards with an event):**
 
 | File | Change |
@@ -786,7 +797,28 @@ On a Phase A board there is no prize pool line.
 
 **Confirm actions also record a tender:** every host confirmation of offline money records how it actually arrived — Record donation, confirming a declared donation, confirming cash-reserved squares, and confirming an entry reservation line. One shared picker across all four: the board's configured handles plus Cash, Check and Other, read live at render; no default selection; `CARD` never offered. Where the contributor declared a rail it is shown as context — *"Contributor said: Zelle"* — and never pre-selects anything. The tender is written inside the confirmation the host is already making: no new step, route, transaction or state. A contributor's own declaration records no tender. §3, *Contribution — how it was paid*; `fundraiser-payment-method-addendum.md` §4.
 
+**The ledger's Method column** answers one question: does Daali know this money arrived, or is the host telling us it did.
+
+| Row | Reads | Because |
+|---|---|---|
+| Card | **Card** | The system watched it settle — `settlement = STRIPE`. No marker: nothing was attested |
+| Offline, tender recorded | **Zelle · RECORDED** | The host attests to it. The marker is what separates attested money from witnessed money at a glance, without a second column |
+| Offline, no tender | **Recorded by host** | Recorded before the picker existed. **Never "Cash"** — most of those rows were cash and some were not, and that is precisely what nobody can reconstruct |
+| A reserved square | **—** | Not a contribution. Those rows are grouped from `squares`, and a square carries no rail to declare or tender to record |
+
+Opening a row reveals what was actually recorded — who recorded it, when, the reference note if there is one, and the contributor's declared rail **only when it disagrees with the tender**, since a declaration that matches repeats nothing. A row with none of that says so plainly rather than showing an empty panel.
+
+**Correcting a method** happens in the same reveal — *Record the method* on a historical row, *Correct method* on a recorded one. Offline rows only; `CARD` is not offerable and is refused if sent. Each changed field writes an audit row, so two fields changed at once leave two rows, and a no-op writes none.
+
+**Any organizer authorized to manage the board may correct any offline row** — the `cash.record` capability, which OWNER and MANAGER both hold. The original recorder does not own the row: a row only she could fix would be uncorrectable the day she is unavailable, which is exactly when a ledger gets fixed. A correction changes how the money is described and never who recorded it, the settlement, the state, the totals, eligibility, fees, or close math.
+
+**`?method=unspecified`** narrows the ledger to confirmed, unvoided offline contributions with no recorded method — the rows the close panel counts as Unspecified — with a banner explaining the view and *Show all* back out. Reserved squares are excluded from it: they are not contributions and have no method to be unspecified about.
+
 **Close:** early close requires resolving all outstanding cash inside the flow. Scheduled close needs no host action. Money doc §7.
+
+**The close panel shows a deposit breakdown** — confirmed money grouped by how it arrived, in both close states, because the deposit is made after the campaign closes as well as before it. It totals **the same population as the raised figure in the header**: confirmed and not voided, summing `totalPaidCents`, using that predicate itself rather than a second copy of it. Money with no recorded method reads **Unspecified**, never "Cash" — a bucket claiming to be cash when it is merely unknown is the one line that sends a host looking for money that is not there. That line links to the filtered ledger above, in the same tab: the close panel holds no in-progress state to lose.
+
+**The breakdown is explanatory, not arithmetic.** Nothing in close, finalization, prize, eligibility or fee math reads `tender` — invariant 122. It is a list a host works from at the bank.
 
 **Close-flow warning, required:**
 > Prize amounts are final once announced. If a contribution is later disputed through the contributor's bank, that amount comes out of your proceeds — not out of the prizes.
