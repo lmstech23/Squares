@@ -30,6 +30,7 @@ import {
   mergeLedger,
 } from "@/lib/ledger-row";
 import ConfirmButton from "./confirm-button";
+import LedgerMethod from "./ledger-method";
 import { acceptedRails } from "@/lib/accepted-payments";
 
 export const dynamic = "force-dynamic";
@@ -114,6 +115,16 @@ export default async function DonationsPage({
   // Game Day never accumulates donation money — donations §5.
   if (board.boardType !== "fundraiser") notFound();
 
+  // CORRECTION IS THE BOARD'S PERMISSION, NOT THE ROW'S - §6. Any organizer
+  // who may manage this board's money may correct any offline row on it,
+  // whoever recorded it: recordedByHostId answers who recorded the money, and
+  // the correction log answers who later changed how it is described. Making
+  // the recorder the owner would leave a row uncorrectable the day she is
+  // unavailable, which is exactly when a ledger gets fixed. The route checks
+  // this again; this only decides whether the action renders.
+  const correctAccess = await requireBoardAccess(board.boardId, "cash.record");
+  const canCorrect = correctAccess.ok;
+
   const totals = await boardTotals(board.boardId);
 
   // Resolved on every render from the row just read: a rail counts only if
@@ -130,6 +141,12 @@ export default async function DonationsPage({
       status: true,
       settlement: true,
       paymentRail: true,
+      // THE METHOD CELL AND ITS REVEAL - §5. Host-facing only: none of
+      // these four reaches the public board, which gets two numbers.
+      tender: true,
+      tenderReference: true,
+      recordedAt: true,
+      recordedByHostId: true,
       squareAmountCents: true,
       donationAmountCents: true,
       entryAmountCents: true,
@@ -142,6 +159,27 @@ export default async function DonationsPage({
       _count: { select: { squares: true } },
     },
   });
+
+  // WHO RECORDED IT, for the detail reveal only. Contribution carries the id
+  // and no relation to Host on that column, so the names come from one extra
+  // read rather than a schema change. A recorder that cannot be resolved stays
+  // null and renders nothing - never an invented name.
+  const recorderIds = [
+    ...new Set(
+      contributions
+        .map((c) => c.recordedByHostId)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  const recorders = recorderIds.length
+    ? await prisma.host.findMany({
+        where: { id: { in: recorderIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const recorderName = new Map(
+    recorders.map((h) => [h.id, h.name?.trim() || h.email?.trim() || null])
+  );
 
   // RESERVED CASH TICKETS. They create no Contribution - the ledger row appears
   // only when the host marks the money received - so without this a
@@ -429,7 +467,13 @@ export default async function DonationsPage({
                       <td className="py-2 pr-3 text-gray-400 whitespace-nowrap">
                         {r.at ? stamp(r.at, tz) : "—"}
                       </td>
-                      <td className="py-2 pr-3 text-gray-400">cash</td>
+                      {/* NOT A METHOD, AND NOT "cash". A reserved square is
+                          money that has not arrived, and a square carries no
+                          declared rail - there is no payment_rail column on it -
+                          so there is nothing to name. Calling it cash asserted a
+                          method nobody recorded, the same defect the null-tender
+                          rule exists to prevent. §5. */}
+                      <td className="py-2 pr-3 text-gray-700">—</td>
                       {/* NOT A Contribution STATUS. This money has not arrived
                           and is in none of the totals above; the word has to
                           say so without borrowing `pending`, which on this
@@ -493,8 +537,23 @@ export default async function DonationsPage({
                       </span>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-gray-400">
-                    {c.settlement === "OFFLINE" ? "cash" : "card"}
+                  <td className="py-2 pr-3 align-top">
+                    <LedgerMethod
+                      boardId={board.boardId}
+                      contributionId={c.id}
+                      rails={rails}
+                      canCorrect={canCorrect}
+                      settlement={c.settlement}
+                      tender={c.tender}
+                      reference={c.tenderReference}
+                      recordedBy={
+                        c.recordedByHostId
+                          ? recorderName.get(c.recordedByHostId) ?? null
+                          : null
+                      }
+                      recordedAt={c.recordedAt ? stamp(c.recordedAt, tz) : null}
+                      declaredRail={c.paymentRail}
+                    />
                   </td>
                   <td className="py-2 pr-3">
                     <span

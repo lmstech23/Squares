@@ -96,6 +96,45 @@ export function referencePlaceholder(tender: OfflineTender | null): string {
   }
 }
 
+/** What a row says when nobody recorded a tender. NEVER "Cash": most of
+ *  those rows were cash and some were not, and saying Cash would assert a
+ *  fact nobody recorded - §5, §9. */
+export const RECORDED_BY_HOST_LABEL = "Recorded by host";
+
+/**
+ * The ledger's Method label - §5.
+ *
+ * A witnessed row is Card. An offline row is its tender. An offline row with
+ * no tender - every row that predates this change, 14 of them on the live
+ * board - reads "Recorded by host", which is what is actually known about it.
+ *
+ * An unrecognised value falls back the same way rather than rendering a raw
+ * enum at a host who is trying to reconcile a bank statement.
+ */
+export function methodLabel(settlement: string, tender: string | null): string {
+  if (settlement === "STRIPE") return "Card";
+  if (!tender) return RECORDED_BY_HOST_LABEL;
+  const known = OFFLINE_TENDERS.find((t) => t === tender);
+  return known ? TENDER_LABEL[known] : RECORDED_BY_HOST_LABEL;
+}
+
+/**
+ * Whether the declared rail still adds something beside the tender - §5.
+ *
+ * Declared Zelle confirmed as Zelle repeats itself and is not shown. Declared
+ * Zelle confirmed as Cash is the disagreement worth keeping, and a declaration
+ * on a row with no tender is the only thing known about how it was meant to
+ * arrive.
+ */
+export function declaredRailDiffers(
+  rail: DirectRail | null,
+  tender: string | null
+): boolean {
+  if (!rail) return false;
+  if (!tender) return true;
+  return RAIL_TENDER[rail] !== tender;
+}
+
 export const TENDER_REQUIRED_ERROR = "Choose how the money arrived.";
 export const TENDER_CARD_ERROR =
   "Card is not a host-recorded method. A card payment is confirmed by Stripe; record Other with a note.";
@@ -105,6 +144,32 @@ export const TENDER_REFERENCE_TOO_LONG_ERROR = `A reference may be at most ${TEN
 export type ParsedTender =
   | { ok: true; tender: OfflineTender; reference: string | null }
   | { ok: false; error: string };
+
+export type ParsedReference =
+  | { ok: true; reference: string | null }
+  | { ok: false; error: string };
+
+/**
+ * The reference rule on its own - §6.
+ *
+ * A correction can change the reference WITHOUT touching the tender, so the
+ * rule cannot live inside a validator that also demands one. Empty, blank and
+ * absent all mean null: clearing a note is a legitimate correction.
+ */
+export function parseTenderReference(reference: unknown): ParsedReference {
+  if (reference === undefined || reference === null || reference === "") {
+    return { ok: true, reference: null };
+  }
+  if (typeof reference !== "string") {
+    return { ok: false, error: TENDER_REFERENCE_TOO_LONG_ERROR };
+  }
+  const trimmed = reference.trim();
+  if (!trimmed) return { ok: true, reference: null };
+  if ([...trimmed].length > TENDER_REFERENCE_MAX) {
+    return { ok: false, error: TENDER_REFERENCE_TOO_LONG_ERROR };
+  }
+  return { ok: true, reference: trimmed };
+}
 
 /**
  * The one validator every confirm route calls, on its own, before it writes.
@@ -122,14 +187,9 @@ export function parseTender(tender: unknown, reference: unknown): ParsedTender {
   const found = OFFLINE_TENDERS.find((t) => t === tender.toUpperCase());
   if (!found) return { ok: false, error: TENDER_UNKNOWN_ERROR };
 
-  if (reference === undefined || reference === null || reference === "") {
-    return { ok: true, tender: found, reference: null };
-  }
-  if (typeof reference !== "string") return { ok: false, error: TENDER_REFERENCE_TOO_LONG_ERROR };
-  const trimmed = reference.trim();
-  if (!trimmed) return { ok: true, tender: found, reference: null };
-  if ([...trimmed].length > TENDER_REFERENCE_MAX) {
-    return { ok: false, error: TENDER_REFERENCE_TOO_LONG_ERROR };
-  }
-  return { ok: true, tender: found, reference: trimmed };
+  // The same rule the correction path uses, so a reference accepted at
+  // confirmation is accepted at correction and vice versa.
+  const ref = parseTenderReference(reference);
+  if (!ref.ok) return { ok: false, error: ref.error };
+  return { ok: true, tender: found, reference: ref.reference };
 }
