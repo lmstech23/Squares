@@ -581,7 +581,6 @@ export default async function HostBoardPage({ params }: Props) {
           rails={rails}
           tenderRows={breakdown.rows}
           tenderTotalCents={breakdown.totalCents}
-          ledgerHref={`/host/boards/${board.boardId}/donations`}
           status={board.status}
           hasEvent={board.event != null}
           hasPrize={board.prizePoolPercent > 0}

@@ -5,9 +5,12 @@ import {
   declaredRailDiffers,
   methodLabel,
   offlineTenderOptions,
+  METHOD_NOT_RECORDED_LABEL,
+  nullTenderLabel,
   parseTender,
   referencePlaceholder,
   RECORDED_BY_HOST_LABEL,
+  SELECT_METHOD_LABEL,
   TENDER_REFERENCE_MAX,
 } from "./tender.ts";
 
@@ -37,6 +40,33 @@ describe("methodLabel (ledger display)", () => {
 
   test("an unrecognised tender falls back to Recorded by host rather than inventing one", () => {
     assert.equal(methodLabel("OFFLINE", "BITCOIN"), RECORDED_BY_HOST_LABEL);
+  });
+});
+
+describe("nullTenderLabel (what the ledger cell offers)", () => {
+  // THE COPY TRACKS THE CAPABILITY. cash.record is what the correction
+  // route checks, so it is also what decides whether the cell invites an
+  // action. Offering "Select method" to a viewer the route would refuse
+  // spends her time and then denies her.
+  test("a viewer who may correct is told what to do", () => {
+    assert.equal(nullTenderLabel(true), "Select method");
+  });
+
+  test("a viewer who may not is told what is known, and nothing to do", () => {
+    assert.equal(nullTenderLabel(false), "Method not recorded");
+  });
+
+  test("neither ever says Cash, and neither describes the database", () => {
+    for (const label of [SELECT_METHOD_LABEL, METHOD_NOT_RECORDED_LABEL]) {
+      assert.notEqual(label, "Cash");
+      assert.notEqual(label, RECORDED_BY_HOST_LABEL);
+    }
+  });
+
+  // methodLabel is unchanged: it still answers "what does this row say",
+  // which is a different question from "what can she do about it".
+  test("methodLabel still reports the record itself", () => {
+    assert.equal(methodLabel("OFFLINE", null), RECORDED_BY_HOST_LABEL);
   });
 });
 

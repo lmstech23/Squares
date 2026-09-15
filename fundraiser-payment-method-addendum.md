@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.9 — reconciled against the repo
+**Version:** 1.2.10 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -175,7 +175,11 @@ Daaliyah Tate    Entry tickets      Card                released
 - **The cell still has to look openable**, because the marker was the only thing signalling that it opens. That is an affordance, not a status: a hover underline and a chevron that turns when the row is open. It spends no word, and nothing enters the reading flow beside the label.
 
 - Tapping an offline row reveals recorded-by, recorded-at, reference, and the declared rail when the two differ.
-- **Null tender renders as *recorded by host*, never as *Cash*.**
+- **A row with no tender names the action, not the record, and the copy is permission-aware.** *Recorded by host* was accurate and useless: it describes the database and leaves the host to work out that she can do something about it. With `cash.record` the cell reads **Select method**; without it, **Method not recorded**, and the cell does not open. The copy tracks the same capability the route enforces, because offering a control to a viewer the route would refuse spends her time and then denies her. **Neither ever renders *Cash*** — that rule is unchanged and is the reason this cell exists.
+
+- **The correction control is the compact variant of the one picker — a native `<select>`, not a second component.** Same options from the board's accepted rails, same `CARD` exclusion, same route. Only presentation differs, and the radio group stays on the four confirm paths, where the host has already stopped to confirm a payment and the reference field needs room. Opened, the radio stack ran taller than three donor rows and pushed the ledger down the page; one line that opens the phone's own wheel is the right trade for fixing a row in a backlog.
+
+- **The compact variant does not ask for a reference, and that is a UI judgement, not a capability change.** Correcting a September row is recall — *it was Cash App* — not transcription: there is no cheque in her hand to read a number off. `tender_reference` is untouched in the column, the route, the audit log and the detail reveal; existing references still display; the four confirm paths still collect an optional one. The compact type does not accept the prop at all, so this cannot drift into the other presentation.
 - Nothing here reaches the public board. Money doc §10 gives the public two numbers.
 
 **A ledger reservation row has no method to name.** Those rows are grouped from `squares` in `reserved_cash`, not from a contribution, and a square carries no declared rail: `payment_rail` is a column on `contributions` and `entry_reservations`, never on `squares`. Their Method cell renders an em dash. It read `cash` before, which asserted a method nobody recorded - the same defect the null-tender rule exists to prevent.
@@ -195,6 +199,10 @@ That asymmetry is the whole safety argument: a correction that cannot touch a do
 **Correction requires `cash.record`** - the capability both OWNER and MANAGER hold. The board's existing authorization is the whole boundary, and nothing in the path consults `recorded_by_host_id`: **the original recorder does not own the row.** A row only its recorder could fix would be uncorrectable the day she is unavailable, which is exactly when a ledger gets fixed.
 
 **A correction never changes `recorded_by_host_id`.** That column answers who recorded the money; the correction log answers who later changed how it is described. Two questions, two answers, kept apart on purpose.
+
+**The correction is the cell. No edit mode, no Save, no Cancel, no modal.** Choosing a method writes it. The asymmetry above is what buys this: a Save button on a one-field form that cannot move a dollar only asks her to confirm what she already said. While the write is in flight the select is disabled; if it is refused, the prior value is restored and the error sits beneath the control. Nothing is written by opening a row — only by choosing.
+
+**A correction made through the compact cell sends `tender` alone.** It must not send `tenderReference: null` for a field it never offered: that would erase a reference already on the row, which is a correction nobody asked for. The route's per-field logging means an untouched field writes no log row.
 
 Every correction writes a `tender_correction_log` row — host, contribution, field, old, new, timestamp. Same shape and reasoning as `SignupLog`.
 
@@ -217,6 +225,10 @@ Confirmed              $3,650
 This is the actual deliverable. It is the list she works from at the bank, and today she reconstructs it from memory.
 
 Subtotals cover confirmed, unvoided rows — the population the ledger header already totals. Rows with a null tender appear as *Unspecified* and are not silently folded into Cash.
+
+**It is a report, not a doorway.** *Unspecified* is a line in the list, as written above — not a link. Rendering it as one put an amber underline in a column of figures, where it reads as an error rather than an invitation, and it points back at the ledger the host has just come from. The filtered view still exists at `?method=unspecified`; nothing in the deposit list advertises it.
+
+**The breakdown renders while `CLOSING` and after `CLOSED`, never while the board is open.** Collecting and reconciling are different jobs. While she is collecting, she manages the ledger; while she is closing, she reconciles the money. A deposit worksheet on a board still taking payments answers a question she has not asked, and its subtotals change under her while she reads them.
 
 ---
 

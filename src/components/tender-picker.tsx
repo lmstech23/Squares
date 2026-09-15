@@ -7,11 +7,12 @@ import {
   TENDER_REFERENCE_MAX,
   offlineTenderOptions,
   referencePlaceholder,
+  SELECT_METHOD_LABEL,
   type OfflineTender,
 } from "@/lib/tender";
 
 // THE ONE TENDER PICKER, used by all four confirm paths — payment-method
-// addendum v1.2.6 §4. Four copies would drift, and the one that drifts is
+// addendum v1.2.10 §4. Four copies would drift, and the one that drifts is
 // whichever gets looked at least.
 //
 // NO DEFAULT SELECTION, and no prefill from the declared rail. A preselected
@@ -24,14 +25,42 @@ import {
 // to disagree. Shown as a line of text, never as a selection.
 //
 // CARD IS NEVER AN OPTION. offlineTenderOptions cannot return it.
+//
+// TWO PRESENTATIONS, ONE PICKER — §4, §5.
+//
+//   radio    the confirm paths. She has already stopped to confirm a payment,
+//            the options deserve to be visible at a glance, and the reference
+//            field needs somewhere to live.
+//   compact  the ledger's correction cell. A native <select>: one line, and on
+//            a phone it opens the platform's own wheel. The radio stack ran
+//            taller than three donor rows and pushed the ledger down the page,
+//            which is the wrong trade for fixing a row in a backlog.
+//
+// ONLY PRESENTATION DIFFERS. Same options, same CARD exclusion, same route
+// behind it. A second component is how those three quietly stop matching.
+//
+// THE REFERENCE FIELD IS RADIO-ONLY, AND THAT IS A UI JUDGEMENT, NOT A
+// CAPABILITY CHANGE. Correcting a September row is recall — "it was Cash App" —
+// not transcription; there is no check in her hand to read a number off. The
+// column, the route, the audit log and the detail reveal all still carry
+// `tender_reference`, existing references still display, and the confirm paths
+// still collect one. The compact variant simply does not ask. The prop is not
+// merely ignored there: the type does not accept it.
 
-export interface TenderPickerProps {
+interface TenderPickerBase {
   /** The board's configured rails, resolved live at render by the server
    *  component that owns the board row. Cash, Check and Other are always
    *  offered, so an unconfigured board still has three answers. */
   rails: readonly DirectRail[];
   value: OfflineTender | null;
   onChange: (tender: OfflineTender) => void;
+  /** Unique per instance: a page can render several of these at once. */
+  idPrefix: string;
+  disabled?: boolean;
+}
+
+interface TenderPickerRadioProps extends TenderPickerBase {
+  variant?: "radio";
   reference: string;
   onReferenceChange: (reference: string) => void;
   /** Context only: "Contributor said: Zelle". Never preselects. */
@@ -39,23 +68,56 @@ export interface TenderPickerProps {
   /** What one selection covers, when an action confirms more than one thing —
    *  an entry reservation is one contribution for every pass on it. */
   appliesTo?: string | null;
-  /** Unique per instance: a page can render several of these at once. */
-  idPrefix: string;
-  disabled?: boolean;
 }
 
-export default function TenderPicker({
-  rails,
-  value,
-  onChange,
-  reference,
-  onReferenceChange,
-  declaredRail = null,
-  appliesTo = null,
-  idPrefix,
-  disabled = false,
-}: TenderPickerProps) {
+interface TenderPickerCompactProps extends TenderPickerBase {
+  variant: "compact";
+}
+
+export type TenderPickerProps =
+  | TenderPickerRadioProps
+  | TenderPickerCompactProps;
+
+export default function TenderPicker(props: TenderPickerProps) {
+  const { rails, value, onChange, idPrefix, disabled = false } = props;
   const options = offlineTenderOptions(rails);
+
+  if (props.variant === "compact") {
+    return (
+      <select
+        id={`${idPrefix}-tender`}
+        value={value ?? ""}
+        disabled={disabled}
+        aria-label="How the money arrived"
+        onChange={(e) => {
+          const next = e.target.value;
+          // The placeholder is `disabled` below and cannot be chosen, but the
+          // guard is here rather than assumed: an empty value is not a tender
+          // and must never reach the route.
+          if (next) onChange(next as OfflineTender);
+        }}
+        className="w-full max-w-[13rem] rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-white outline-none transition-colors focus:border-gray-500 disabled:opacity-40"
+      >
+        {value === null && (
+          <option value="" disabled>
+            {SELECT_METHOD_LABEL}
+          </option>
+        )}
+        {options.map((tender) => (
+          <option key={tender} value={tender}>
+            {TENDER_LABEL[tender]}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  const {
+    reference,
+    onReferenceChange,
+    declaredRail = null,
+    appliesTo = null,
+  } = props;
   // Shown for everything except cash: a cash handover has no memo to record.
   const showReference = value !== null && value !== "CASH";
 

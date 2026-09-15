@@ -119,6 +119,25 @@ export function methodLabel(settlement: string, tender: string | null): string {
 }
 
 /**
+ * WHAT THE LEDGER CELL SAYS ON A ROW WITH NO TENDER - §5.
+ *
+ * Not `methodLabel`'s answer. "Recorded by host" describes the database; it
+ * tells a host what the row IS and leaves her to work out that she can do
+ * anything about it. These two say what there is to do, and they respect the
+ * same boundary the route enforces: `cash.record` is what makes the cell
+ * actionable, so only a viewer who holds it is invited to act.
+ *
+ * Offering "Select method" to someone the route would refuse is a worse
+ * failure than saying nothing - it spends her time and then denies her.
+ */
+export const SELECT_METHOD_LABEL = "Select method";
+export const METHOD_NOT_RECORDED_LABEL = "Method not recorded";
+
+export function nullTenderLabel(canCorrect: boolean): string {
+  return canCorrect ? SELECT_METHOD_LABEL : METHOD_NOT_RECORDED_LABEL;
+}
+
+/**
  * Whether the declared rail still adds something beside the tender - §5.
  *
  * Declared Zelle confirmed as Zelle repeats itself and is not shown. Declared

@@ -9,11 +9,12 @@ import {
   TENDER_LABEL,
   declaredRailDiffers,
   methodLabel,
+  nullTenderLabel,
   type OfflineTender,
 } from "@/lib/tender";
 
 // The ledger's Method cell, its detail reveal, and the inline correction —
-// payment-method addendum v1.2.7 §5, §6.
+// payment-method addendum v1.2.10 §5, §6.
 //
 // WHAT THE HOST IS ACTUALLY ASKING. Not "what does the database say" but "can
 // I trust this line when I am standing at the bank". A Card row was witnessed
@@ -24,14 +25,22 @@ import {
 // CARD reachable only from a witnessed row and never from an attested one, so
 // "Card" ALREADY MEANS Stripe watched it and "Zelle" already means a host said
 // so. A marker beside them restated what the constraint proves - and cost a
-// trailing separator and a two-line wrap to do it. A row whose tender predates
-// recording says "Recorded by host" - NEVER "Cash", which would assert a fact
-// nobody recorded.
+// trailing separator and a two-line wrap to do it.
 //
-// CORRECTION IS INLINE AND HAS NO MODAL. It cannot touch a dollar or a state,
-// which is the entire reason it needs no ceremony. Correcting one of the
-// historical null-tender rows is the PRIMARY path, so the empty state offers
-// the edit action rather than hiding it behind a populated one.
+// A ROW WITH NO TENDER NAMES THE ACTION, NOT THE RECORD. "Recorded by host"
+// was accurate and useless: it describes the database and leaves her to infer
+// that she can do something about it. With `cash.record` the cell reads
+// "Select method"; without it, "Method not recorded", and it does not open.
+// The copy tracks the same capability the route enforces, so the cell never
+// offers a control the viewer would be refused. Neither ever says "Cash" -
+// most of those rows were cash and some were not.
+//
+// CORRECTION IS THE CELL. No modal, no edit mode, no Save, no Cancel: a native
+// select, and choosing writes. It cannot touch a dollar, a state, a total or an
+// eligibility - that is the entire reason it needs no ceremony, and a Save
+// button on a one-field form only asks her to confirm what she already said.
+// While the write is in flight the select is disabled; if it fails, the prior
+// value comes back and the error sits under it.
 //
 // NOTHING HERE REACHES THE PUBLIC BOARD. Money doc §10 gives the public two
 // numbers; tender, reference, recorder and declared rail are host-only.
@@ -67,20 +76,29 @@ export default function LedgerMethod({
 }: LedgerMethodProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draftTender, setDraftTender] = useState<OfflineTender | null>(
+  const [selected, setSelected] = useState<OfflineTender | null>(
     (tender as OfflineTender | null) ?? null
   );
-  const [draftReference, setDraftReference] = useState(reference ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const label = methodLabel(settlement, tender);
 
   // SYSTEM-WITNESSED. Nothing to reveal and nothing to correct: Stripe's own
   // record is the detail, and the route refuses a correction on it anyway.
   if (settlement === "STRIPE") {
-    return <span className="text-gray-300">{label}</span>;
+    return (
+      <span className="text-gray-300">{methodLabel(settlement, tender)}</span>
+    );
+  }
+
+  const label = tender
+    ? methodLabel(settlement, tender)
+    : nullTenderLabel(canCorrect);
+
+  // NOT INTERACTIVE, and the label says as much. A viewer without cash.record
+  // looking at a row nobody recorded has nothing to open: no method to read,
+  // and no way to supply one.
+  if (!tender && !canCorrect) {
+    return <span className="text-gray-500">{label}</span>;
   }
 
   // Shown only when it adds something. A declared Zelle confirmed as Zelle
@@ -88,37 +106,34 @@ export default function LedgerMethod({
   const showDeclared = declaredRailDiffers(declaredRail, tender);
   const hasDetail = Boolean(recordedBy || recordedAt || reference || showDeclared);
 
-  async function save() {
-    // Only what actually changed. The route logs per field, and a field sent
-    // at its current value would write nothing anyway.
-    const body: Record<string, unknown> = { contributionId };
-    if (draftTender && draftTender !== tender) body.tender = draftTender;
-    const nextReference = draftReference.trim() || null;
-    if (nextReference !== (reference ?? null)) body.tenderReference = nextReference;
-
-    if (Object.keys(body).length === 1) {
-      setEditing(false);
-      return;
-    }
-
+  async function choose(next: OfflineTender) {
+    if (next === selected) return;
+    // The value to put back if the write is refused. Optimistic, because the
+    // alternative is a select that ignores the tap until the network answers.
+    const previous = selected;
+    setSelected(next);
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/host/boards/${boardId}/contribution-tender`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        // TENDER ONLY. The compact cell does not collect a reference, so it
+        // must not send the field at all - sending null would erase one that
+        // is already there, which is a correction nobody asked for.
+        body: JSON.stringify({ contributionId, tender: next }),
       });
       const data = await res.json();
       if (!res.ok) {
+        setSelected(previous);
         setError(data.error || "Something went wrong.");
         setBusy(false);
         return;
       }
-      setEditing(false);
       setBusy(false);
       router.refresh();
     } catch {
+      setSelected(previous);
       setError("Something went wrong.");
       setBusy(false);
     }
@@ -149,92 +164,53 @@ export default function LedgerMethod({
 
       {open && (
         <div className="mt-1 rounded border border-gray-800 bg-gray-950 px-2 py-1.5 text-[11px] leading-relaxed text-gray-400">
-          {editing ? (
+          {hasDetail ? (
+            <>
+              {recordedBy && (
+                <div>
+                  Recorded by <span className="text-gray-300">{recordedBy}</span>
+                </div>
+              )}
+              {recordedAt && <div>Recorded {recordedAt}</div>}
+              {/* EXISTING REFERENCES STAY VISIBLE. The compact picker stopped
+                  asking for one; nothing stopped storing or showing them, and
+                  the confirm paths still collect one. */}
+              {reference && (
+                <div className="truncate">
+                  Reference <span className="text-gray-300">{reference}</span>
+                </div>
+              )}
+              {showDeclared && declaredRail && (
+                <div>
+                  Contributor said{" "}
+                  <span className="text-gray-300">
+                    {TENDER_LABEL[RAIL_TENDER[declaredRail]]}
+                  </span>
+                </div>
+              )}
+            </>
+          ) : (
+            // AN HONEST EMPTY STATE. No blank panel and nothing invented: this
+            // row predates method recording, which is what the historical rows
+            // on the live board are.
             <div>
+              Nothing further was recorded. This row predates the method picker.
+            </div>
+          )}
+
+          {canCorrect && (
+            <div className="mt-1.5">
               <TenderPicker
+                variant="compact"
                 rails={rails}
-                value={draftTender}
-                onChange={(t) => {
-                  setDraftTender(t);
-                  setError(null);
-                }}
-                reference={draftReference}
-                onReferenceChange={setDraftReference}
-                declaredRail={declaredRail}
+                value={selected}
+                onChange={choose}
                 idPrefix={`fix-${contributionId}`}
                 disabled={busy}
               />
-              {error && <p className="mt-1.5 text-[11px] text-red-400">{error}</p>}
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={save}
-                  className="rounded border border-gray-700 px-2 py-1 text-[11px] text-gray-200 hover:border-gray-500 disabled:opacity-40 transition-colors"
-                >
-                  {busy ? "Saving…" : "Save"}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setEditing(false);
-                    setDraftTender((tender as OfflineTender | null) ?? null);
-                    setDraftReference(reference ?? "");
-                    setError(null);
-                  }}
-                  className="rounded border border-gray-800 px-2 py-1 text-[11px] text-gray-400 hover:border-gray-600 disabled:opacity-40 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
             </div>
-          ) : (
-            <>
-              {hasDetail ? (
-                <>
-                  {recordedBy && (
-                    <div>
-                      Recorded by <span className="text-gray-300">{recordedBy}</span>
-                    </div>
-                  )}
-                  {recordedAt && <div>Recorded {recordedAt}</div>}
-                  {reference && (
-                    <div className="truncate">
-                      Reference <span className="text-gray-300">{reference}</span>
-                    </div>
-                  )}
-                  {showDeclared && declaredRail && (
-                    <div>
-                      Contributor said{" "}
-                      <span className="text-gray-300">
-                        {TENDER_LABEL[RAIL_TENDER[declaredRail]]}
-                      </span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                // AN HONEST EMPTY STATE, AND THE WAY IN. No blank panel and
-                // nothing invented: this row predates method recording, which
-                // is what the 14 recorder-less rows on the live board are. The
-                // edit action sits right here because correcting one of them is
-                // the primary path, not an afterthought.
-                <div>
-                  Nothing further was recorded. This row predates the method
-                  picker.
-                </div>
-              )}
-              {canCorrect && (
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  className="mt-1 text-[11px] text-gray-500 underline underline-offset-2 hover:text-gray-300 transition-colors"
-                >
-                  {tender ? "Correct method" : "Record the method"}
-                </button>
-              )}
-            </>
           )}
+          {error && <p className="mt-1.5 text-[11px] text-red-400">{error}</p>}
         </div>
       )}
     </div>
