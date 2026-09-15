@@ -802,7 +802,7 @@ On a Phase A board there is no prize pool line.
 | Row | Reads | Because |
 |---|---|---|
 | Card | **Card** | The system watched it settle — `settlement = STRIPE`. No marker: nothing was attested |
-| Offline, tender recorded | **Zelle · RECORDED** | The host attests to it. The marker is what separates attested money from witnessed money at a glance, without a second column |
+| Offline, tender recorded | **Zelle** | The host attests to it. No marker beside it: invariant 121 puts `CARD` only on a witnessed row, so the label is already the distinction — `Card` means Stripe watched it, anything else means a host said so |
 | Offline, no tender | **Recorded by host** | Recorded before the picker existed. **Never "Cash"** — most of those rows were cash and some were not, and that is precisely what nobody can reconstruct |
 | A reserved square | **—** | Not a contribution. Those rows are grouped from `squares`, and a square carries no rail to declare or tender to record |
 

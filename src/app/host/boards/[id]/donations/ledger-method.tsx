@@ -20,9 +20,13 @@ import {
 // by Stripe; an offline row rests on her own word, and the two must be
 // distinguishable without opening anything.
 //
-// SO: Card renders plain, and every offline row with a tender carries the amber
-// marker. A row whose tender predates recording says "Recorded by host" -
-// NEVER "Cash", which would assert a fact nobody recorded.
+// SO: the label carries it, and nothing else needs to. Invariant 121 makes
+// CARD reachable only from a witnessed row and never from an attested one, so
+// "Card" ALREADY MEANS Stripe watched it and "Zelle" already means a host said
+// so. A marker beside them restated what the constraint proves - and cost a
+// trailing separator and a two-line wrap to do it. A row whose tender predates
+// recording says "Recorded by host" - NEVER "Cash", which would assert a fact
+// nobody recorded.
 //
 // CORRECTION IS INLINE AND HAS NO MODAL. It cannot touch a dollar or a state,
 // which is the entire reason it needs no ceremony. Correcting one of the
@@ -126,17 +130,21 @@ export default function LedgerMethod({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="text-left text-gray-300 hover:text-white transition-colors"
+        className="group inline-flex items-baseline gap-1 text-left text-gray-300 decoration-dotted decoration-gray-700 underline-offset-4 transition-colors hover:text-white hover:underline"
       >
         {label}
-        {/* THE MARKER. Host-attested at a glance, without a second column and
-            without shouting: a Card row simply does not have it. Redundant on
-            a null tender, where the label already says who recorded it. */}
-        {tender && (
-          <span className="ml-1 text-[10px] uppercase tracking-wider text-amber-600/90">
-            · recorded
-          </span>
-        )}
+        {/* AN AFFORDANCE, NOT A STATUS. The cell has to look openable - the
+            marker used to be the only cue - but it must not spend a word on
+            saying what the label already says. Hover underline plus a chevron
+            that turns when the row is open, and nothing in the reading flow. */}
+        <span
+          aria-hidden
+          className={`inline-block text-[9px] leading-none text-gray-600 transition-transform group-hover:text-gray-400 ${
+            open ? "rotate-180" : ""
+          }`}
+        >
+          ▾
+        </span>
       </button>
 
       {open && (

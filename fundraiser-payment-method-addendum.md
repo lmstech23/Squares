@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.8 — reconciled against the repo
+**Version:** 1.2.9 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -165,12 +165,15 @@ Method shows the tender label.
 ```
 Contributor      Type               Method              Status
 Janelle Harris   Entry + donation   Cash                confirmed
-Felicia Barnes   Entry tickets      Zelle · recorded    confirmed
+Felicia Barnes   Entry tickets      Zelle               confirmed
 Maureen Gold     Entry tickets      Card                confirmed
 Daaliyah Tate    Entry tickets      Card                released
 ```
 
-- **Offline rows carry a subdued marker** distinguishing host-attested from system-witnessed. Wording is a copy decision; the distinction is required.
+- **The label alone carries the distinction. There is no marker.** A subdued `· recorded` beside every offline tender was specified here and built, and it was redundant from the moment invariant 121 existed: that constraint makes `CARD` reachable only from `STRIPE` and unreachable from `OFFLINE`, so **`Card` already means the system watched it settle and every other label already means a host said so.** The marker restated what the constraint proves, and it was not free - it produced a trailing separator on every offline row and wrapped the cell onto two lines. A second signal that can only ever agree with the first is not reassurance; it is noise that will one day disagree.
+
+- **The cell still has to look openable**, because the marker was the only thing signalling that it opens. That is an affordance, not a status: a hover underline and a chevron that turns when the row is open. It spends no word, and nothing enters the reading flow beside the label.
+
 - Tapping an offline row reveals recorded-by, recorded-at, reference, and the declared rail when the two differ.
 - **Null tender renders as *recorded by host*, never as *Cash*.**
 - Nothing here reaches the public board. Money doc §10 gives the public two numbers.
