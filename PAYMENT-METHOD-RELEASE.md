@@ -188,19 +188,165 @@ not a rollback of this release. Plan the release as one that is not being undone
 
 ---
 
-## 5. Order of operations
+## 5. Before M0: the snapshot, and what "restorable" was made to mean
+
+A forward-only release earns a recovery artifact that has been *restored*, not
+one that has merely been *written*. "A backup exists" is not an answer.
+
+### The artifact
+
+A logical snapshot of the production `public` schema, taken with `pg_dump 17.11`
+against the production project over `DIRECT_URL`, custom format, compressed,
+carrying data, constraints, indexes and ACLs:
+
+```
+C:\Users\dtate\Downloads\squares\backups\daali-prod-public-<UTC timestamp>.dump
+```
+
+Outside the repository, deliberately — it holds contributor names, emails and
+phone numbers. Record for each run: file name, byte size, SHA-256, the UTC start
+and finish, the production project ref, and `server_version_num`. Production is
+PostgreSQL 17.6, so the dump must be taken with a **17.x** `pg_dump`; the 16
+client in `scripts/test-db.mjs` refuses a 17 server.
+
+### The restore, actually performed
+
+Into a clean `postgres:17-alpine` container, not into production:
+
+1. `DROP SCHEMA public CASCADE` on a fresh database — `pg_restore` issues
+   `CREATE SCHEMA public`, and a stock database already has one.
+2. Create the roles the production ACLs name — `anon`, `authenticated`,
+   `service_role`, `supabase_admin` — as `NOLOGIN`, or every `GRANT`/`REVOKE`
+   in the archive fails.
+3. `CREATE SCHEMA extensions` and install `pgcrypto` and `uuid-ossp` into it:
+   Supabase keeps extensions there and column defaults reference them.
+4. `pg_restore --no-owner --exit-on-error`.
+
+Then compare, rather than assume:
+
+| Check | Result |
+|---|---|
+| Per-table row counts, all 28 tables | identical to production |
+| CHECK constraints / foreign keys / indexes | identical (41 / 44 / 76) |
+| `md5(string_agg(row::text))` over `contributions` | identical |
+| `md5(string_agg(row::text))` over `squares` | identical |
+| `payment_method` distribution | identical |
+| Table grants to `anon` / `authenticated` / `PUBLIC` | none, in both |
+
+The row-level md5 is the check that matters: equal counts can hide unequal rows.
+
+**This snapshot is what makes M1b recoverable.** It carries `payment_method` for
+every contribution — the column M1b destroys — so the reconstruction described in
+§4 has a real source rather than an inference.
+
+### Two traps, both hit
+
+- **`pg_restore --table=contributions` alone does not work.** It restores the
+  table without the enum types its columns are declared against, and every
+  statement fails on `type "public.contribution_status" does not exist`. Recovery
+  of one table means restoring the whole archive into a *separate* database and
+  copying across. Plan for that, not for a one-table shortcut.
+- **`docker exec` without `-i` silently discards a heredoc.** A setup step
+  reported success and did nothing. Any `psql` fed from stdin needs
+  `docker exec -i`.
+
+### What is NOT verified, and cannot be from here
+
+**Supabase's managed backups and PITR.** Their availability, retention and
+restore procedure live in the Supabase dashboard. This repository holds no
+Supabase personal access token — only `SUPABASE_SERVICE_ROLE_KEY`, which is a
+PostgREST/Storage credential and cannot read the Management API — so the plan
+tier, the backup schedule and the restore button cannot be confirmed from the
+code side. Confirm it in the dashboard before the window.
+
+**Restoring this dump back into the production project has not been rehearsed,
+and should not be.** Doing so is destructive and needs its own decision. The
+dump is proven to reconstruct the data faithfully; putting it back is a separate
+operation.
+
+Also true of any logical dump: it covers `public` only. `auth`, `storage` and the
+rest of the Supabase-managed schemas are not in it. This release touches nothing
+outside `public`.
+
+---
+
+## 6. The window cannot orphan a charge
+
+Confirmed from the code, because §3 says contribution INSERTs fail during the
+window and the obvious next question is whether a contributor can be charged
+anyway.
+
+**In all three contributor-facing card paths the pending contribution row is
+committed before Stripe is called.**
+
+| Path | Insert | Session |
+|---|---|---|
+| `api/checkout/route.ts` | inside the `prisma.$transaction` that locks the squares, which returns at 461 | `sessions.create` at 515 — step 7, after the transaction |
+| `api/board/[slug]/donate/route.ts` | `prisma.$transaction` at 226 | `sessions.create` at 244 |
+| `api/board/[slug]/entry/route.ts` | `prisma.$transaction` at 164 | `sessions.create` at 216 |
+
+The full order is: **contribution INSERT commits → Checkout Session created →
+`checkoutSessionId` written back to the row → `checkoutUrl` returned to the
+browser → contributor pays on Stripe's page → webhook confirms by looking the row
+up on `checkoutSessionId`.** A contributor cannot reach a payment form before the
+row exists, because the URL that shows them one is returned after it. Each of the
+three routes also compensates if `sessions.create` throws: the row it just wrote
+is set `released`, and nothing was charged.
+
+Those are the only three `stripe.checkout.sessions.create` calls that involve a
+contribution. The other two — `api/credits/purchase` and
+`api/host/credits/checkout` — are host credit purchases with no contribution row
+by design.
+
+**The consequence for the release: during the window a contributor gets an error,
+not a charge.** The INSERT is the first thing that happens and the first thing
+that fails, before any Stripe object exists.
+
+One thing that is *not* a defect and should not be read as one: on a Game Day
+board `isFundraiser` is false and no contribution row is ever created. Game Day
+squares stay outside the ledger by design, and M0 and M1b never touch them.
+
+---
+
+## 7. Order of operations
+
+Steps 1–4 are reversible. Step 6 is the point of no return.
 
 1. Confirm the branch is green locally: `tsc`, unit, every integration suite,
    `next build`.
-2. Read-only production pre-flight: counts by `payment_method`, no value outside
-   `stripe`/`cash`, no NULL, and M0's three assertions evaluated against the live
-   rows. **No writes.**
-3. `npm run db:migrate:production:dry` against production.
-4. Pick a window with no contributor traffic.
-5. `DIRECT_URL=… VERIFY_SITE_URL=https://beta.daali.app npm run db:migrate:production`.
-   Read `DATABASE CONTAINMENT` first.
-6. Merge `--ff-only` to `main` and push. Watch the build through to the alias.
-7. Re-run `verify-containment.mts` standalone with an explicit `DATABASE_URL`.
-8. Exercise the host surfaces against a real board: ledger Method column, a
-   correction, the close-panel breakdown, and one offline confirmation through
-   each of the four confirm paths.
+2. **Choose the window deliberately.** Not "whenever convenient": no fundraiser
+   close due, no event within days, nothing mid-event, and an hour with no
+   recorded contribution traffic. Derive the hour from the data — group
+   `contributions.created_at` by hour in `America/New_York` over the last 90 days
+   and pick a band that is empty.
+3. **Take the snapshot and restore it** — §5. Record name, size, SHA-256, UTC
+   times. Do not continue on "a backup exists".
+4. Read-only production pre-flight, immediately before the migration: counts by
+   `payment_method`, no value outside `stripe`/`cash`, no NULL, and M0's three
+   assertions evaluated against the live rows. **No writes.**
+5. Verify the production host/project ref by hand, out of band.
+6. `npm run db:migrate:production:dry`, then
+   `DIRECT_URL=… VERIFY_SITE_URL=https://beta.daali.app npm run db:migrate:production`.
+   M0 → M1a → M1b, one command. Read `DATABASE CONTAINMENT` first.
+7. **Read the production catalog and verify six things**, from `pg_catalog`, not
+   from the migration's own output:
+   - `contributions.settlement` exists and is `NOT NULL`
+   - `contributions_settlement_tender_valid` exists and is validated
+   - `contributions_card_requires_email` and `contributions_rail_is_cash_only`
+     exist, are validated, and no longer mention `payment_method`
+   - `contributions.payment_method` is gone
+   - the `"PaymentMethod"` enum type still exists — `squares.payment_method` and
+     `payment_references.method` still use it
+   - the row mapping is intact: every pre-existing row's `settlement`/`tender`
+     matches what it had as `payment_method`, against the snapshot
+8. **If the migration failed before completing, stop. Do not merge the code.**
+9. Merge `--ff-only` to `main` and push. Wait until the new deployment actually
+   owns the production alias — not until the build goes green.
+10. Re-run `verify-containment.mts` standalone with an explicit `DATABASE_URL`.
+11. Exercise the host surfaces by hand against a real board: ledger Method cells,
+    a historical `Recorded by host` row, the tender picker, a correction, the
+    `Unspecified` filter, the close breakdown — and confirm one Game Day board is
+    unchanged.
+
+If a problem appears after step 6 completed, the database is forward-only.
+**Do not attempt a code-only rollback to pre-M1** — §4 says what that leaves.
