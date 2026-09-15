@@ -75,6 +75,33 @@ Observed, not acted on, during S0 fixture planning.
 
 ---
 
+## Tender picker announces its group label twice to a screen reader
+
+**Added:** 2026-09-15 (found while fixing the compact select's placeholder)
+**Files:** `src/components/tender-picker.tsx`,
+`src/app/host/boards/[id]/donations/cash-donation-form.tsx`
+
+The radio variant carries `aria-label="How the money arrived"` on its
+`role="radiogroup"`, and `cash-donation-form` renders a VISIBLE `<span>` with
+the same string directly above it. A sighted host reads the heading once; a
+screen reader announces it twice — once as the visible text, once as the
+group's accessible name.
+
+**The fix:** give the visible span an id and point the group at it with
+`aria-labelledby`, replacing the `aria-label`. That is what `aria-labelledby`
+is for: the accessible name becomes the label already on screen rather than a
+second copy of it that can drift from it.
+
+Check the compact variant in the same pass. It uses `aria-label` too, and
+there its label IS the cell's disclosure button rather than a heading, so the
+answer may differ - the button is the control's name, and the select beneath
+it may want `aria-labelledby` pointing at that, or may be correct as it is.
+
+**Deliberately not folded into the copy fix that found it.** An accessibility
+change inside a commit about placeholder text is buried where nobody will look
+for it later. Its own commit, whenever.
+
+---
 ## `fs.chmod` mode bits are inert on Windows — use `icacls`
 
 **Added:** 2026-08-30 (S0 fixture tooling)
