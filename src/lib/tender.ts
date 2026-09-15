@@ -149,6 +149,22 @@ export function nullTenderLabel(canCorrect: boolean): string {
 }
 
 /**
+ * The compact select's empty option - §5.
+ *
+ * DELIBERATELY NOT `SELECT_METHOD_LABEL`. The two sit one above the other on
+ * an open row: the disclosure label is the control the host tapped, and the
+ * select is what it opened. Sharing a string made the row read
+ * "Select payment type / Select payment type", which looks like a rendering
+ * fault rather than a control and its contents. The label keeps the sentence
+ * because it is the thing she taps; the option takes a neutral verb that adds
+ * no second claim.
+ *
+ * NOT EMPTY, EITHER. An option with no text renders as a blank row in a native
+ * wheel, which reads as a nameless choice rather than as an absence.
+ */
+export const TENDER_PLACEHOLDER_LABEL = "Choose…";
+
+/**
  * Whether the declared rail still adds something beside the tender - §5.
  *
  * Declared Zelle confirmed as Zelle repeats itself and is not shown. Declared

@@ -7,7 +7,7 @@ import {
   TENDER_REFERENCE_MAX,
   offlineTenderOptions,
   referencePlaceholder,
-  SELECT_METHOD_LABEL,
+  TENDER_PLACEHOLDER_LABEL,
   type OfflineTender,
 } from "@/lib/tender";
 
@@ -98,9 +98,12 @@ export default function TenderPicker(props: TenderPickerProps) {
         }}
         className="w-full max-w-[13rem] rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] text-white outline-none transition-colors focus:border-gray-500 disabled:opacity-40"
       >
+        {/* NEUTRAL ON PURPOSE. The cell's own label already says what
+            choosing does, and it sits directly above this; repeating it made
+            an open row show the same sentence twice. */}
         {value === null && (
           <option value="" disabled>
-            {SELECT_METHOD_LABEL}
+            {TENDER_PLACEHOLDER_LABEL}
           </option>
         )}
         {options.map((tender) => (

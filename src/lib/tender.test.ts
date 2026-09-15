@@ -9,6 +9,7 @@ import {
   nullTenderLabel,
   parseTender,
   referencePlaceholder,
+  TENDER_PLACEHOLDER_LABEL,
   RECORDED_BY_HOST_LABEL,
   SELECT_METHOD_LABEL,
   TENDER_REFERENCE_MAX,
@@ -63,6 +64,15 @@ describe("nullTenderLabel (what the ledger cell offers)", () => {
   // recorded anything, which is what null means. M0 refused to backfill CASH
   // onto these rows for the same reason. Neither of these may say it, and
   // neither may say Cash.
+  // THE LABEL AND THE SELECT SIT ONE ABOVE THE OTHER ON AN OPEN ROW. Sharing
+  // a string made it read "Select payment type / Select payment type", which
+  // looks like a rendering fault. They must never be the same text again.
+  test("the select's empty option does not restate the label", () => {
+    assert.notEqual(TENDER_PLACEHOLDER_LABEL, SELECT_METHOD_LABEL);
+    assert.notEqual(TENDER_PLACEHOLDER_LABEL, METHOD_NOT_RECORDED_LABEL);
+    assert.ok(TENDER_PLACEHOLDER_LABEL.trim().length > 0, "a blank option reads as a nameless choice");
+  });
+
   test("neither asserts something nobody recorded", () => {
     for (const label of [SELECT_METHOD_LABEL, METHOD_NOT_RECORDED_LABEL]) {
       assert.notEqual(label, "Cash");

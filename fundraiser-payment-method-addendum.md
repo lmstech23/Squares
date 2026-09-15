@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.12 — reconciled against the repo
+**Version:** 1.2.13 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -184,6 +184,8 @@ Daaliyah Tate    Entry tickets      Card                released
 - **The Method column carries a width of its own, declared on a block inside the cell.** Ten columns share the table's `w-full`, and this one used to be sized by its shortest value — `Cash` — so on a real board the label and the detail panel beneath it wrapped one word per line. It now holds a sentence and a `<select>`, both wider than anything it previously carried.
 
   **`min-width` on the `<td>` is not the constraint, and on its own it is not enough.** Column sizing belongs to the table layout algorithm, which derives each column from its cells' content; a `min-width` on the cell box is not part of that derivation and browsers honour it inconsistently. A `min-width` on a **block child** is, because it raises the cell's minimum content width. Every branch of the cell — witnessed, non-interactive and interactive — wraps in it, so a board of nothing but Card rows sizes the column the same as a board full of corrections, and the first correction does not reflow the table. The `<td>` and `<th>` carry the same value as a hint; the two must stay in step. The table already scrolls horizontally, so the cost on a narrow screen is a scroll rather than a squashed cell.
+
+- **The select's empty option must not restate the cell's label.** They sit one above the other on an open row — the label is the control the host tapped, the select is what it opened — so sharing a string made the row read *Select payment type / Select payment type*, which looks like a rendering fault rather than a control and its contents. The label keeps the sentence because it is the thing she taps; the option takes a neutral verb, **Choose…**, which adds no second claim. It is not left blank either: an empty option renders as a nameless row in a native wheel rather than as an absence. **The radio variant has no placeholder and never had one**, so the confirm paths were never affected — checked, not assumed.
 
 - **The correction control is the compact variant of the one picker — a native `<select>`, not a second component.** Same options from the board's accepted rails, same `CARD` exclusion, same route. Only presentation differs, and the radio group stays on the four confirm paths, where the host has already stopped to confirm a payment and the reference field needs room. Opened, the radio stack ran taller than three donor rows and pushed the ledger down the page; one line that opens the phone's own wheel is the right trade for fixing a row in a backlog.
 
