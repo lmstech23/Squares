@@ -27,13 +27,14 @@ import {
 // so. A marker beside them restated what the constraint proves - and cost a
 // trailing separator and a two-line wrap to do it.
 //
-// A ROW WITH NO TENDER NAMES THE ACTION, NOT THE RECORD. "Recorded by host"
-// was accurate and useless: it describes the database and leaves her to infer
-// that she can do something about it. With `cash.record` the cell reads
-// "Select method"; without it, "Method not recorded", and it does not open.
-// The copy tracks the same capability the route enforces, so the cell never
-// offers a control the viewer would be refused. Neither ever says "Cash" -
-// most of those rows were cash and some were not.
+// A ROW WITH NO TENDER SAYS SO. "Recorded by host" was not merely unhelpful
+// there, it was FALSE: nobody recorded a payment type on that row, which is
+// what null means. M0's backfill refused to write CASH onto those rows on
+// exactly those grounds, and this cell had put a different invented fact back
+// in its place. With `cash.record` it now reads "Select payment type";
+// without it, "No payment type recorded", and it does not open. The copy
+// tracks the same capability the route enforces, so the cell never offers a
+// control the viewer would be refused. Neither ever says "Cash".
 //
 // CORRECTION IS THE CELL. No modal, no edit mode, no Save, no Cancel: a native
 // select, and choosing writes. It cannot touch a dollar, a state, a total or an
@@ -82,11 +83,26 @@ export default function LedgerMethod({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // THE COLUMN'S WIDTH LIVES HERE, ON A BLOCK CHILD - NOT ON THE <td>.
+  //
+  // `min-width` on a table-cell box is not binding: CSS 2.1 17.5.2 hands
+  // column sizing to the table layout algorithm, and the browser is free to
+  // ignore it. A min-width on a BLOCK inside the cell is binding, because it
+  // raises the cell's min-content width, which the algorithm must respect.
+  // That is the difference between the first attempt at this and this one.
+  //
+  // Every branch below wraps in it, so the column is the same width whichever
+  // rows a board happens to have - otherwise a board of Card rows would size
+  // the column to `Card` and the first correction would reflow the table.
+  const WIDTH = "min-w-[13rem]";
+
   // SYSTEM-WITNESSED. Nothing to reveal and nothing to correct: Stripe's own
   // record is the detail, and the route refuses a correction on it anyway.
   if (settlement === "STRIPE") {
     return (
-      <span className="text-gray-300">{methodLabel(settlement, tender)}</span>
+      <div className={WIDTH}>
+        <span className="text-gray-300">{methodLabel(settlement, tender)}</span>
+      </div>
     );
   }
 
@@ -98,13 +114,29 @@ export default function LedgerMethod({
   // looking at a row nobody recorded has nothing to open: no method to read,
   // and no way to supply one.
   if (!tender && !canCorrect) {
-    return <span className="text-gray-500">{label}</span>;
+    return (
+      <div className={WIDTH}>
+        <span className="whitespace-nowrap text-gray-500">{label}</span>
+      </div>
+    );
   }
 
   // Shown only when it adds something. A declared Zelle confirmed as Zelle
   // repeats itself; declared Zelle confirmed as Cash is the fact worth keeping.
   const showDeclared = declaredRailDiffers(declaredRail, tender);
   const hasDetail = Boolean(recordedBy || recordedAt || reference || showDeclared);
+
+  // NOTHING TO SHOW AND NOTHING TO DO. With the empty state gone, a disclosure
+  // here would open an empty box. Unreachable today - OWNER and MANAGER both
+  // hold cash.record, so canCorrect is true for anyone who can load this page -
+  // and cheaper to guard than to rediscover the day a third role exists.
+  if (!hasDetail && !canCorrect) {
+    return (
+      <div className={WIDTH}>
+        <span className="whitespace-nowrap text-gray-300">{label}</span>
+      </div>
+    );
+  }
 
   async function choose(next: OfflineTender) {
     if (next === selected) return;
@@ -140,12 +172,12 @@ export default function LedgerMethod({
   }
 
   return (
-    <div className="min-w-0">
+    <div className={WIDTH}>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="group inline-flex items-baseline gap-1 text-left text-gray-300 decoration-dotted decoration-gray-700 underline-offset-4 transition-colors hover:text-white hover:underline"
+        className="group inline-flex items-baseline gap-1 whitespace-nowrap text-left text-gray-300 decoration-dotted decoration-gray-700 underline-offset-4 transition-colors hover:text-white hover:underline"
       >
         {label}
         {/* AN AFFORDANCE, NOT A STATUS. The cell has to look openable - the
@@ -164,7 +196,20 @@ export default function LedgerMethod({
 
       {open && (
         <div className="mt-1 rounded border border-gray-800 bg-gray-950 px-2 py-1.5 text-[11px] leading-relaxed text-gray-400">
-          {hasDetail ? (
+          {/* NO EMPTY STATE. "Nothing further was recorded. This row
+              predates the method picker." answered a question the cell used
+              to raise - why is this panel blank - and the label answers it
+              now by being a control rather than a description. On a row with
+              nothing recorded there is nothing to reveal, so the panel opens
+              straight to the select: the thing she tapped for, with no
+              paragraph in front of it.
+
+              Gated on hasDetail, not on `tender === null`. The two coincide
+              on every historical row - they carry no timestamp, reference or
+              declared rail, and their recorder resolves to nothing - but if
+              one ever does carry a recorder, showing it beats discarding it
+              to satisfy a premise. */}
+          {hasDetail && (
             <>
               {recordedBy && (
                 <div>
@@ -189,17 +234,10 @@ export default function LedgerMethod({
                 </div>
               )}
             </>
-          ) : (
-            // AN HONEST EMPTY STATE. No blank panel and nothing invented: this
-            // row predates method recording, which is what the historical rows
-            // on the live board are.
-            <div>
-              Nothing further was recorded. This row predates the method picker.
-            </div>
           )}
 
           {canCorrect && (
-            <div className="mt-1.5">
+            <div className={hasDetail ? "mt-1.5" : ""}>
               <TenderPicker
                 variant="compact"
                 rails={rails}

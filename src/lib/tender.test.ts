@@ -46,20 +46,28 @@ describe("methodLabel (ledger display)", () => {
 describe("nullTenderLabel (what the ledger cell offers)", () => {
   // THE COPY TRACKS THE CAPABILITY. cash.record is what the correction
   // route checks, so it is also what decides whether the cell invites an
-  // action. Offering "Select method" to a viewer the route would refuse
-  // spends her time and then denies her.
+  // action. Offering it to a viewer the route would refuse spends her time
+  // and then denies her.
+  //
+  // AND THE VOCABULARY IS THE HOST'S. "method", "tender" and "settlement"
+  // are schema words; "payment type" is what she would say out loud.
   test("a viewer who may correct is told what to do", () => {
-    assert.equal(nullTenderLabel(true), "Select method");
+    assert.equal(nullTenderLabel(true), "Select payment type");
   });
 
   test("a viewer who may not is told what is known, and nothing to do", () => {
-    assert.equal(nullTenderLabel(false), "Method not recorded");
+    assert.equal(nullTenderLabel(false), "No payment type recorded");
   });
 
-  test("neither ever says Cash, and neither describes the database", () => {
+  // RECORDED_BY_HOST_LABEL IS A FALSE CLAIM ON A NULL-TENDER ROW - nobody
+  // recorded anything, which is what null means. M0 refused to backfill CASH
+  // onto these rows for the same reason. Neither of these may say it, and
+  // neither may say Cash.
+  test("neither asserts something nobody recorded", () => {
     for (const label of [SELECT_METHOD_LABEL, METHOD_NOT_RECORDED_LABEL]) {
       assert.notEqual(label, "Cash");
       assert.notEqual(label, RECORDED_BY_HOST_LABEL);
+      assert.doesNotMatch(label, /recorded by/i);
     }
   });
 

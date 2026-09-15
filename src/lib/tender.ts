@@ -121,17 +121,28 @@ export function methodLabel(settlement: string, tender: string | null): string {
 /**
  * WHAT THE LEDGER CELL SAYS ON A ROW WITH NO TENDER - §5.
  *
- * Not `methodLabel`'s answer. "Recorded by host" describes the database; it
- * tells a host what the row IS and leaves her to work out that she can do
- * anything about it. These two say what there is to do, and they respect the
- * same boundary the route enforces: `cash.record` is what makes the cell
- * actionable, so only a viewer who holds it is invited to act.
+ * NOT `methodLabel`'S ANSWER, AND THE REASON IS NOT TASTE. "Recorded by
+ * host" on a null-tender row is FALSE. Nobody recorded a method on that row;
+ * that is precisely what null means. The M0 backfill refused to write CASH
+ * onto those rows because it would assert a fact nobody had recorded - and
+ * then the display layer asserted a different one in its place. A label is a
+ * claim about the data exactly as much as a column value is.
  *
- * Offering "Select method" to someone the route would refuse is a worse
- * failure than saying nothing - it spends her time and then denies her.
+ * These two claim only what is true: there is no payment type on this row,
+ * and here is whether you can supply one. They respect the same boundary the
+ * route enforces - `cash.record` is what makes the cell actionable, so only a
+ * viewer who holds it is invited to act. Offering the action to someone the
+ * route would refuse is a worse failure than saying nothing: it spends her
+ * time and then denies her.
+ *
+ * "PAYMENT TYPE", NOT "METHOD". `method`, `tender` and `settlement` are
+ * schema words. What a host says out loud is how someone paid, and the cell
+ * is read by someone reconciling a bank deposit, not by someone reading this
+ * file. The column heading stays `Method` because it heads a column of values
+ * like Cash and Zelle; these two are sentences addressed to a person.
  */
-export const SELECT_METHOD_LABEL = "Select method";
-export const METHOD_NOT_RECORDED_LABEL = "Method not recorded";
+export const SELECT_METHOD_LABEL = "Select payment type";
+export const METHOD_NOT_RECORDED_LABEL = "No payment type recorded";
 
 export function nullTenderLabel(canCorrect: boolean): string {
   return canCorrect ? SELECT_METHOD_LABEL : METHOD_NOT_RECORDED_LABEL;

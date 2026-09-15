@@ -460,7 +460,21 @@ export default async function DonationsPage({
                 <th className="py-2 pr-3 font-normal">Contributor</th>
                 <th className="py-2 pr-3 font-normal">Type</th>
                 <th className="py-2 pr-3 font-normal">Date</th>
-                <th className="py-2 pr-3 font-normal">Method</th>
+                {/* A WIDTH OF ITS OWN. Ten columns share `w-full`, and this
+                    one was sized by its shortest value - `Cash` - so the
+                    label and the detail panel beneath it wrapped one word per
+                    line. It now holds a sentence and a <select>, both wider
+                    than anything the column used to carry.
+
+                    THIS min-w IS A HINT, NOT THE CONSTRAINT. min-width on a
+                    table-cell box is not binding - column sizing belongs to
+                    the table layout algorithm. The binding one is on a block
+                    inside the cell, in ledger-method.tsx. Both are 13rem and
+                    must stay in step.
+
+                    The table already sits in overflow-x-auto, so the cost on a
+                    narrow screen is a horizontal scroll, not a squashed cell. */}
+                <th className="py-2 pr-3 font-normal min-w-[13rem]">Method</th>
                 <th className="py-2 pr-3 font-normal">Status</th>
                 <th className="py-2 pr-3 font-normal text-right">Tickets</th>
                 <th className="py-2 pr-3 font-normal text-right">Ticket $</th>
@@ -567,7 +581,7 @@ export default async function DonationsPage({
                       </span>
                     )}
                   </td>
-                  <td className="py-2 pr-3 align-top">
+                  <td className="py-2 pr-3 align-top min-w-[13rem]">
                     <LedgerMethod
                       boardId={board.boardId}
                       contributionId={c.id}
