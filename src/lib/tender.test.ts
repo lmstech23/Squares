@@ -1,6 +1,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
+  breakdownLabel,
   declaredRailDiffers,
   methodLabel,
   offlineTenderOptions,
@@ -131,5 +132,27 @@ describe("referencePlaceholder", () => {
     assert.match(referencePlaceholder("OTHER"), /optional/);
     assert.match(referencePlaceholder("ZELLE"), /optional/);
     assert.match(referencePlaceholder(null), /Optional/);
+  });
+});
+
+describe("breakdownLabel (the deposit list)", () => {
+  test("the witnessed rail is Card", () => {
+    assert.equal(breakdownLabel("CARD"), "Card");
+  });
+
+  test("a recorded method is its own label", () => {
+    assert.equal(breakdownLabel("ZELLE"), "Zelle");
+    assert.equal(breakdownLabel("CASH"), "Cash");
+  });
+
+  // A bucket claiming to be cash when it is merely unknown is the line that
+  // sends a host looking for money that is not there.
+  test("money with no recorded method is Unspecified, never Cash", () => {
+    assert.equal(breakdownLabel(null), "Unspecified");
+    assert.notEqual(breakdownLabel(null), "Cash");
+  });
+
+  test("an unrecognised value does not invent a method either", () => {
+    assert.equal(breakdownLabel("BITCOIN"), "Unspecified");
   });
 });

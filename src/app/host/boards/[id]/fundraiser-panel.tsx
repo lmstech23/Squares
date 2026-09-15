@@ -43,6 +43,13 @@ interface Props {
   openCount: number;
   awaitingSquares: AwaitingSquare[];
   pendingBatches: PendingBatch[];
+  /// THE DEPOSIT LIST - §7. Confirmed, unvoided money grouped by how it
+  /// arrived. Read-only: no close, finalization, prize or fee math reads
+  /// tender, and this changes none of them.
+  tenderRows: { tender: string | null; label: string; cents: number }[];
+  tenderTotalCents: number;
+  /// Where the Unspecified line points, so those rows can be corrected.
+  ledgerHref: string;
   /// Configured rails, resolved live at render by the page - §4.
   rails: DirectRail[];
 }
@@ -63,6 +70,58 @@ function Stat({
       <div className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5 leading-tight">
         {label}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The list a host works from at the bank - §7.
+ *
+ * UNSPECIFIED IS ACTIONABLE. It opens the ledger filtered to exactly those
+ * rows, where each one carries the correction action, and the banner there
+ * carries Show all back. Same tab: the close panel is stateless - a button,
+ * a confirm and a POST - so there is no in-progress close to lose, and a
+ * forced new tab would be an interaction model this app uses nowhere else.
+ */
+function TenderBreakdown({
+  rows,
+  totalCents,
+  ledgerHref,
+}: {
+  rows: { tender: string | null; label: string; cents: number }[];
+  totalCents: number;
+  ledgerHref: string;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-gray-800 pt-3">
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-gray-400">Confirmed</span>
+        <span className="tabular-nums font-medium">{money(totalCents)}</span>
+      </div>
+      <ul className="mt-1 space-y-0.5">
+        {rows.map((r) => (
+          <li key={r.tender ?? "unspecified"} className="flex items-baseline justify-between text-xs">
+            {r.tender === null ? (
+              <a
+                href={`${ledgerHref}?method=unspecified`}
+                className="pl-3 text-amber-500/90 underline underline-offset-2 hover:text-amber-400"
+              >
+                {r.label}
+              </a>
+            ) : (
+              <span className="pl-3 text-gray-500">{r.label}</span>
+            )}
+            <span className="tabular-nums text-gray-400">{money(r.cents)}</span>
+          </li>
+        ))}
+      </ul>
+      {rows.some((r) => r.tender === null) && (
+        <p className="mt-1.5 text-[11px] text-gray-600 leading-relaxed">
+          Unspecified is money with no recorded method. Opening it lists those
+          contributions, where each one can be corrected.
+        </p>
+      )}
     </div>
   );
 }
@@ -89,6 +148,9 @@ export default function FundraiserPanel({
   awaitingSquares,
   pendingBatches,
   rails,
+  tenderRows,
+  tenderTotalCents,
+  ledgerHref,
 }: Props) {
   // Same resolver as the contributor board: host and contributor never see
   // different nouns for the same purchase unit.
@@ -302,6 +364,11 @@ export default function FundraiserPanel({
           <p className="text-xs text-gray-600 mt-2 leading-relaxed">
             Tickets still work. The campaign has ended; the event has not.
           </p>
+          <TenderBreakdown
+            rows={tenderRows}
+            totalCents={tenderTotalCents}
+            ledgerHref={ledgerHref}
+          />
         </div>
       ) : (
         <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
@@ -350,6 +417,11 @@ export default function FundraiserPanel({
             contribution is later disputed through the contributor&apos;s bank,
             that amount comes out of your proceeds.
           </p>
+          <TenderBreakdown
+            rows={tenderRows}
+            totalCents={tenderTotalCents}
+            ledgerHref={ledgerHref}
+          />
         </div>
       )}
     </div>

@@ -74,10 +74,16 @@ function money(cents: number): string {
 
 export default async function DonationsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ method?: string }>;
 }) {
   const { id } = await params;
+  // ?method=unspecified - where the close panel's Unspecified line points,
+  // scoped to exactly the rows it totals: confirmed, unvoided, offline, no
+  // tender. Each one carries the correction action.
+  const unspecifiedOnly = (await searchParams)?.method === "unspecified";
   const host = await getHost();
   if (!host) redirect("/login");
 
@@ -133,7 +139,15 @@ export default async function DonationsPage({
   const rails = acceptedRails(board);
 
   const contributions = await prisma.contribution.findMany({
-    where: { boardId: board.boardId },
+    where: unspecifiedOnly
+      ? {
+          boardId: board.boardId,
+          settlement: "OFFLINE",
+          tender: null,
+          status: "confirmed",
+          voidedAt: null,
+        }
+      : { boardId: board.boardId },
     orderBy: { createdAt: "desc" },
     take: 100,
     select: {
@@ -270,7 +284,9 @@ export default async function DonationsPage({
 
   // ONE CHRONOLOGY: contributions by createdAt, reservations by claimedAt,
   // newest first. Not two lists sharing a page.
-  const ledger = mergeLedger(contributions, reservations);
+  // A filtered view lists contributions only: a reserved square is not one,
+  // and it has no method to be unspecified about.
+  const ledger = mergeLedger(contributions, unspecifiedOnly ? [] : reservations);
 
   const hasPrize = board.prizePoolPercent > 0;
   // Every board carries one; the fallback matches what api/boards writes.
@@ -416,6 +432,20 @@ export default async function DonationsPage({
         </div>
 
         <h2 className="mt-6 text-sm font-medium">Ledger</h2>
+        {unspecifiedOnly && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs">
+            <span className="text-amber-200/90">
+              Showing confirmed contributions with no recorded method. Open one
+              to record it.
+            </span>
+            <Link
+              href={`/host/boards/${board.boardId}/donations`}
+              className="text-gray-400 underline underline-offset-2 hover:text-white"
+            >
+              Show all
+            </Link>
+          </div>
+        )}
         <p className="mt-1 text-xs text-gray-500">
           One row per payment, newest first, including released and voided.
           Reserved tickets appear here too and are NOT in the totals above:

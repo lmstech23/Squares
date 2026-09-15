@@ -135,6 +135,21 @@ export function declaredRailDiffers(
   return RAIL_TENDER[rail] !== tender;
 }
 
+/** Confirmed money whose method nobody recorded - §7. NEVER "Cash": the
+ *  breakdown is what a host reconciles a deposit against, and a bucket that
+ *  claims to be cash when it is merely unknown is the one line that would
+ *  send her looking for money that is not there. */
+export const UNSPECIFIED_LABEL = "Unspecified";
+
+/** The breakdown's row label - §7. Card for the witnessed rail, the tender
+ *  label for a recorded one, Unspecified for a row with none. */
+export function breakdownLabel(tender: string | null): string {
+  if (!tender) return UNSPECIFIED_LABEL;
+  if (tender === "CARD") return "Card";
+  const known = OFFLINE_TENDERS.find((t) => t === tender);
+  return known ? TENDER_LABEL[known] : UNSPECIFIED_LABEL;
+}
+
 export const TENDER_REQUIRED_ERROR = "Choose how the money arrived.";
 export const TENDER_CARD_ERROR =
   "Card is not a host-recorded method. A card payment is confirmed by Stripe; record Other with a note.";

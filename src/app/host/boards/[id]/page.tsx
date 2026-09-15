@@ -38,6 +38,7 @@ import { contributorRows } from "@/lib/contributor-rows";
 import { boardCounters } from "@/lib/board-counters";
 import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
+import { tenderBreakdown } from "@/lib/tender-breakdown";
 export const dynamic = "force-dynamic";
 
 
@@ -156,6 +157,11 @@ export default async function HostBoardPage({ params }: Props) {
   // the board lists it AND its handle is set - §4. Component scope, because
   // both panels that take it render outside the fundraiser branch.
   const rails = acceptedRails(board);
+
+  // THE DEPOSIT LIST - §7. The same population as the ledger header: it uses
+  // the countsTowardRaised filter boardTotals uses, so the two cannot drift.
+  // Display only - close and finalization never read tender.
+  const breakdown = await tenderBreakdown(board.boardId);
   // Built from this deployment's own host, so a preview's share panel and QR
   // point at the preview rather than at production.
   const boardUrl = `${await baseUrlFromHeaders()}/board/${board.slug}`;
@@ -573,6 +579,9 @@ export default async function HostBoardPage({ params }: Props) {
         <FundraiserPanel
           boardId={board.boardId}
           rails={rails}
+          tenderRows={breakdown.rows}
+          tenderTotalCents={breakdown.totalCents}
+          ledgerHref={`/host/boards/${board.boardId}/donations`}
           status={board.status}
           hasEvent={board.event != null}
           hasPrize={board.prizePoolPercent > 0}
