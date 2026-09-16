@@ -110,18 +110,25 @@ describe("declaredRailDiffers (detail reveal)", () => {
 });
 
 describe("offlineTenderOptions (the picker's list)", () => {
-  test("Cash first, the board's rails, then Check and Other - and never CARD", () => {
-    assert.deepEqual(offlineTenderOptions(["zelle", "venmo"]), [
-      "CASH",
-      "ZELLE",
-      "VENMO",
-      "CHECK",
-      "OTHER",
-    ]);
+  // WHAT THE BOARD WAS SET UP TO TAKE, AND NOTHING ELSE. Cash, Check and
+  // Other were appended unconditionally until none of them turned out to be
+  // selectable at setup - BoardPaymentMethod is card, zelle, cashapp, venmo,
+  // paypal - which made the list show methods the host never chose.
+  test("the board's configured rails, in rail order", () => {
+    assert.deepEqual(offlineTenderOptions(["zelle", "venmo"]), ["ZELLE", "VENMO"]);
   });
 
-  test("a board with nothing configured still has three honest answers", () => {
-    assert.deepEqual(offlineTenderOptions([]), ["CASH", "CHECK", "OTHER"]);
+  test("nothing the host did not configure is offered", () => {
+    const some = offlineTenderOptions(["zelle", "venmo"]);
+    for (const absent of ["CASH", "CHECK", "OTHER"]) {
+      assert.ok(!some.includes(absent as never), absent + " was never selected at setup");
+    }
+  });
+
+  // The callers read this as "no correction available" and render no control,
+  // rather than a select holding nothing but a placeholder.
+  test("a board with nothing configured offers nothing", () => {
+    assert.deepEqual(offlineTenderOptions([]), []);
   });
 
   test("CARD is not offerable from any configuration", () => {

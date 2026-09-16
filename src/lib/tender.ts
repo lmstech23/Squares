@@ -49,31 +49,36 @@ export const RAIL_TENDER: Record<DirectRail, OfflineTender> = {
 };
 
 /**
- * What the picker offers, in order: Cash, the board's configured rails, Check,
- * Other.
+ * What the picker offers: the board's configured rails, in the order the rails
+ * are declared. Nothing else.
  *
- * THE ORDER IS DELIBERATE, NOT ALPHABETICAL. Most common first - cash is what
- * a host has in her hand at a folding table - then the rails she actually
- * configured, then the two escape hatches. Check and Other sit last because
- * reaching for them should be a decision rather than the default landing spot.
+ * CASH, CHECK AND OTHER USED TO BE APPENDED UNCONDITIONALLY, so that a board
+ * with nothing configured still had three answers. They are gone. None of the
+ * three is selectable at setup - `BoardPaymentMethod` is card, zelle, cashapp,
+ * venmo, paypal - so offering them put methods in front of the host that she
+ * never chose, in a list whose whole claim is that it reflects what she set up.
  *
- * CASH, CHECK AND OTHER ARE ALWAYS THERE. They need no handle — the host took
- * notes, a cheque, or something the enum does not name — so a board that has
- * configured nothing still has three honest answers. Only the rails in the
- * middle depend on configuration, and §4's rule is why: never offer a method
- * the host cannot receive.
+ * THE CONSEQUENCE IS REAL AND WAS ACCEPTED. Money that arrives some other way
+ * has no option here and stays unrecorded, rather than being filed under a
+ * method nobody used - which is the same falsehood as backfilling CASH, and
+ * the reason this feature exists. Making the three selectable means adding
+ * them to `BoardPaymentMethod`: a migration, not a picker change.
+ *
+ * A board with no configured rails returns an empty list, and the callers
+ * treat that as "no correction available" rather than rendering a dead
+ * control.
  */
 export function offlineTenderOptions(rails: readonly DirectRail[]): OfflineTender[] {
   const seen = new Set<OfflineTender>();
-  const middle: OfflineTender[] = [];
+  const out: OfflineTender[] = [];
   for (const rail of rails) {
     const tender = RAIL_TENDER[rail];
     if (tender && !seen.has(tender)) {
       seen.add(tender);
-      middle.push(tender);
+      out.push(tender);
     }
   }
-  return ["CASH", ...middle, "CHECK", "OTHER"];
+  return out;
 }
 
 /** Free text, at most 64 characters — contributions_tender_reference_length. */

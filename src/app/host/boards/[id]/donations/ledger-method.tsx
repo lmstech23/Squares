@@ -10,6 +10,7 @@ import {
   declaredRailDiffers,
   methodLabel,
   nullTenderLabel,
+  offlineTenderOptions,
   type OfflineTender,
 } from "@/lib/tender";
 
@@ -106,14 +107,30 @@ export default function LedgerMethod({
     );
   }
 
+  // A CORRECTION NEEDS SOMETHING TO CORRECT IT TO. The option list is exactly
+  // the board's configured rails, so a board with none configured offers
+  // nothing to choose - and the cell must not open onto an empty control.
+  const hasOptions = offlineTenderOptions(rails).length > 0;
+  const canPick = canCorrect && hasOptions;
+
+  // SHE MAY CORRECT, AND THERE IS NOTHING TO CORRECT IT TO. That is a setup
+  // problem, not a permission problem, and the difference is worth a sentence:
+  // silence here reads as a broken cell. No fallback method is invented for
+  // her - Cash, Check and Other are not selectable at setup, and conjuring one
+  // would file money under a method nobody chose.
+  const needsSetup = canCorrect && !hasOptions;
+
+  // The label tracks what she can actually DO. `canPick`, not `canCorrect`:
+  // inviting her to select a payment type when the board offers none is the
+  // same broken promise as offering a control the route would refuse.
   const label = tender
     ? methodLabel(settlement, tender)
-    : nullTenderLabel(canCorrect);
+    : nullTenderLabel(canPick);
 
   // NOT INTERACTIVE, and the label says as much. A viewer without cash.record
   // looking at a row nobody recorded has nothing to open: no method to read,
   // and no way to supply one.
-  if (!tender && !canCorrect) {
+  if (!tender && !canPick && !needsSetup) {
     return (
       <div className={WIDTH}>
         <span className="whitespace-nowrap text-gray-500">{label}</span>
@@ -130,7 +147,7 @@ export default function LedgerMethod({
   // here would open an empty box. Unreachable today - OWNER and MANAGER both
   // hold cash.record, so canCorrect is true for anyone who can load this page -
   // and cheaper to guard than to rediscover the day a third role exists.
-  if (!hasDetail && !canCorrect) {
+  if (!hasDetail && !canPick && !needsSetup) {
     return (
       <div className={WIDTH}>
         <span className="whitespace-nowrap text-gray-300">{label}</span>
@@ -163,6 +180,16 @@ export default function LedgerMethod({
         return;
       }
       setBusy(false);
+      // THE INTERACTION ENDS HERE. Removing Save and Cancel left nothing to
+      // close the row: it stayed open showing a picker set to the value the
+      // label above it had just started displaying, the same sentence twice.
+      // Collapsing IS the confirmation - the label now reads what she chose,
+      // which is the only acknowledgement a one-field correction needs.
+      //
+      // ON SUCCESS ONLY. The failure path below restores the prior value and
+      // writes an error under the control; both are invisible if the row has
+      // closed, so a refused write leaves it open on purpose.
+      setOpen(false);
       router.refresh();
     } catch {
       setSelected(previous);
@@ -177,21 +204,34 @@ export default function LedgerMethod({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="group inline-flex items-baseline gap-1 whitespace-nowrap text-left text-gray-300 decoration-dotted decoration-gray-700 underline-offset-4 transition-colors hover:text-white hover:underline"
+        className="group inline-flex items-center gap-1.5 whitespace-nowrap text-left text-gray-300 decoration-dotted decoration-gray-700 underline-offset-4 transition-colors hover:text-white hover:underline"
       >
         {label}
         {/* AN AFFORDANCE, NOT A STATUS. The cell has to look openable - the
             marker used to be the only cue - but it must not spend a word on
-            saying what the label already says. Hover underline plus a chevron
-            that turns when the row is open, and nothing in the reading flow. */}
-        <span
+            saying what the label already says.
+
+            DRAWN, NOT TYPED. This was the character U+25BE, and at 9px in a
+            dim grey it rendered as a full stop sitting after the label -
+            "Zelle ." - which reads as a dangling separator, the exact
+            artifact the removed marker was accused of leaving. A glyph that
+            small is at the mercy of whichever font the platform substitutes.
+            An inline path is not: it is the same two strokes everywhere, and
+            it cannot be mistaken for punctuation. */}
+        <svg
           aria-hidden
-          className={`inline-block text-[9px] leading-none text-gray-600 transition-transform group-hover:text-gray-400 ${
+          viewBox="0 0 10 6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`h-[6px] w-[10px] shrink-0 text-gray-600 transition-transform group-hover:text-gray-400 ${
             open ? "rotate-180" : ""
           }`}
         >
-          ▾
-        </span>
+          <path d="M1 1l4 4 4-4" />
+        </svg>
       </button>
 
       {open && (
@@ -236,7 +276,7 @@ export default function LedgerMethod({
             </>
           )}
 
-          {canCorrect && (
+          {canPick && (
             <div className={hasDetail ? "mt-1.5" : ""}>
               <TenderPicker
                 variant="compact"
@@ -246,6 +286,21 @@ export default function LedgerMethod({
                 idPrefix={`fix-${contributionId}`}
                 disabled={busy}
               />
+            </div>
+          )}
+
+          {/* NO PICKER, AND NOT SILENT. No dropdown, no disabled placeholder
+              option, no invented method: the board has none configured, and
+              the cell says so and says where to fix it. HOST-FACING ONLY - it
+              describes what this ledger can record, and implies nothing about
+              what a contributor may pay with. */}
+          {needsSetup && (
+            <div className={hasDetail ? "mt-1.5" : ""}>
+              <p className="text-gray-300">No payment methods configured.</p>
+              <p className="mt-0.5 text-gray-500">
+                Add a payment method in Board Settings to record this
+                contribution.
+              </p>
             </div>
           )}
           {error && <p className="mt-1.5 text-[11px] text-red-400">{error}</p>}

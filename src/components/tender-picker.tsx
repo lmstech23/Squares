@@ -80,9 +80,20 @@ export type TenderPickerProps =
 
 export default function TenderPicker(props: TenderPickerProps) {
   const { rails, value, onChange, idPrefix, disabled = false } = props;
-  const options = offlineTenderOptions(rails);
+  const configured = offlineTenderOptions(rails);
+
+  // THE ROW'S OWN VALUE IS NOT AN OFFER, BUT IT MUST STILL SHOW. A tender
+  // recorded before this rule, or on a rail the board has since dropped, is
+  // not in `configured` - and a <select> whose value matches no option renders
+  // as the wrong one. It is prepended so the control states the truth about
+  // the row it sits on; it is not thereby offered to any other row.
+  const options =
+    value && !configured.includes(value) ? [value, ...configured] : configured;
 
   if (props.variant === "compact") {
+    // NOTHING CONFIGURED, NOTHING TO OFFER. A board with no rails set up has
+    // no methods, and a select holding only a placeholder is a dead control.
+    if (options.length === 0) return null;
     return (
       <select
         id={`${idPrefix}-tender`}

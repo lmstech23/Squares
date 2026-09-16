@@ -1,7 +1,7 @@
 # Fundraiser Payment Method — Addendum
 
 **Status:** Approved for implementation
-**Version:** 1.2.13 — reconciled against the repo
+**Version:** 1.2.16 — reconciled against the repo
 **Scope:** `contributions` only. Game Day tables are out of scope
 **Companion to:** `fundraiser-money-state-machine.md` (authority on money) · `fundraiser-board-v2.md` (authority on fundraiser flows) · `fundraiser-admission-addendum.md` (authority on passes)
 
@@ -143,8 +143,21 @@ Method     ( ) Cash   ( ) Venmo   ( ) Zelle   ( ) Check   ( ) Other
 Reference  ________________________          (optional)
 ```
 
-- **Options = the board's configured payment handles, plus Cash, Check, and Other.** Read live from the board at render time. Never offer a method the host cannot receive.
-  - The resolver already exists: **`acceptedRails(board)` in `src/lib/accepted-payments.ts`**. It returns a rail only when the board lists it in `acceptedPaymentMethods` AND the matching handle — `hostZelle`, `hostCashapp`, `hostVenmo`, `hostPaypal` — is set. The picker takes its middle section from that call and adds Cash, Check and Other, which need no handle. Both host surfaces resolve it per render, so a handle added mid-session appears on the next one.
+- **Options = the board's configured payment handles. Nothing else.** Read live from the board at render time. Never offer a method the host cannot receive.
+  - The resolver already exists: **`acceptedRails(board)` in `src/lib/accepted-payments.ts`**. It returns a rail only when the board lists it in `acceptedPaymentMethods` AND the matching handle — `hostZelle`, `hostCashapp`, `hostVenmo`, `hostPaypal` — is set. The picker's list is exactly that, in rail order. Both host surfaces resolve it per render, so a handle added mid-session appears on the next one.
+  - **Cash, Check and Other were appended unconditionally and have been removed.** The reason is that none of the three is selectable at setup: `BoardPaymentMethod` is `card`, `zelle`, `cashapp`, `venmo`, `paypal`. Offering them put methods in front of the host that she never chose, in a list whose entire claim is that it reflects her configuration.
+  - **The consequence is real and was accepted.** Money that arrives some other way — notes at a folding table, a cheque — has no option here and stays unrecorded, rather than being filed under a method nobody used. That is the same falsehood as backfilling `CASH`, and refusing it is why this document exists. Making the three selectable means adding them to `BoardPaymentMethod`: a migration and a setup-form change, not a picker change.
+  - **A board with no configured rails offers nothing, and the cell says so.** There is no dropdown, no disabled placeholder option and no invented method. An organizer holding `cash.record` on such a board sees, in place of the picker:
+
+    > **No payment methods configured.**
+    > Add a payment method in Board Settings to record this contribution.
+
+    Silence would read as a broken cell; a fallback would file money under a method nobody chose. The label on the closed row reads *No payment type recorded* rather than *Select payment type*, because the invitation tracks what she can actually do — offering a selection the board cannot satisfy is the same broken promise as offering a control the route would refuse. The moment a method is configured, the normal picker appears with no other change.
+
+    **Host-facing only.** It describes what this ledger can record. It creates and implies no contributor payment option, and nothing about it reaches the public board.
+
+    No fundraiser board in production is in this state; every one has at least two rails.
+  - **A row's own tender still displays even when it is not in the list** — recorded before this rule, or on a rail the board has since dropped. The control states the truth about the row it sits on; that is not an offer to any other row.
 - **No default selection, including no pre-fill from the declared rail.** The declared rail is shown as context and nothing else. A pre-filled picker is a picker the host taps past, and the row it produces says *fact* while meaning *she didn't correct the guess*. That is the exact failure this document exists to end.
 - `CARD` never appears.
 - Reference is optional free text, max 64, shown only when tender ≠ `CASH`. Never parsed, never validated, never matched against anything, never public.
@@ -173,6 +186,8 @@ Daaliyah Tate    Entry tickets      Card                released
 - **The label alone carries the distinction. There is no marker.** A subdued `· recorded` beside every offline tender was specified here and built, and it was redundant from the moment invariant 121 existed: that constraint makes `CARD` reachable only from `STRIPE` and unreachable from `OFFLINE`, so **`Card` already means the system watched it settle and every other label already means a host said so.** The marker restated what the constraint proves, and it was not free - it produced a trailing separator on every offline row and wrapped the cell onto two lines. A second signal that can only ever agree with the first is not reassurance; it is noise that will one day disagree.
 
 - **The cell still has to look openable**, because the marker was the only thing signalling that it opens. That is an affordance, not a status: a hover underline and a chevron that turns when the row is open. It spends no word, and nothing enters the reading flow beside the label.
+
+  **The chevron is drawn, not typed.** As the character `▾` at 9px in a dim grey it rendered as a full stop after the label — *Zelle ·* — which reads as a dangling separator, and was reported as one. A glyph that small is at the mercy of whichever font the platform substitutes for it; an inline path is the same two strokes everywhere and cannot be mistaken for punctuation.
 
 - Tapping an offline row reveals recorded-by, recorded-at, reference, and the declared rail when the two differ.
 
@@ -211,6 +226,8 @@ That asymmetry is the whole safety argument: a correction that cannot touch a do
 **A correction never changes `recorded_by_host_id`.** That column answers who recorded the money; the correction log answers who later changed how it is described. Two questions, two answers, kept apart on purpose.
 
 **The correction is the cell. No edit mode, no Save, no Cancel, no modal.** Choosing a method writes it. The asymmetry above is what buys this: a Save button on a one-field form that cannot move a dollar only asks her to confirm what she already said. While the write is in flight the select is disabled; if it is refused, the prior value is restored and the error sits beneath the control. Nothing is written by opening a row — only by choosing.
+
+**A successful write collapses the row; a refused one leaves it open.** Removing Save and Cancel left nothing to end the interaction, so the row stayed expanded with the picker showing the value the label above it had just begun displaying — the same answer twice. **Collapsing is the acknowledgement**: the label reads what she chose, which is all a one-field correction has to report. The failure path is the exception and must stay open, because the restored value and the error message both live inside the control she just used.
 
 **A correction made through the compact cell sends `tender` alone.** It must not send `tenderReference: null` for a field it never offered: that would erase a reference already on the row, which is a correction nobody asked for. The route's per-field logging means an untouched field writes no log row.
 
