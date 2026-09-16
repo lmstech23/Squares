@@ -37,17 +37,16 @@ let currentHost: Record<string, unknown> | null = null;
 /** Everything the route asked the database to do, in order. */
 let writes: string[] = [];
 
+// NO host.update AND NO creditTransaction.create. Creation is free: there is
+// no balance to decrement and no ledger row to write. A mock for either would
+// be a mock for a call the route can no longer make.
 const tx = {
-  host: {
-    update: async () => ({ ...currentHost, boardCredits: 1 }),
-  },
   board: {
     create: async ({ data }: { data: Record<string, unknown> }) => {
       writes.push("board.create");
       return { ...data, boardId: "board_test_id", slug: data.slug ?? "test-slug" };
     },
   },
-  creditTransaction: { create: async () => (writes.push("creditTransaction.create"), {}) },
   square: { createMany: async () => (writes.push("square.createMany"), { count: 100 }) },
   boardCollaborator: { create: async () => (writes.push("boardCollaborator.create"), {}) },
   event: { create: async () => (writes.push("event.create"), {}) },
@@ -81,7 +80,6 @@ function host(over: Record<string, unknown> = {}) {
     paymentPreference: "cash",
     stripeChargesEnabled: false,
     stripeAccountId: null,
-    boardCredits: 2,
     ...over,
   };
 }

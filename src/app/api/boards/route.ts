@@ -1,5 +1,4 @@
 import { randomInt } from "crypto";
-import { PLATFORM_OWNER_ID } from "@/lib/constants";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -479,9 +478,7 @@ export async function POST(request: Request) {
       attempts++;
     }
 
-    // 8. Determine creation path
-    const isPlatformOwner = host.id === PLATFORM_OWNER_ID;
-    const hasCredits = host.boardCredits >= 1;
+    // 8. Creation is free. One path, for every board type.
     const squarePriceCents = body.squarePrice;
 
     // --- Auto-enable cash mode for cash-only hosts ---
@@ -584,224 +581,50 @@ export async function POST(request: Request) {
       });
     }
 
-    // --- Path 0: Fundraiser — no credit gate, no pending_payment, no fee ---
+    // --- Creation. One path, whatever the board is. ---
     //
-    // v2 §14. A fundraiser board activates the moment it is created.
+    // DAALI DOES NOT CHARGE AN ORGANIZER TO CREATE ANYTHING. Game Day,
+    // Fundraiser, Event and Volunteer are all free to create, so there is
+    // nothing here to branch on: no balance to check, no credit to spend, no
+    // pending_payment board, no delayed activation while someone pays us.
     //
-    // Credits are the wrong instrument here, not merely mispriced. Game Day
-    // credits work because a board is a discrete event a host runs a few times
-    // a season. A fundraiser is a campaign that may raise $200 or $20,000, and
-    // a $9 gate in front of someone raising money for a school is not
-    // defensible at either end of that range.
+    // This replaced four paths that differed only in how the organizer had
+    // settled up. Fundraisers were already free (v2 §14), the platform owner
+    // was exempt, a host with credits spent one, and a host without credits
+    // got a board with no squares and 48 hours to pay for it. All four built
+    // the same board; three of them just argued about it first.
     //
-    // No fee mechanism at all on this path — not a fee set to zero. The model
-    // is genuinely undecided (§14: most fundraiser money never touches Stripe,
-    // so a Connect percentage collects almost nothing), and a speculative
-    // column would be guessing at it.
-    //
-    // Game Day is untouched below: credits, pending_payment, and the 48-hour
-    // activation window all behave exactly as before.
-    if (boardType === "fundraiser") {
-      const board = await prisma.$transaction(async (tx) => {
-        const newBoard = await tx.board.create({
-          data: {
-            ...boardData,
-            status: "open",
-            activatedAt: new Date(),
-          },
-        });
-
-        await tx.square.createMany({
-          data: Array.from({ length: totalSquares }, (_, i) => ({
-            boardId: newBoard.boardId,
-            position: i,
-            paymentStatus: "open" as const,
-          })),
-        });
-
-        // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
-        //
-        // From the moment `requireBoardAccess` is the only way onto a board,
-        // a board without this row is invisible to the person who just
-        // created it. The migration backfilled every board that existed;
-        // this covers every board that will exist. Same transaction, so a
-        // board can never exist without its owner — not even briefly.
-        //
-        // `acceptedAt` is now: they did not accept an invitation, they made
-        // the board, and their access begins with it. `invitedByHostId`
-        // stays null for the same reason.
-        await tx.boardCollaborator.create({
-          data: {
-            boardId: newBoard.boardId,
-            hostId: host.id,
-            role: "OWNER",
-            status: "active",
-            acceptedAt: new Date(),
-          },
-        });
-
-        await createEvent(tx, newBoard.boardId);
-
-        return newBoard;
-      });
-
-      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
-    }
-
-    // --- Guard: one pending board per host at a time ---
-    //
-    // Game Day only, and it has to be: a fundraiser creates no pending board,
-    // so an unpaid Game Day draft sitting in the way would block a fundraiser
-    // that never needed a credit in the first place.
-    const existingPending = await prisma.board.findFirst({
-      where: { hostId: host.id, status: 'pending_payment' },
-    });
-    if (existingPending) {
-      return NextResponse.json(
-        {
-          error: 'You have a pending board awaiting payment. Complete or cancel it first.',
-          pendingBoardId: existingPending.boardId,
-          redirectTo: `/host/checkout?boardId=${existingPending.boardId}`,
-        },
-        { status: 409 }
-      );
-    }
-
-    // --- Path 1: Platform owner — skip credits entirely ---
-    if (isPlatformOwner) {
-      const board = await prisma.$transaction(async (tx) => {
-
-      const newBoard = await tx.board.create({
-          data: {
-            ...boardData,
-            status: "open",
-            activatedAt: new Date(),
-          },
-        });
-
-        await tx.square.createMany({
-          data: Array.from({ length: totalSquares }, (_, i) => ({
-            boardId: newBoard.boardId,
-            position: i,
-            paymentStatus: "open" as const,
-          })),
-        });
-
-        // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
-        //
-        // From the moment `requireBoardAccess` is the only way onto a board,
-        // a board without this row is invisible to the person who just
-        // created it. The migration backfilled every board that existed;
-        // this covers every board that will exist. Same transaction, so a
-        // board can never exist without its owner — not even briefly.
-        //
-        // `acceptedAt` is now: they did not accept an invitation, they made
-        // the board, and their access begins with it. `invitedByHostId`
-        // stays null for the same reason.
-        await tx.boardCollaborator.create({
-          data: {
-            boardId: newBoard.boardId,
-            hostId: host.id,
-            role: "OWNER",
-            status: "active",
-            acceptedAt: new Date(),
-          },
-        });
-
-        await createEvent(tx, newBoard.boardId);
-
-        return newBoard;
-      });
-
-      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
-    }
-
-    // --- Path 2: Host has credits — deduct and activate ---
-    if (hasCredits) {
-      const board = await prisma.$transaction(async (tx) => {
-        const updatedHost = await tx.host.update({
-          where: { id: host.id, boardCredits: { gte: 1 } },
-          data: { boardCredits: { decrement: 1 } },
-        });
-
-        const newBoard = await tx.board.create({
-          data: {
-            ...boardData,
-            status: "open",
-            activatedAt: new Date(),
-          },
-        });
-
-        await tx.creditTransaction.create({
-          data: {
-            hostId: host.id,
-            type: "board_created",
-            amount: -1,
-            balanceAfter: updatedHost.boardCredits,
-            boardId: newBoard.boardId,
-          },
-        });
-
-        await tx.square.createMany({
-          data: Array.from({ length: totalSquares }, (_, i) => ({
-            boardId: newBoard.boardId,
-            position: i,
-            paymentStatus: "open" as const,
-          })),
-        });
-
-        // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
-        //
-        // From the moment `requireBoardAccess` is the only way onto a board,
-        // a board without this row is invisible to the person who just
-        // created it. The migration backfilled every board that existed;
-        // this covers every board that will exist. Same transaction, so a
-        // board can never exist without its owner — not even briefly.
-        //
-        // `acceptedAt` is now: they did not accept an invitation, they made
-        // the board, and their access begins with it. `invitedByHostId`
-        // stays null for the same reason.
-        await tx.boardCollaborator.create({
-          data: {
-            boardId: newBoard.boardId,
-            hostId: host.id,
-            role: "OWNER",
-            status: "active",
-            acceptedAt: new Date(),
-          },
-        });
-
-        await createEvent(tx, newBoard.boardId);
-
-        return newBoard;
-      });
-
-      return NextResponse.json({ boardId: board.boardId, slug: board.slug });
-    }
-
-    // --- Path 3: No credits — create pending_payment board ---
-    const pendingExpiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-
+    // GAME DAY IS UNCHANGED BELOW THE CREATE. Squares, gameplay, scores,
+    // winners and the money participants pay a host are untouched — this was
+    // only ever about Daali charging the organizer.
     const board = await prisma.$transaction(async (tx) => {
       const newBoard = await tx.board.create({
         data: {
           ...boardData,
-          status: "pending_payment",
-          pendingExpiresAt,
+          status: "open",
+          activatedAt: new Date(),
         },
+      });
+
+      await tx.square.createMany({
+        data: Array.from({ length: totalSquares }, (_, i) => ({
+          boardId: newBoard.boardId,
+          position: i,
+          paymentStatus: "open" as const,
+        })),
       });
 
       // THE OWNER GRANT, IN THE SAME TRANSACTION AS THE BOARD.
       //
-      // From the moment `requireBoardAccess` is the only way onto a board,
-      // a board without this row is invisible to the person who just
-      // created it. The migration backfilled every board that existed;
-      // this covers every board that will exist. Same transaction, so a
-      // board can never exist without its owner — not even briefly.
+      // From the moment `requireBoardAccess` is the only way onto a board, a
+      // board without this row is invisible to the person who just created
+      // it. The migration backfilled every board that existed; this covers
+      // every board that will exist. Same transaction, so a board can never
+      // exist without its owner — not even briefly.
       //
-      // `acceptedAt` is now: they did not accept an invitation, they made
-      // the board, and their access begins with it. `invitedByHostId`
-      // stays null for the same reason.
+      // `acceptedAt` is now: they did not accept an invitation, they made the
+      // board, and their access begins with it. `invitedByHostId` stays null
+      // for the same reason.
       await tx.boardCollaborator.create({
         data: {
           boardId: newBoard.boardId,
@@ -814,20 +637,10 @@ export async function POST(request: Request) {
 
       await createEvent(tx, newBoard.boardId);
 
-      // No squares created — board is not shareable until paid
       return newBoard;
     });
 
-    return NextResponse.json(
-      {
-        boardId: board.boardId,
-        slug: board.slug,
-        status: "pending_payment",
-        pendingExpiresAt: board.pendingExpiresAt,
-        redirectTo: `/host/checkout?boardId=${board.boardId}`,
-      },
-      { status: 402 }
-    );
+    return NextResponse.json({ boardId: board.boardId, slug: board.slug });
   } catch (error) {
     console.error("Board creation error:", error);
     return NextResponse.json(

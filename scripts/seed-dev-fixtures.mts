@@ -44,7 +44,7 @@ const person = (n: string) => ({
 
 async function main() {
   const host = await prisma.host.create({
-    data: { name: "Fixture Host", email: "host@example.invalid", boardCredits: 10 },
+    data: { name: "Fixture Host", email: "host@example.invalid" },
   });
 
   // ---- Board A: open fundraiser with an event -----------------------------

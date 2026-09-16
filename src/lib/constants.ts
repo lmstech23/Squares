@@ -4,16 +4,14 @@
 // ============================================================
 
 
-// --- Board credits ---
-export const SIGNUP_CREDITS = 2;
+// BOARD CREDITS ARE GONE. Daali does not charge an organizer to create
+// anything: Game Day, Fundraiser, Event and Volunteer are all free. The
+// signup grant, the $9/$24 packs and the gate they fed were removed with the
+// feature. `credit_transactions` is retained as a historical financial
+// record and confers nothing.
 
-// --- Pricing ---
-export const CREDIT_PRICE_CENTS = 900;   // $9 during tournament → 1900 after
-export const CREDIT_PRICE_DISPLAY = "$9"; // "$9" during tournament → "$19" after
-
-export const TRIPLE_PRICE_CENTS = 2400;     // $24 during tournament → $45 after
-export const TRIPLE_PRICE_DISPLAY = "$24";   // "$24" during tournament → "$45" after
-
-
-// --- Platform owner (skip credit gates) ---
+// --- Platform owner ---
+//
+// Still used, and no longer for credits: it hides the Connect-Stripe banner
+// on the board list for the platform account.
 export const PLATFORM_OWNER_ID = process.env.PLATFORM_OWNER_ID!;

@@ -3,8 +3,6 @@ import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Suspense } from "react";
-import { CreditBuyButton, CreditPurchasedBanner } from "./components/credit-ui";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
@@ -49,7 +47,6 @@ export default async function HostBoardsPage() {
 
   const isPlatformOwner = host.id === PLATFORM_OWNER_ID;
   const activeBoards = boards.filter((b) => b.status === "open" || b.status === "closed");
-  const pendingBoards = boards.filter((b) => b.status === "pending_payment");
   const expiredBoards = boards.filter((b) => b.status === "expired");
 
   return (
@@ -73,23 +70,6 @@ export default async function HostBoardsPage() {
           </div>
         </div>
       )}
-      {/* Credit badge — hidden for platform owner */}
-      {!isPlatformOwner && (
-        <div className="rounded-lg border border-gray-800 bg-gray-900 p-3 mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Board Credits:</span>
-            <span className={`text-sm font-bold ${host.boardCredits > 0 ? "text-green-400" : "text-red-400"}`}>
-              {host.boardCredits}
-            </span>
-          </div>
-          {host.boardCredits === 0 && <CreditBuyButton />}
-        </div>
-      )}
-
-      {/* Credit purchased banner */}
-      <Suspense>
-        <CreditPurchasedBanner />
-      </Suspense>
 
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-bold">Your Boards</h1>
@@ -102,7 +82,7 @@ export default async function HostBoardsPage() {
       </div>
 
       {/* Active boards (open + closed) */}
-      {activeBoards.length === 0 && pendingBoards.length === 0 && expiredBoards.length === 0 ? (
+      {activeBoards.length === 0 && expiredBoards.length === 0 ? (
         <div className="text-center py-16">
           <p className="text-gray-500 text-sm">No boards yet. Create your first one.</p>
         </div>
@@ -138,36 +118,6 @@ export default async function HostBoardsPage() {
             </div>
           )}
 
-          {/* Pending payment boards */}
-          {pendingBoards.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-sm font-medium text-yellow-400 mb-3">Pending Payment</h2>
-              <div className="space-y-3">
-                {pendingBoards.map((board) => {
-                  const hoursLeft = board.pendingExpiresAt
-                    ? Math.max(0, Math.round((new Date(board.pendingExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60)))
-                    : 0;
-
-                  return (
-                    <div
-                      key={board.boardId}
-                      className="rounded-lg border border-yellow-900/50 bg-yellow-950/20 p-4"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{board.gameName}</p>
-                          <p className="text-xs text-yellow-500/70 mt-0.5">
-                            Complete payment to activate · {hoursLeft}h remaining
-                          </p>
-                        </div>
-                        <CreditBuyButton boardId={board.boardId} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* Expired boards — collapsed section */}
           {expiredBoards.length > 0 && (

@@ -51,14 +51,12 @@ describe("boardCreationGate — R1-R11", () => {
     assert.equal(gate.allow, true);
   });
 
-  // R4 — boardCredits is not an input to this gate at all, which is the
-  // assertion. Credit behavior stays downstream and unchanged; a host with zero
-  // credits reaches the form and is handled by the pending_payment path.
-  test("R4 credits are not part of the condition", () => {
-    const withCredits = { ...host(), boardCredits: 12 } as BoardCreationGateHost;
-    const without = { ...host(), boardCredits: 0 } as BoardCreationGateHost;
-    assert.deepEqual(boardCreationGate(withCredits), boardCreationGate(without));
-  });
+  // R4 IS GONE WITH THE FEATURE IT GUARDED. It asserted that `boardCredits`
+  // was not an input to this gate, back when there was a credit gate further
+  // downstream for it to be confused with. Daali no longer charges an
+  // organizer to create anything, so there is no second gate and nothing to
+  // distinguish this one from. The gate itself is unchanged: it is about
+  // payment READINESS - can this host be paid by participants - and always was.
 
   test("R5 null preference -> /host/payment-setup, NOT /host/stripe", () => {
     const gate = boardCreationGate(

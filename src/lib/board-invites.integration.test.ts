@@ -581,8 +581,10 @@ describe(
         creditRowsBefore,
         "no credit ledger row"
       );
-      const after = await db.host.findUniqueOrThrow({ where: { id: reneeId } });
-      assert.equal(after.boardCredits, renee.boardCredits, "her balance did not move");
+      // The balance assertion that stood here is gone with board credits. The
+      // ledger assertion above is the durable half: the invite path writes no
+      // credit_transactions row, and that table is now a historical record that
+      // nothing may write to at all.
     });
 
     // ---- invariant 100 --------------------------------------------------------
