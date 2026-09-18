@@ -305,7 +305,6 @@ export async function recordCashDonation(input: {
   /// creates and confirms in one action, so the tender is written with the
   /// row - payment-method addendum §4.
   tender: OfflineTender;
-  tenderReference: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
     const contribution = await tx.contribution.create({
@@ -314,7 +313,6 @@ export async function recordCashDonation(input: {
         status: "confirmed",
         settlement: "OFFLINE",
         tender: input.tender,
-        tenderReference: input.tenderReference,
         squareAmountCents: 0,
         donationAmountCents: input.amountCents,
         totalPaidCents: input.amountCents,

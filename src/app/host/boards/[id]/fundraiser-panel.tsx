@@ -272,10 +272,10 @@ export default function FundraiserPanel({
                     pendingLabel="…"
                     busy={busy === sq.squareId}
                     className="rounded-md bg-green-800 px-2 py-1 font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
-                    onConfirm={(tender, tenderReference) =>
+                    onConfirm={(tender) =>
                       post(
                         `/api/host/boards/${boardId}/confirm-cash`,
-                        { squareId: sq.squareId, tender, tenderReference },
+                        { squareId: sq.squareId, tender },
                         sq.squareId
                       )
                     }

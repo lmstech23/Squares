@@ -34,7 +34,6 @@ export default function CashDonationForm({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [tender, setTender] = useState<OfflineTender | null>(null);
-  const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -78,7 +77,6 @@ export default function CashDonationForm({
           donorEmail: email.trim(),
           donorPhone: phone.trim() || null,
           tender,
-          tenderReference: reference.trim() || null,
         }),
       });
       const data = await res.json();
@@ -93,7 +91,6 @@ export default function CashDonationForm({
       setEmail("");
       setPhone("");
       setTender(null);
-      setReference("");
       setLoading(false);
       router.refresh();
     } catch {
@@ -169,8 +166,6 @@ export default function CashDonationForm({
             setTender(t);
             setError(null);
           }}
-          reference={reference}
-          onReferenceChange={setReference}
           idPrefix="cd"
           disabled={loading}
         />

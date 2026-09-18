@@ -8,11 +8,9 @@ import {
   METHOD_NOT_RECORDED_LABEL,
   nullTenderLabel,
   parseTender,
-  referencePlaceholder,
   TENDER_PLACEHOLDER_LABEL,
   RECORDED_BY_HOST_LABEL,
   SELECT_METHOD_LABEL,
-  TENDER_REFERENCE_MAX,
 } from "./tender.ts";
 
 // The tender rules that need no database — payment-method addendum §4, §5.
@@ -138,56 +136,33 @@ describe("offlineTenderOptions (the picker's list)", () => {
 });
 
 describe("parseTender (what every route calls)", () => {
+  // ONE ARGUMENT. The reference is gone from the product, so the validator
+  // that used to carry it takes a tender and nothing else.
   test("a missing tender is refused", () => {
-    assert.equal(parseTender(undefined, null).ok, false);
-    assert.equal(parseTender(null, null).ok, false);
-    assert.equal(parseTender("", null).ok, false);
+    assert.equal(parseTender(undefined).ok, false);
+    assert.equal(parseTender(null).ok, false);
+    assert.equal(parseTender("").ok, false);
   });
 
   test("CARD is refused by name", () => {
-    const out = parseTender("CARD", null);
+    const out = parseTender("CARD");
     assert.equal(out.ok, false);
     if (!out.ok) assert.match(out.error, /Card is not a host-recorded method/);
   });
 
   test("an unknown method is refused", () => {
-    assert.equal(parseTender("BITCOIN", null).ok, false);
-    assert.equal(parseTender(42, null).ok, false);
+    assert.equal(parseTender("BITCOIN").ok, false);
+    assert.equal(parseTender(42).ok, false);
   });
 
-  test("a reference is optional, trimmed, and empty becomes null", () => {
-    const bare = parseTender("CASH", undefined);
-    assert.deepEqual(bare, { ok: true, tender: "CASH", reference: null });
-    const spaced = parseTender("CHECK", "  1042  ");
-    assert.deepEqual(spaced, { ok: true, tender: "CHECK", reference: "1042" });
-    assert.deepEqual(parseTender("CHECK", "   "), { ok: true, tender: "CHECK", reference: null });
+  test("a valid tender parses to itself, with nothing beside it", () => {
+    assert.deepEqual(parseTender("CASH"), { ok: true, tender: "CASH" });
+    assert.deepEqual(parseTender("check"), { ok: true, tender: "CHECK" });
   });
 
-  // A DISPLAY RULE, NOT A DATA RULE. The picker hides the field for cash; an M4
-  // correction can still produce a cash row carrying a note.
-  test("a reference on a cash row is accepted", () => {
-    assert.deepEqual(parseTender("CASH", "envelope from the bake sale"), {
-      ok: true,
-      tender: "CASH",
-      reference: "envelope from the bake sale",
-    });
-  });
-
-  test("a reference longer than the column allows is refused, not truncated", () => {
-    const long = "x".repeat(TENDER_REFERENCE_MAX + 1);
-    const out = parseTender("OTHER", long);
-    assert.equal(out.ok, false);
-    if (!out.ok) assert.match(out.error, /at most 64 characters/);
-  });
-});
-
-describe("referencePlaceholder", () => {
-  test("says what the note is for, and never that it is required", () => {
-    assert.match(referencePlaceholder("CHECK"), /Check number/);
-    assert.match(referencePlaceholder("OTHER"), /optional/);
-    assert.match(referencePlaceholder("ZELLE"), /optional/);
-    assert.match(referencePlaceholder(null), /Optional/);
-  });
+  // THE REFERENCE CASES ARE GONE WITH THE FIELD. parseTender no longer accepts
+  // a second argument, so a caller that passes one does not compile - which is
+  // a stronger guarantee than a test asserting it is ignored.
 });
 
 describe("breakdownLabel (the deposit list)", () => {

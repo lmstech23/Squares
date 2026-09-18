@@ -41,7 +41,6 @@ interface CashDonationBody {
   donorPhone?: string | null;
   isHostEntry?: boolean;
   tender?: unknown;
-  tenderReference?: unknown;
 }
 
 async function loadOwnedBoard(boardId: string) {
@@ -138,7 +137,7 @@ export async function POST(
     // cannot offer CARD and cannot submit nothing, but a route that trusted
     // the picker would be one fetch away from a row the ledger cannot
     // explain.
-    const tender = parseTender(body.tender, body.tenderReference);
+    const tender = parseTender(body.tender);
     if (!tender.ok) {
       return NextResponse.json({ error: tender.error }, { status: 400 });
     }
@@ -153,7 +152,6 @@ export async function POST(
       recordedByHostId: host.id,
       isHostEntry: body.isHostEntry ?? false,
       tender: tender.tender,
-      tenderReference: tender.reference,
     });
 
     return NextResponse.json({
@@ -193,7 +191,7 @@ export async function PATCH(
     if ("error" in loaded) return loaded.error;
     const { host, board } = loaded;
 
-    const body: { contributionId?: string; tender?: unknown; tenderReference?: unknown } =
+    const body: { contributionId?: string; tender?: unknown } =
       await request.json();
     if (!body.contributionId) {
       return NextResponse.json(
@@ -204,7 +202,7 @@ export async function PATCH(
 
     // The host is recording what arrived, on a row the contributor
     // declared. Validated here as well as in the picker - §4.
-    const tender = parseTender(body.tender, body.tenderReference);
+    const tender = parseTender(body.tender);
     if (!tender.ok) {
       return NextResponse.json({ error: tender.error }, { status: 400 });
     }
@@ -223,7 +221,6 @@ export async function PATCH(
         confirmedAt: new Date(),
         confirmedByHostId: host.id,
         tender: tender.tender,
-        tenderReference: tender.reference,
         // WHEN the host recorded what arrived. `recordedByHostId` stays as
         // it is: the contributor declared this row, so nobody recorded it.
         recordedAt: new Date(),

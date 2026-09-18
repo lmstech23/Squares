@@ -22,7 +22,6 @@ import { parseTender, type OfflineTender } from "@/lib/tender";
 interface ConfirmCashBody {
   squareId: string;
   tender?: unknown;
-  tenderReference?: unknown;
 }
 
 export async function POST(
@@ -127,14 +126,12 @@ export async function POST(
     //
     // Validated before anything is flipped, like every other refusal here.
     let tender: OfflineTender | null = null;
-    let tenderReference: string | null = null;
     if (isFundraiser) {
-      const parsed = parseTender(body.tender, body.tenderReference);
+      const parsed = parseTender(body.tender);
       if (!parsed.ok) {
         return NextResponse.json({ error: parsed.error }, { status: 400 });
       }
       tender = parsed.tender;
-      tenderReference = parsed.reference;
     }
     const cents = sq.pricePaidCents ?? board.squarePrice;
     const linked = sq.contribution;
@@ -231,7 +228,6 @@ export async function POST(
           status: "confirmed",
           settlement: "OFFLINE",
           tender,
-          tenderReference,
           squareAmountCents: cents,
           donationAmountCents: 0,
           totalPaidCents: cents,

@@ -43,7 +43,6 @@ interface Body {
   action?: "confirm" | "release";
   reason?: string;
   tender?: unknown;
-  tenderReference?: unknown;
 }
 
 export async function PATCH(
@@ -142,7 +141,7 @@ export async function PATCH(
     // ONE TENDER FOR THE WHOLE RESERVATION. Confirm resolves every line on
     // it into one contribution, so one selection covers every pass and the
     // donation with it - §4. Validated here as well as in the picker.
-    const tender = parseTender(body.tender, body.tenderReference);
+    const tender = parseTender(body.tender);
     if (!tender.ok) {
       return NextResponse.json({ error: tender.error }, { status: 400 });
     }
@@ -154,7 +153,6 @@ export async function PATCH(
           reservationId: reservation.id,
           hostId: access.hostId,
           tender: tender.tender,
-          tenderReference: tender.reference,
         })
       );
     } catch (err) {

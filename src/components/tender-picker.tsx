@@ -4,9 +4,7 @@ import type { DirectRail } from "@/lib/accepted-payments";
 import {
   RAIL_TENDER,
   TENDER_LABEL,
-  TENDER_REFERENCE_MAX,
   offlineTenderOptions,
-  referencePlaceholder,
   TENDER_PLACEHOLDER_LABEL,
   type OfflineTender,
 } from "@/lib/tender";
@@ -39,13 +37,12 @@ import {
 // ONLY PRESENTATION DIFFERS. Same options, same CARD exclusion, same route
 // behind it. A second component is how those three quietly stop matching.
 //
-// THE REFERENCE FIELD IS RADIO-ONLY, AND THAT IS A UI JUDGEMENT, NOT A
-// CAPABILITY CHANGE. Correcting a September row is recall — "it was Cash App" —
-// not transcription; there is no check in her hand to read a number off. The
-// column, the route, the audit log and the detail reveal all still carry
-// `tender_reference`, existing references still display, and the confirm paths
-// still collect one. The compact variant simply does not ask. The prop is not
-// merely ignored there: the type does not accept it.
+// THERE IS NO REFERENCE FIELD, IN EITHER PRESENTATION. A host confirming
+// money picks the method and presses the button; nothing asks her for a memo
+// or a confirmation number. A second field on a form whose whole job is one
+// answer is a field that gets skipped. `contributions.tender_reference`
+// remains in the schema, nullable and unused - nothing writes it, nothing
+// reads it, and no production row ever carried one.
 
 interface TenderPickerBase {
   /** The board's configured rails, resolved live at render by the server
@@ -61,8 +58,6 @@ interface TenderPickerBase {
 
 interface TenderPickerRadioProps extends TenderPickerBase {
   variant?: "radio";
-  reference: string;
-  onReferenceChange: (reference: string) => void;
   /** Context only: "Contributor said: Zelle". Never preselects. */
   declaredRail?: DirectRail | null;
   /** What one selection covers, when an action confirms more than one thing —
@@ -126,14 +121,7 @@ export default function TenderPicker(props: TenderPickerProps) {
     );
   }
 
-  const {
-    reference,
-    onReferenceChange,
-    declaredRail = null,
-    appliesTo = null,
-  } = props;
-  // Shown for everything except cash: a cash handover has no memo to record.
-  const showReference = value !== null && value !== "CASH";
+  const { declaredRail = null, appliesTo = null } = props;
 
   return (
     <div className="mt-2">
@@ -171,19 +159,6 @@ export default function TenderPicker(props: TenderPickerProps) {
         })}
       </div>
 
-      {showReference && (
-        <input
-          type="text"
-          id={`${idPrefix}-tender-reference`}
-          value={reference}
-          maxLength={TENDER_REFERENCE_MAX}
-          disabled={disabled}
-          onChange={(e) => onReferenceChange(e.target.value)}
-          placeholder={referencePlaceholder(value)}
-          aria-label="Reference (optional)"
-          className="mt-1.5 w-full rounded-md border border-gray-800 bg-gray-900 px-2 py-1 text-[11px] text-white placeholder:text-gray-600 outline-none focus:border-gray-600 transition-colors"
-        />
-      )}
 
       {appliesTo && (
         <p className="mt-1.5 text-[11px] text-gray-500">

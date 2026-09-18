@@ -216,7 +216,7 @@ describe(
       const id = await reserve();
       const { confirmEntryReservation } = await import("./entry-reservation.ts");
       await db.$transaction((tx) =>
-        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE", tenderReference: null })
+        confirmEntryReservation(tx, { reservationId: id, hostId, tender: "ZELLE" })
       );
 
       const out = await closeBoard(boardId, { hostInitiated: true });

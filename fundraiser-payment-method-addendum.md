@@ -139,8 +139,7 @@ One shared picker component across the four confirm paths. Four copies will drif
 ```
 Contributor said: Zelle                    ← shown only when payment_rail is set
 
-Method     ( ) Cash   ( ) Venmo   ( ) Zelle   ( ) Check   ( ) Other
-Reference  ________________________          (optional)
+Method     ( ) Venmo   ( ) Zelle   ( ) Cash App
 ```
 
 - **Options = the board's configured payment handles. Nothing else.** Read live from the board at render time. Never offer a method the host cannot receive.
@@ -160,7 +159,9 @@ Reference  ________________________          (optional)
   - **A row's own tender still displays even when it is not in the list** — recorded before this rule, or on a rail the board has since dropped. The control states the truth about the row it sits on; that is not an offer to any other row.
 - **No default selection, including no pre-fill from the declared rail.** The declared rail is shown as context and nothing else. A pre-filled picker is a picker the host taps past, and the row it produces says *fact* while meaning *she didn't correct the guess*. That is the exact failure this document exists to end.
 - `CARD` never appears.
-- Reference is optional free text, max 64, shown only when tender ≠ `CASH`. Never parsed, never validated, never matched against anything, never public.
+- **There is no reference field.** It was optional free text on every confirm path and in the correction; it is gone from all of them. A host confirming money picks the method and presses the button. A second field on a form whose whole job is one answer is a field that gets skipped, and a skipped field teaches nothing about the row it sits on.
+  - **`contributions.tender_reference` remains in the schema** — nullable, unused, length CHECK intact. No migration. Nothing writes it, nothing reads it, and no production row ever carried one, so removing the reading of it orphaned nothing.
+  - The correction route **refuses `tenderReference` by name** rather than ignoring it, so a stale client hears about it instead of silently writing nothing.
 - `recorded_by_host_id` and `recorded_at` are written on every offline confirmation.
 
 **Board handles are not locked by invariant 16.** A host who adds Zelle in week three sees Zelle in the picker in week three. Earlier rows are corrected through §6, never rewritten.
@@ -189,7 +190,7 @@ Daaliyah Tate    Entry tickets      Card                released
 
   **The chevron is drawn, not typed.** As the character `▾` at 9px in a dim grey it rendered as a full stop after the label — *Zelle ·* — which reads as a dangling separator, and was reported as one. A glyph that small is at the mercy of whichever font the platform substitutes for it; an inline path is the same two strokes everywhere and cannot be mistaken for punctuation.
 
-- Tapping an offline row reveals recorded-by, recorded-at, reference, and the declared rail when the two differ.
+- Tapping an offline row reveals recorded-by, recorded-at, and the declared rail when the two differ.
 
 - **A row with nothing recorded opens straight to the select. There is no empty state.** *"Nothing further was recorded. This row predates the method picker."* answered a question the cell used to raise — why is this panel blank — and the label answers it now by being a control rather than a description. A historical row carries no timestamp, no reference, no declared rail and a recorder that resolves to nothing, so the paragraph stood between the host and the only thing in the panel she came for. Rows that *do* carry a tender keep the reveal unchanged. The rule is "nothing to reveal", not "tender is null": if such a row ever does carry a recorder, showing it beats discarding it to satisfy the premise.
 - **A row with no tender says so, and the copy is permission-aware.** *Recorded by host* on a null-tender row is **false**, not merely unhelpful: nobody recorded a payment type on that row, which is what null means. §9's backfill refused to write `CASH` onto those rows because it would assert a fact nobody had recorded — and the display layer then asserted a different invented fact in its place. **A label is a claim about the data exactly as much as a column value is.** With `cash.record` the cell reads **Select payment type**; without it, **No payment type recorded**, and the cell does not open. The copy tracks the same capability the route enforces, because offering a control to a viewer the route would refuse spends her time and then denies her. **Neither ever renders *Cash*** — unchanged, and the reason this cell exists.
@@ -204,7 +205,7 @@ Daaliyah Tate    Entry tickets      Card                released
 
 - **The correction control is the compact variant of the one picker — a native `<select>`, not a second component.** Same options from the board's accepted rails, same `CARD` exclusion, same route. Only presentation differs, and the radio group stays on the four confirm paths, where the host has already stopped to confirm a payment and the reference field needs room. Opened, the radio stack ran taller than three donor rows and pushed the ledger down the page; one line that opens the phone's own wheel is the right trade for fixing a row in a backlog.
 
-- **The compact variant does not ask for a reference, and that is a UI judgement, not a capability change.** Correcting a September row is recall — *it was Cash App* — not transcription: there is no cheque in her hand to read a number off. `tender_reference` is untouched in the column, the route, the audit log and the detail reveal; existing references still display; the four confirm paths still collect an optional one. The compact type does not accept the prop at all, so this cannot drift into the other presentation.
+- **No presentation of the picker asks for a reference**, because the field no longer exists in the product — see §4. Neither variant accepts the prop, so it cannot drift back into one of them.
 - Nothing here reaches the public board. Money doc §10 gives the public two numbers.
 
 **A ledger reservation row has no method to name.** Those rows are grouped from `squares` in `reserved_cash`, not from a contribution, and a square carries no declared rail: `payment_rail` is a column on `contributions` and `entry_reservations`, never on `squares`. Their Method cell renders an em dash. It read `cash` before, which asserted a method nobody recorded - the same defect the null-tender rule exists to prevent.
@@ -217,7 +218,7 @@ Daaliyah Tate    Entry tickets      Card                released
 
 Sixty-two rows on live boards predate this change. Some are wrong and the host is the only person who knows how.
 
-**Tender and reference are correctable inline. Settlement, amount, and status are not correctable through this path** — and the route rejects them explicitly rather than ignoring them.
+**The tender is correctable inline. Settlement, amount, status — and the reference, which no longer exists — are not correctable through this path** — and the route rejects them explicitly rather than ignoring them.
 
 That asymmetry is the whole safety argument: a correction that cannot touch a dollar or a state cannot break reconciliation, so it needs no confirmation modal and no close-flow gate.
 
@@ -229,9 +230,9 @@ That asymmetry is the whole safety argument: a correction that cannot touch a do
 
 **A successful write collapses the row; a refused one leaves it open.** Removing Save and Cancel left nothing to end the interaction, so the row stayed expanded with the picker showing the value the label above it had just begun displaying — the same answer twice. **Collapsing is the acknowledgement**: the label reads what she chose, which is all a one-field correction has to report. The failure path is the exception and must stay open, because the restored value and the error message both live inside the control she just used.
 
-**A correction made through the compact cell sends `tender` alone.** It must not send `tenderReference: null` for a field it never offered: that would erase a reference already on the row, which is a correction nobody asked for. The route's per-field logging means an untouched field writes no log row.
+**A correction sends `tender` alone**, and the route refuses any other key by name — `tenderReference` included.
 
-Every correction writes a `tender_correction_log` row — host, contribution, field, old, new, timestamp. Same shape and reasoning as `SignupLog`.
+Every correction writes a `tender_correction_log` row — host, contribution, field, old, new, timestamp. Same shape and reasoning as `SignupLog`. **`field` is always `TENDER`.** The enum keeps its `REFERENCE` value and nothing writes it; all five correction rows in production are `TENDER`.
 
 ---
 
@@ -267,7 +268,7 @@ Subtotals cover confirmed, unvoided rows — the population the ledger header al
 |---|---|---|
 | `settlement` | Enum | `STRIPE` · `OFFLINE`. System-written. Replaces `payment_method` |
 | `tender` | Enum? | Null on pre-migration rows and on unconfirmed offline rows. §9, invariant 124 |
-| `tender_reference` | String? | Max 64. Free text. Never parsed |
+| `tender_reference` | String? | Max 64. **Retained, unused.** Nothing writes or reads it |
 | `recorded_at` | DateTime? | New. `recorded_by_host_id` already exists |
 
 `payment_rail` is unchanged in name, values, and meaning. Its constraint `contributions_rail_is_cash_only` keeps its name and its meaning — a declared rail exists only on a host-attested contribution — but its text was rewritten in M1a to read `settlement` instead of the dropped `payment_method`.
@@ -354,7 +355,9 @@ Registry-allocated 120–125. Cite by name.
 122. No dollar figure, state transition, fee calculation, eligibility check, or prize computation reads `tender`. Removing the column leaves every number in the system unchanged.
 123. Writing `tender` never creates or advances a path to confirmed. It is written inside a transaction already confirming a contribution, never in one of its own.
 124. Every offline contribution confirmed after this change carries a non-null `tender`, enforced in the confirmation transaction. Null is legal on pre-migration rows and on declared-but-unconfirmed rows, and the set of pre-migration nulls can only shrink.
-125. Tender and reference are correctable; settlement, amount, and status are not correctable through that path. Every correction writes an audit row naming the host, both values, and the time.
+125. The tender is correctable; settlement, amount, and status are not correctable through that path. Every correction writes an audit row naming the host, both values, and the time.
+
+    **Narrowed in v1.3.0.** It read "tender and reference are correctable" while the reference field existed. Removing that field narrows what the path may touch and loosens nothing: the list of what is *not* correctable only grew.
 
 **`payment_rail` and `tender` are never derived from, synced with, or constrained against each other.** Filed as a rule rather than an invariant because it forbids a mechanism rather than asserting a state. This independence is scoped to the declared rail. `settlement` and `tender` are constrained against each other by invariant 121.
 

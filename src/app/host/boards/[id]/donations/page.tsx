@@ -158,7 +158,6 @@ export default async function DonationsPage({
       // THE METHOD CELL AND ITS REVEAL - §5. Host-facing only: none of
       // these four reaches the public board, which gets two numbers.
       tender: true,
-      tenderReference: true,
       recordedAt: true,
       recordedByHostId: true,
       squareAmountCents: true,
@@ -589,7 +588,6 @@ export default async function DonationsPage({
                       canCorrect={canCorrect}
                       settlement={c.settlement}
                       tender={c.tender}
-                      reference={c.tenderReference}
                       recordedBy={
                         c.recordedByHostId
                           ? recorderName.get(c.recordedByHostId) ?? null

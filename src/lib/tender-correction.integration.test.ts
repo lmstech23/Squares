@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 
-// Inline correction of tender and reference, THROUGH THE ROUTE, against a real
+// Inline correction of the tender, THROUGH THE ROUTE, against a real
 // database — payment-method addendum v1.2.7 §6.
 //
 // THE AUTHORIZATION RULING IS PINNED HERE. Any organizer who may manage the
@@ -65,16 +65,13 @@ describe(
     }
 
     /** An offline row, optionally with a tender, recorded by SOMEONE ELSE. */
-    async function offlineRow(
-      opts: { tender?: string | null; reference?: string | null } = {}
-    ) {
+    async function offlineRow(opts: { tender?: string | null } = {}) {
       const row = await db.contribution.create({
         data: {
           boardId,
           status: "confirmed",
           settlement: "OFFLINE",
           tender: (opts.tender ?? null) as never,
-          tenderReference: opts.reference ?? null,
           squareAmountCents: 0,
           donationAmountCents: 4000,
           totalPaidCents: 4000,
@@ -201,73 +198,40 @@ describe(
       assert.deepEqual([entry.field, entry.oldValue, entry.newValue], ["TENDER", "CASH", "CHECK"]);
     });
 
-    // ---- the reference: add, change, clear ---------------------------------
+    // ---- the reference is gone from the product ----------------------------
+    //
+    // It is REFUSED BY NAME rather than ignored. A stale client still sending
+    // `tenderReference` hears about it instead of quietly writing nothing, and
+    // the row it aimed at is left exactly as it was.
 
-    test("a reference is added, changed, then cleared - three corrections, three rows", async () => {
+    test("tenderReference is refused, and nothing is written", async () => {
       const id = await offlineRow({ tender: "ZELLE" });
-
-      assert.equal((await correct({ contributionId: id, tenderReference: "memo 1" })).status, 200);
+      const out = await correct({ contributionId: id, tenderReference: "memo 1" });
+      assert.equal(out.status, 400);
+      assert.deepEqual(out.json.refusedFields, ["tenderReference"]);
       assert.equal(
         (await db.contribution.findUniqueOrThrow({ where: { id } })).tenderReference,
-        "memo 1"
+        null,
+        "a refused field is not a written field"
       );
-
-      assert.equal((await correct({ contributionId: id, tenderReference: "memo 2" })).status, 200);
-      assert.equal(
-        (await db.contribution.findUniqueOrThrow({ where: { id } })).tenderReference,
-        "memo 2"
-      );
-
-      // CLEARING IS A CORRECTION. A note that turned out to be wrong must be
-      // removable, and null is the honest value.
-      const cleared = await correct({ contributionId: id, tenderReference: null });
-      assert.equal(cleared.status, 200);
-      assert.equal(
-        (await db.contribution.findUniqueOrThrow({ where: { id } })).tenderReference,
-        null
-      );
-
-      const rows = await db.tenderCorrectionLog.findMany({
-        where: { contributionId: id },
-        orderBy: { createdAt: "asc" },
-      });
-      assert.equal(rows.length, 3);
-      assert.deepEqual(
-        rows.map((r) => [r.field, r.oldValue, r.newValue]),
-        [
-          ["REFERENCE", null, "memo 1"],
-          ["REFERENCE", "memo 1", "memo 2"],
-          ["REFERENCE", "memo 2", null],
-        ]
-      );
+      assert.equal((await logs(id)).length, 0, "and nothing is logged");
     });
 
-    test("both fields in one request writes TWO log rows", async () => {
-      const id = await offlineRow({ tender: "CASH", reference: "old note" });
-      const out = await correct({
-        contributionId: id,
-        tender: "VENMO",
-        tenderReference: "new note",
-      });
-      assert.equal(out.status, 200);
-      assert.equal(out.json.changed, 2);
-
-      const rows = await logs(id);
-      assert.equal(rows.length, 2);
-      // Compared by field rather than by row order: Postgres orders an enum
-      // by DECLARATION order, and which row landed first is not the point.
-      const byField = Object.fromEntries(
-        rows.map((r) => [r.field, [r.oldValue, r.newValue]])
+    test("a tender sent alongside a reference is refused too - the whole body is", async () => {
+      const id = await offlineRow({ tender: "CASH" });
+      const out = await correct({ contributionId: id, tender: "VENMO", tenderReference: "x" });
+      assert.equal(out.status, 400);
+      assert.equal(
+        (await db.contribution.findUniqueOrThrow({ where: { id } })).tender,
+        "CASH",
+        "the valid half of a refused body is not applied either"
       );
-      assert.deepEqual(byField, {
-        TENDER: ["CASH", "VENMO"],
-        REFERENCE: ["old note", "new note"],
-      });
+      assert.equal((await logs(id)).length, 0);
     });
 
     test("a request that changes nothing writes no log row", async () => {
-      const id = await offlineRow({ tender: "CASH", reference: "same" });
-      const out = await correct({ contributionId: id, tender: "CASH", tenderReference: "same" });
+      const id = await offlineRow({ tender: "CASH" });
+      const out = await correct({ contributionId: id, tender: "CASH" });
       assert.equal(out.status, 200);
       assert.equal(out.json.changed, 0);
       assert.equal((await logs(id)).length, 0, "an audit trail of non-events is noise");
@@ -361,20 +325,16 @@ describe(
 
     // ---- the load-bearing property ----------------------------------------
 
-    // INVARIANT 122 AT THE ROUTE. Drop tender and reference from the comparison
-    // and every other column must be byte-identical across a correction.
+    // INVARIANT 122 AT THE ROUTE. Drop the tender from the comparison and
+    // every other column must be byte-identical across a correction.
     test("a correction moves no money, no state, and no date", async () => {
-      const id = await offlineRow({ tender: "CASH", reference: "before" });
+      const id = await offlineRow({ tender: "CASH" });
       const before = await db.contribution.findUniqueOrThrow({
         where: { id },
         select: untouchable,
       });
 
-      const out = await correct({
-        contributionId: id,
-        tender: "PAYPAL",
-        tenderReference: "after",
-      });
+      const out = await correct({ contributionId: id, tender: "PAYPAL" });
       assert.equal(out.status, 200);
 
       const after = await db.contribution.findUniqueOrThrow({

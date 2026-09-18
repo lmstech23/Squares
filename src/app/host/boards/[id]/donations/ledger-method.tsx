@@ -52,7 +52,6 @@ export interface LedgerMethodProps {
   contributionId: string;
   settlement: "STRIPE" | "OFFLINE";
   tender: string | null;
-  reference: string | null;
   /** Already resolved to a name or email by the page; null when unknown. */
   recordedBy: string | null;
   /** Already formatted in the board's timezone by the page. */
@@ -69,7 +68,6 @@ export default function LedgerMethod({
   contributionId,
   settlement,
   tender,
-  reference,
   recordedBy,
   recordedAt,
   declaredRail,
@@ -141,7 +139,7 @@ export default function LedgerMethod({
   // Shown only when it adds something. A declared Zelle confirmed as Zelle
   // repeats itself; declared Zelle confirmed as Cash is the fact worth keeping.
   const showDeclared = declaredRailDiffers(declaredRail, tender);
-  const hasDetail = Boolean(recordedBy || recordedAt || reference || showDeclared);
+  const hasDetail = Boolean(recordedBy || recordedAt || showDeclared);
 
   // NOTHING TO SHOW AND NOTHING TO DO. With the empty state gone, a disclosure
   // here would open an empty box. Unreachable today - OWNER and MANAGER both
@@ -257,14 +255,6 @@ export default function LedgerMethod({
                 </div>
               )}
               {recordedAt && <div>Recorded {recordedAt}</div>}
-              {/* EXISTING REFERENCES STAY VISIBLE. The compact picker stopped
-                  asking for one; nothing stopped storing or showing them, and
-                  the confirm paths still collect one. */}
-              {reference && (
-                <div className="truncate">
-                  Reference <span className="text-gray-300">{reference}</span>
-                </div>
-              )}
               {showDeclared && declaredRail && (
                 <div>
                   Contributor said{" "}

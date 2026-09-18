@@ -36,14 +36,14 @@ export default function ConfirmButton({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function confirm(tender: string, tenderReference: string | null) {
+  async function confirm(tender: string) {
     setError(null);
     setLoading(true);
     try {
       const res = await fetch(`/api/host/boards/${boardId}/cash-donation`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contributionId, tender, tenderReference }),
+        body: JSON.stringify({ contributionId, tender }),
       });
       const data = await res.json();
       if (!res.ok) {

@@ -81,25 +81,19 @@ export function offlineTenderOptions(rails: readonly DirectRail[]): OfflineTende
   return out;
 }
 
-/** Free text, at most 64 characters — contributions_tender_reference_length. */
-export const TENDER_REFERENCE_MAX = 64;
-
-/** OPTIONAL EVERYWHERE, INCLUDING FOR `OTHER`. The placeholder says what it is
- *  for; nothing makes it required. A host who cannot remember the cheque number
- *  must still be able to record the cheque. */
-export function referencePlaceholder(tender: OfflineTender | null): string {
-  switch (tender) {
-    case "CHECK":
-      return "Check number (optional)";
-    case "OTHER":
-      return "What it was — card on my own reader, money order (optional)";
-    case null:
-    case "CASH":
-      return "Optional";
-    default:
-      return "Memo or confirmation number (optional)";
-  }
-}
+/* THE TENDER REFERENCE IS GONE FROM THE PRODUCT - §4, §5, §6.
+ *
+ * A host confirming money picks the method and presses the button. There is
+ * no memo, no confirmation number, no note - not on the confirm paths, not in
+ * the ledger's detail, not in a correction. A second field on a form whose
+ * whole job is one answer is a field that gets skipped, and a skipped field
+ * teaches nothing about the row it sits on.
+ *
+ * `contributions.tender_reference` REMAINS IN THE SCHEMA, nullable and unused,
+ * along with its length CHECK. Nothing writes it and nothing displays it. No
+ * production row ever carried one, so nothing was orphaned by removing the
+ * reading of it.
+ */
 
 /** What a row says when nobody recorded a tender. NEVER "Cash": most of
  *  those rows were cash and some were not, and saying Cash would assert a
@@ -205,37 +199,11 @@ export const TENDER_REQUIRED_ERROR = "Choose how the money arrived.";
 export const TENDER_CARD_ERROR =
   "Card is not a host-recorded method. A card payment is confirmed by Stripe; record Other with a note.";
 export const TENDER_UNKNOWN_ERROR = "That payment method is not recognized.";
-export const TENDER_REFERENCE_TOO_LONG_ERROR = `A reference may be at most ${TENDER_REFERENCE_MAX} characters.`;
 
 export type ParsedTender =
-  | { ok: true; tender: OfflineTender; reference: string | null }
+  | { ok: true; tender: OfflineTender }
   | { ok: false; error: string };
 
-export type ParsedReference =
-  | { ok: true; reference: string | null }
-  | { ok: false; error: string };
-
-/**
- * The reference rule on its own - §6.
- *
- * A correction can change the reference WITHOUT touching the tender, so the
- * rule cannot live inside a validator that also demands one. Empty, blank and
- * absent all mean null: clearing a note is a legitimate correction.
- */
-export function parseTenderReference(reference: unknown): ParsedReference {
-  if (reference === undefined || reference === null || reference === "") {
-    return { ok: true, reference: null };
-  }
-  if (typeof reference !== "string") {
-    return { ok: false, error: TENDER_REFERENCE_TOO_LONG_ERROR };
-  }
-  const trimmed = reference.trim();
-  if (!trimmed) return { ok: true, reference: null };
-  if ([...trimmed].length > TENDER_REFERENCE_MAX) {
-    return { ok: false, error: TENDER_REFERENCE_TOO_LONG_ERROR };
-  }
-  return { ok: true, reference: trimmed };
-}
 
 /**
  * The one validator every confirm route calls, on its own, before it writes.
@@ -244,7 +212,7 @@ export function parseTenderReference(reference: unknown): ParsedReference {
  * submit nothing, but a route that trusted the picker would be one fetch away
  * from a row the ledger cannot explain.
  */
-export function parseTender(tender: unknown, reference: unknown): ParsedTender {
+export function parseTender(tender: unknown): ParsedTender {
   if (tender === undefined || tender === null || tender === "") {
     return { ok: false, error: TENDER_REQUIRED_ERROR };
   }
@@ -253,9 +221,5 @@ export function parseTender(tender: unknown, reference: unknown): ParsedTender {
   const found = OFFLINE_TENDERS.find((t) => t === tender.toUpperCase());
   if (!found) return { ok: false, error: TENDER_UNKNOWN_ERROR };
 
-  // The same rule the correction path uses, so a reference accepted at
-  // confirmation is accepted at correction and vice versa.
-  const ref = parseTenderReference(reference);
-  if (!ref.ok) return { ok: false, error: ref.error };
-  return { ok: true, tender: found, reference: ref.reference };
+  return { ok: true, tender: found };
 }

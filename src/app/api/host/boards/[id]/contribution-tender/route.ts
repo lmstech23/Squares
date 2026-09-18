@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBoardAccess } from "@/lib/board-access";
-import { parseTender, parseTenderReference, type OfflineTender } from "@/lib/tender";
+import { parseTender, type OfflineTender } from "@/lib/tender";
 
 // ============================================================
-// HOST: correct the tender or the reference on an offline contribution.
+// HOST: correct the tender on an offline contribution.
 // fundraiser-payment-method-addendum.md v1.2.7 §6.
 //
-// PATCH { contributionId, tender?, tenderReference? }
+// PATCH { contributionId, tender }
 //
 // TWO FIELDS, AND THAT ASYMMETRY IS THE WHOLE SAFETY ARGUMENT. A correction
 // that cannot touch a dollar or a state cannot break reconciliation, so it
@@ -33,7 +33,10 @@ import { parseTender, parseTenderReference, type OfflineTender } from "@/lib/ten
 export const runtime = "nodejs";
 
 /** The only keys this route accepts. Anything else is refused by name. */
-const ALLOWED = new Set(["contributionId", "tender", "tenderReference"]);
+// TENDER ONLY. The reference field is gone from the product; a caller that
+// still sends `tenderReference` is refused by name rather than ignored, so a
+// stale client hears about it instead of silently writing nothing.
+const ALLOWED = new Set(["contributionId", "tender"]);
 
 export async function PATCH(
   request: Request,
@@ -61,7 +64,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error:
-            `Only tender and tenderReference are correctable here. Refused: ${forbidden.join(", ")}. ` +
+            `Only tender is correctable here. Refused: ${forbidden.join(", ")}. ` +
             "Settlement, amounts, status, contributor identity and dates are not correctable through this path.",
           refusedFields: forbidden,
         },
@@ -73,37 +76,23 @@ export async function PATCH(
       return NextResponse.json({ error: "A contribution id is required." }, { status: 400 });
     }
 
-    const wantsTender = "tender" in body;
-    const wantsReference = "tenderReference" in body;
-    if (!wantsTender && !wantsReference) {
+    if (!("tender" in body)) {
       return NextResponse.json({ error: "Nothing to correct." }, { status: 400 });
     }
 
     // CARD is refused here as everywhere else: it belongs to Stripe alone, and
     // a correction is not a way in through the back.
-    let nextTender: OfflineTender | null = null;
-    if (wantsTender) {
-      const parsed = parseTender(body.tender, undefined);
-      if (!parsed.ok) {
-        return NextResponse.json({ error: parsed.error }, { status: 400 });
-      }
-      nextTender = parsed.tender;
+    const parsed = parseTender(body.tender);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
     }
-
-    let nextReference: string | null = null;
-    if (wantsReference) {
-      const parsed = parseTenderReference(body.tenderReference);
-      if (!parsed.ok) {
-        return NextResponse.json({ error: parsed.error }, { status: 400 });
-      }
-      nextReference = parsed.reference;
-    }
+    const nextTender: OfflineTender = parsed.tender;
 
     // Scoped to THIS board before anything else: an id from another host's
     // board must read as not found, never as a permission error.
     const row = await prisma.contribution.findFirst({
       where: { id: body.contributionId, boardId },
-      select: { id: true, settlement: true, tender: true, tenderReference: true },
+      select: { id: true, settlement: true, tender: true },
     });
     if (!row) {
       return NextResponse.json({ error: "Contribution not found." }, { status: 404 });
@@ -119,63 +108,35 @@ export async function PATCH(
       );
     }
 
-    const tenderChanged = wantsTender && nextTender !== row.tender;
-    const referenceChanged = wantsReference && nextReference !== row.tenderReference;
-
-    if (!tenderChanged && !referenceChanged) {
+    if (nextTender === row.tender) {
       // Idempotent and silent: nothing changed, so nothing is logged.
-      return NextResponse.json({
-        ok: true,
-        changed: 0,
-        tender: row.tender,
-        tenderReference: row.tenderReference,
-      });
+      return NextResponse.json({ ok: true, changed: 0, tender: row.tender });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const data: { tender?: OfflineTender; tenderReference?: string | null } = {};
-      if (tenderChanged) data.tender = nextTender!;
-      if (referenceChanged) data.tenderReference = nextReference;
-
       const after = await tx.contribution.update({
         where: { id: row.id },
-        data,
-        select: { tender: true, tenderReference: true },
+        data: { tender: nextTender },
+        select: { tender: true },
       });
 
-      // ONE ROW PER FIELD, inside the same transaction as the change. A log
-      // written afterwards is a log that can be missing.
-      if (tenderChanged) {
-        await tx.tenderCorrectionLog.create({
-          data: {
-            contributionId: row.id,
-            hostId: access.hostId,
-            field: "TENDER",
-            oldValue: row.tender,
-            newValue: nextTender,
-          },
-        });
-      }
-      if (referenceChanged) {
-        await tx.tenderCorrectionLog.create({
-          data: {
-            contributionId: row.id,
-            hostId: access.hostId,
-            field: "REFERENCE",
-            oldValue: row.tenderReference,
-            newValue: nextReference,
-          },
-        });
-      }
+      // THE LOG ROW, inside the same transaction as the change. A log written
+      // afterwards is a log that can be missing. `tender_correction_field`
+      // keeps its REFERENCE value in the database and nothing writes it: the
+      // five rows production already holds are all TENDER.
+      await tx.tenderCorrectionLog.create({
+        data: {
+          contributionId: row.id,
+          hostId: access.hostId,
+          field: "TENDER",
+          oldValue: row.tender,
+          newValue: nextTender,
+        },
+      });
       return after;
     });
 
-    return NextResponse.json({
-      ok: true,
-      changed: (tenderChanged ? 1 : 0) + (referenceChanged ? 1 : 0),
-      tender: updated.tender,
-      tenderReference: updated.tenderReference,
-    });
+    return NextResponse.json({ ok: true, changed: 1, tender: updated.tender });
   } catch (error) {
     console.error("Tender correction error:", error);
     return NextResponse.json(

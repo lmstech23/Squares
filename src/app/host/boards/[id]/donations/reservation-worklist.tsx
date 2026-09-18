@@ -95,7 +95,6 @@ export default function ReservationWorklist({
     id: string,
     action: "confirm" | "release",
     tender: string | null = null,
-    tenderReference: string | null = null
   ) {
     setError(null);
     setBusy(id);
@@ -103,7 +102,7 @@ export default function ReservationWorklist({
       const res = await fetch(`/api/host/boards/${boardId}/entry-reservation`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservationId: id, action, tender, tenderReference }),
+        body: JSON.stringify({ reservationId: id, action, tender }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -220,8 +219,8 @@ export default function ReservationWorklist({
                 busy={busy === r.id}
                 className="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
                 confirmClassName="flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-950 hover:bg-gray-200 disabled:opacity-50 transition-colors"
-                onConfirm={(tender, tenderReference) =>
-                  act(r.id, "confirm", tender, tenderReference)
+                onConfirm={(tender) =>
+                  act(r.id, "confirm", tender)
                 }
               />
               <button

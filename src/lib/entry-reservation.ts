@@ -96,7 +96,6 @@ export async function confirmEntryReservation(
     /// One tender for the whole reservation: confirm resolves every line
     /// on it into ONE contribution - payment-method addendum §4.
     tender: OfflineTender;
-    tenderReference: string | null;
   }
 ): Promise<{
   contributionId: string;
@@ -179,7 +178,6 @@ export async function confirmEntryReservation(
       status: "confirmed",
       settlement: "OFFLINE",
       tender: input.tender,
-      tenderReference: input.tenderReference,
       squareAmountCents: 0,
       donationAmountCents: donationCents,
       entryAmountCents: ticketCents,

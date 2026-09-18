@@ -111,7 +111,6 @@ export default function CashReservePanel({
   async function handleConfirm(
     squareId: string,
     tender: string | null = null,
-    tenderReference: string | null = null
   ) {
     setActionLoading(squareId);
     setError("");
@@ -120,7 +119,7 @@ export default function CashReservePanel({
       const res = await fetch(`/api/host/boards/${boardId}/confirm-cash`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ squareId, tender, tenderReference }),
+        body: JSON.stringify({ squareId, tender }),
       });
 
       if (!res.ok) {
@@ -236,8 +235,8 @@ export default function CashReservePanel({
                       pendingLabel="…"
                       busy={actionLoading === s.squareId}
                       className="text-green-400 hover:text-green-300 font-medium transition-colors disabled:opacity-50"
-                      onConfirm={(tender, tenderReference) =>
-                        handleConfirm(s.squareId, tender, tenderReference)
+                      onConfirm={(tender) =>
+                        handleConfirm(s.squareId, tender)
                       }
                     />
                   ) : (

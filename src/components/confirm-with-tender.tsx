@@ -32,7 +32,7 @@ export interface ConfirmWithTenderProps {
   disabled?: boolean;
   className?: string;
   confirmClassName?: string;
-  onConfirm: (tender: OfflineTender, reference: string | null) => void | Promise<void>;
+  onConfirm: (tender: OfflineTender) => void | Promise<void>;
 }
 
 export default function ConfirmWithTender({
@@ -52,7 +52,6 @@ export default function ConfirmWithTender({
 }: ConfirmWithTenderProps) {
   const [open, setOpen] = useState(false);
   const [tender, setTender] = useState<OfflineTender | null>(null);
-  const [reference, setReference] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   if (!open) {
@@ -82,8 +81,6 @@ export default function ConfirmWithTender({
           setTender(t);
           setError(null);
         }}
-        reference={reference}
-        onReferenceChange={setReference}
         declaredRail={declaredRail}
         appliesTo={appliesTo}
         idPrefix={idPrefix}
@@ -101,7 +98,7 @@ export default function ConfirmWithTender({
               setError(TENDER_REQUIRED_ERROR);
               return;
             }
-            await onConfirm(tender, reference.trim() || null);
+            await onConfirm(tender);
           }}
           className={confirmClassName}
         >
@@ -113,7 +110,6 @@ export default function ConfirmWithTender({
           onClick={() => {
             setOpen(false);
             setTender(null);
-            setReference("");
             setError(null);
           }}
           className="rounded-md border border-gray-700 px-2 py-1 text-xs text-gray-300 hover:border-gray-500 disabled:opacity-50 transition-colors"

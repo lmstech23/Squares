@@ -262,45 +262,41 @@ describe(
       assert.match(out.json.error, CARD_REFUSED);
     });
 
-    test("record donation: the tender, reference and recordedAt land on the row", async () => {
+    test("record donation: the tender and recordedAt land on the row", async () => {
       const out = await recordDonation({
         amountCents: 4000,
         donorName: "Zelle Donor",
         donorEmail: "zd@example.invalid",
         donorPhone: "+16785550146",
         tender: "ZELLE",
-        tenderReference: "memo 8891",
       });
       assert.equal(out.status, 200);
       const row = await db.contribution.findUniqueOrThrow({
         where: { id: out.json.contributionId },
       });
       assert.equal(row.tender, "ZELLE");
-      assert.equal(row.tenderReference, "memo 8891");
       assert.notEqual(row.recordedAt, null);
       assert.equal(row.recordedByHostId, hostId);
       assert.equal(row.settlement, "OFFLINE");
       assert.equal(row.status, "confirmed");
     });
 
-    // A DISPLAY RULE, NOT A DATA RULE. The picker hides the reference field for
-    // cash; the route must still accept one, because an M4 correction can
-    // legitimately produce a cash row with a note.
-    test("record donation: a reference on a CASH row is accepted by the route", async () => {
+    // THE REFERENCE IS GONE FROM THE PRODUCT. No surface collects one and no
+    // route writes one; the column stays in the schema, nullable and unused.
+    test("record donation: no reference is written, whatever the tender", async () => {
       const out = await recordDonation({
         amountCents: 1500,
-        donorName: "Cash With Note",
+        donorName: "Cash No Note",
         donorEmail: "cwn@example.invalid",
         donorPhone: "+16785550147",
         tender: "CASH",
-        tenderReference: "envelope from the bake sale",
       });
       assert.equal(out.status, 200);
       const row = await db.contribution.findUniqueOrThrow({
         where: { id: out.json.contributionId },
       });
       assert.equal(row.tender, "CASH");
-      assert.equal(row.tenderReference, "envelope from the bake sale");
+      assert.equal(row.tenderReference, null, "no surface collects a reference");
     });
 
     // ---- 2. Confirm a declared donation — cash-donation PATCH --------------
@@ -329,13 +325,12 @@ describe(
       const out = await confirmDeclared({
         contributionId: id,
         tender: "CASH",
-        tenderReference: "  two twenties  ",
       });
       assert.equal(out.status, 200);
       const row = await db.contribution.findUniqueOrThrow({ where: { id } });
       assert.equal(row.status, "confirmed");
       assert.equal(row.tender, "CASH");
-      assert.equal(row.tenderReference, "two twenties", "trimmed");
+      assert.equal(row.tenderReference, null, "no surface collects a reference");
       assert.notEqual(row.recordedAt, null);
       // THE DISAGREEMENT IS THE INFORMATION: declared Zelle, handed over cash.
       assert.equal(row.paymentRail, "zelle");
@@ -370,7 +365,6 @@ describe(
       const out = await confirmSquare({
         squareId,
         tender: "CHECK",
-        tenderReference: "check 1042",
       });
       assert.equal(out.status, 200);
       const sq = await db.square.findUniqueOrThrow({ where: { squareId } });
@@ -380,7 +374,7 @@ describe(
         where: { id: sq.contributionId! },
       });
       assert.equal(row.tender, "CHECK");
-      assert.equal(row.tenderReference, "check 1042");
+      assert.equal(row.tenderReference, null, "no surface collects a reference");
       assert.notEqual(row.recordedAt, null);
       assert.equal(row.recordedByHostId, hostId);
       assert.equal(row.squareAmountCents, PRICE);
@@ -418,14 +412,13 @@ describe(
         reservationId: id,
         action: "confirm",
         tender: "VENMO",
-        tenderReference: "@taylor",
       });
       assert.equal(out.status, 200);
       const row = await db.contribution.findUniqueOrThrow({
         where: { id: out.json.contributionId },
       });
       assert.equal(row.tender, "VENMO");
-      assert.equal(row.tenderReference, "@taylor");
+      assert.equal(row.tenderReference, null, "no surface collects a reference");
       assert.notEqual(row.recordedAt, null);
       assert.equal(row.recordedByHostId, hostId);
       assert.equal(row.entryAmountCents, 9500);
