@@ -279,6 +279,36 @@ have accepted the wrong one both times.
 
 ---
 
+## Change process
+
+Order is always: **MOCKUP → DOCUMENT → CODE.** No step starts until the one
+before it is approved by the person asking for the change.
+
+1. **MOCKUP**
+   - Show every affected screen, before and after.
+   - List what changes and what stays the same.
+   - Wait for explicit approval.
+
+2. **DOCUMENT**
+   - Update the spec/addendum and any invariants to match the approved
+     mockup, and nothing beyond it.
+   - Show the doc changes. Wait for explicit approval.
+
+3. **CODE**
+   - Build only what the approved mockup and document describe.
+   - Do not add fields, defaults, prompts, validation, or behavior that
+     weren't approved. If something seems missing or unclear, stop and ask.
+
+**Specs and docs alone are never approval to code.**
+
+Added 2026-09-18, after the memo/confirmation-field removal was coded before
+the mockup step. Rule 1 below is the older two-step form of the same idea and
+still holds; this section puts a mockup in front of it, because the round it
+came from had the documented behaviour and the wanted behaviour disagreeing
+in ways only a screen would have shown.
+
+---
+
 ## Rules
 
 1. **Document first, code second.** Every change gets written down before it is built. For fundraiser work that means `fundraiser-board-v2.md`, not `SYSTEM-FLOW.md`.
