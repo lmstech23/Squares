@@ -257,7 +257,7 @@ bearer link belongs to that person. See §7.
 | 122 | No dollar figure, state transition, fee, eligibility check, or prize computation reads `tender` | `fundraiser-payment-method-addendum.md` §11 |
 | 123 | Writing `tender` never creates or advances a path to confirmed | `fundraiser-payment-method-addendum.md` §11 |
 | 124 | Every offline contribution confirmed after this change carries a non-null `tender` | `fundraiser-payment-method-addendum.md` §11 |
-| 125 | Tender and reference are correctable; settlement, amount and status are not, and every correction is logged | `fundraiser-payment-method-addendum.md` §11 |
+| 125 | The tender is correctable; settlement, amount and status are not, and every correction is logged | `fundraiser-payment-method-addendum.md` §11 |
 
 An INDEX, as above. Allocated 2026-09-12 from the next free number; nothing
 renumbered. The addendum drafted these as 58–63, which belong to the donations
