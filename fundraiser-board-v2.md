@@ -791,6 +791,43 @@ Replaces score entry on fundraiser boards.
 
 On a Phase A board there is no prize pool line.
 
+### A board that sells entry tickets counts tickets, not squares
+
+**`Open` counts squares, and an entry-ticket sale consumes none.** A standalone Entry Ticket purchase creates an `EntryReservation` or a card `Contribution`, mints passes, and touches no square. So on a board whose sales are all entry tickets, `Open` sat at the board's full square count forever and read as *nothing has sold* while money was arriving.
+
+**`Open` is replaced by `Remaining` on a board that offers entry tiers**, and `Remaining` counts tickets — §19.13. `totalSquares` is the grid size and is never the ticket limit; the two are separate numbers on separate products.
+
+**With no limit set there is no tile at all.** Not a zero, not an infinity sign: an unlimited product has no remaining count to report, and the three Contributions counters beside it already count entry purchases correctly.
+
+**No denominator is invented.** `Event.gateAllowanceTotal` is a gate allowance, not a sales cap, and is not used here.
+
+### Tickets sold
+
+**The count is the sum of `Contribution.entryTicketCount` over confirmed, unvoided contributions carrying entry money.** That is the purchase side — what was bought — and it never moves afterwards.
+
+**Where a limit is set, availability is shown beside it**: `14 tickets sold · 86 remaining`. `remaining = limit − sold − held`, and §19.13 owns what *held* means. Where no limit is set the sold figure stands alone — `14 tickets sold` — because there is nothing to be remaining out of.
+
+**Passes are not the answer to this question.** `AdmissionPass` says how many credentials someone holds *now*: it moves when a pass is used at the gate, and the donate flag voids a supporter's unused passes and mints fresh ones when toggled back. A ticket that was sold and later marked *not attending* is still a ticket that was sold. Passes stay the check-in answer; §6B owns that.
+
+**Reservation lines are not the answer either**, though they agree today. `EntryReservationLine.quantityConfirmed` covers the direct-payment path only — a card entry purchase creates no reservation at all — so it undercounts the moment a board takes an entry payment by card.
+
+`entryTicketCount` is NULL on rows created before the column existed. **NULL is not zero**, and the roster says *"$80 in tickets"* rather than inventing a count. The three NULL rows that existed on live boards were backfilled once from their `EntryReservationLine.quantityConfirmed` — never from the dollar amount — after confirming each had a line to read. Both write paths set the column today (`api/board/[slug]/entry` from the priced quote, `confirmEntryReservation` from the confirmed quantities), so no new NULL appears.
+
+### The board list card
+
+The card under each board name states what has sold, and **renders every count that applies to that board**:
+
+```
+Game Day, and a fundraiser selling squares     12 / 100 paid
+Entry tickets, limit set                       14 tickets sold · 86 remaining
+Entry tickets, no limit                        14 tickets sold
+A board doing both                             both lines
+```
+
+The board header carries the same sentence after the raised figure — `$865.00 raised · 14 tickets sold · 86 remaining` — replacing a square count that read `0 of 100 tickets confirmed` on a board selling no squares.
+
+A square line appears when the board has squares to sell; a ticket line appears when the board offers entry tiers. **Game Day and square-selling fundraisers are unchanged** — they show the square counter exactly as before, because a board with no entry tiers can never take the ticket branch.
+
 **Awaiting payment panel:** confirm or release **per square**, never forced as a batch. Someone reserving 3 and arriving with $100 must be resolvable to 2 confirmed and 1 released — invariant 7.
 
 **Pending panel:** batch age visible ("3 squares, held 12 min"). Manual release only after the hold expires, and only through the resolution sequence — invariants 18–19.
@@ -1173,9 +1210,10 @@ exists to prevent. Invariant 112, stated in §19.12.
 
 `POST /api/board/[slug]/entry`. A separate route, for the reason `/donate` is
 separate: `/api/checkout` exists to lock squares and re-checks holds, caps and
-inventory at every step. Nothing here holds anything — no inventory moves, no
-countdown is returned, a sold-out board can still sell entry, and buying entry
-is not a drawing entry.
+inventory at every step. **Entry tickets now hold their own inventory when a
+limit is set — §19.13** — but they hold no SQUARE, no countdown is returned to
+the buyer, a board sold out of squares can still sell entry, and buying entry is
+not a drawing entry.
 
 **One quote, taken once.** The ledger amount, the Stripe line items and the
 passes minted on the way back all derive from a single `quoteEntry` call.
@@ -1277,6 +1315,42 @@ The ledger gains an **Entry $** column and four more type labels, seven in all �
 enumerated rather than assembled from fragments, so the column never reads
 "Entry + tickets" on one row and "Tickets + entry" on the next. A cell is dashed
 when that kind of money is not part of the payment.
+
+### 19.13 The ticket limit
+
+**`Board.entryTicketLimit`, nullable. NULL means unlimited.** A dedicated column — never `totalSquares`, which is the grid size of a different product the board may not even be selling.
+
+**Unlocked, like `fundraisingGoalCents` and unlike the tier prices.** Raising a cap when more people want to come is ordinary, so raising is always allowed. **Lowering below `sold + held` is refused** with the numbers in the message; the host is told what is already committed rather than silently capped at it.
+
+#### What counts against it
+
+```
+remaining = limit − sold − held
+
+sold   confirmed, unvoided contributions: sum of entryTicketCount
+held   pending card contributions:        sum of entryTicketCount
+       pending reservation lines:         sum of quantity
+```
+
+**Pending counts.** A reservation is a promise the host is waiting on and a card checkout is a session in flight; neither has been paid, and both will become tickets if nothing intervenes. Releasing a reservation returns its hold immediately — `releaseEntryReservation` flips the status and the next read sees the tickets back.
+
+#### The race, and why a row lock rather than a counter
+
+**Squares are safe because each is a row.** `/api/checkout` issues a conditional `updateMany … where paymentStatus: "open"` and compares `count` to what it asked for; a losing racer gets `SQUARE_TAKEN`. A ticket limit has no row to contend on, so two buyers can each read *2 remaining* and each buy 2.
+
+**Both sale paths take `SELECT … FOR UPDATE` on the `Board` row**, then compute availability, then write — all in one transaction. The same pattern `mintPasses` already uses on the supporter row. Concurrent entry sales on one board serialise, which at this volume costs nothing and is the entire correctness argument.
+
+**No counter column.** A denormalised `entryTicketsSold` would be a second source of truth for a number the contributions already hold, and the two would drift.
+
+#### The hold window
+
+**A pending card entry contribution carries `holdExpiresAt`**, the same ten-minute window a square checkout uses, and the existing `release-expired` cron sweeps it. Without that, an abandoned browser tab would hold the last tickets until Stripe fired `checkout.session.expired` — up to twenty-four hours — and if that webhook never arrived, forever.
+
+**This does not touch invariant 64**, which governs a *donation-only* contribution. An entry purchase carries `entryAmountCents > 0` and is not donation-only; a donation still has no hold, no `holdExpiresAt` and no countdown.
+
+#### Refusal and sold out
+
+A sale that would exceed the limit is refused on both paths with **409** and the real number: *"Only 2 tickets are left. Reduce your order or check back — a reservation may be released."* At zero remaining the public board shows the tiers with a disabled **Sold out** control and Donate promoted, the same shape a square-sold-out board already uses.
 
 ### 19.10 What is deliberately absent
 

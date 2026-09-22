@@ -259,6 +259,14 @@ bearer link belongs to that person. See §7.
 | 124 | Every offline contribution confirmed after this change carries a non-null `tender` | `fundraiser-payment-method-addendum.md` §11 |
 | 125 | The tender is correctable; settlement, amount and status are not, and every correction is logged | `fundraiser-payment-method-addendum.md` §11 |
 
+### 126 · Entry ticket limit
+
+| # | Invariant | Owner |
+|---|---|---|
+| 126 | An entry ticket sale never takes the board past `entryTicketLimit`. Pending reservations and pending card checkouts count against it; a released reservation returns its hold | `fundraiser-board-v2.md` §19.13 |
+
+Allocated 2026-09-21. NULL `entryTicketLimit` means unlimited and the invariant is vacuous; it binds only where a host has set a cap.
+
 An INDEX, as above. Allocated 2026-09-12 from the next free number; nothing
 renumbered. The addendum drafted these as 58–63, which belong to the donations
 addendum; v1.2 moved them here before any code cited them.
@@ -290,4 +298,4 @@ Environment-blocked tests are marked `REQUIRED — ENVIRONMENT BLOCKED, NOT EXEC
 2. Add the row here and the full statement in the owning document, in one commit.
 3. Amending an existing invariant does not consume a new number — mark the row `**Amended (§X)**` and point at the amending document.
 
-*Next free number: **126**.*
+*Next free number: **127**.*

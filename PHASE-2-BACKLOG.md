@@ -2116,6 +2116,60 @@ and the likely answer is that the entry CTA is promoted instead of donate.
 
 ---
 
+## Entry ticket limit — the create form, and the event path
+
+**Added:** 2026-09-21 (while adding `Board.entryTicketLimit`)
+
+The limit ships editable in **Edit details only**, by ruling. Two gaps were
+left open deliberately rather than missed:
+
+1. **The create form does not offer it.** A host setting up a ticketed
+   fundraiser must create the board, then open Edit details to cap it. Until
+   then every new board is unlimited, which is the safe default but an extra
+   step at exactly the moment she is thinking about capacity.
+
+2. **The event path is untouched.** `Event.gateAllowanceTotal` and
+   `maxAttendeesPerSupporter` still mean what they meant; nothing reconciles
+   them against `entryTicketLimit`. A board can be capped at 100 tickets while
+   its event allows a different number through the gate, and neither knows
+   about the other.
+
+**Trigger:** the first host who is not the person building this creating a
+ticketed board — the create-form gap is a usability cost she pays and we do
+not. The event reconciliation waits for a real answer to whether the gate
+allowance is a cap, a forecast, or a separate thing entirely.
+
+---
+
+## A board offering entry tiers AND selling squares
+
+**Added:** 2026-09-18 (while fixing `0 / 100 paid` on an entry-ticket board)
+
+The board list card and the dashboard `Open` tile now branch on whether a board
+offers entry tiers. The rule handles the two shapes that exist and is honest
+about a third it does not:
+
+- entry tiers, no square sales — ticket line, no `Open` tile
+- squares, no entry tiers — square counter, `Open` tile, unchanged
+- **both** — the card renders both lines, and the `Open` tile is removed
+
+That last case is the deferred part. Removing `Open` is right for the ticket
+half and wrong for the square half: a board genuinely selling squares loses its
+remaining-inventory number because it also happens to price a child ticket.
+
+**No board is in this state.** Verified 2026-09-18 across all 22 production
+boards: 12 Game Day (0 with entry tiers), 10 fundraisers of which 2 have entry
+tiers and 5 have paid squares, and **0 have both**. The card's both-lines
+behaviour is built and correct; only the tile's is unresolved.
+
+**Trigger:** the first board that prices an entry tier and sells a square.
+The fix is a per-half rule rather than a per-board one — show `Open` when the
+board has square inventory to sell, independently of whether it also sells
+tickets — which needs a ruling on what `Open` means when it is one of two
+answers rather than the only one.
+
+---
+
 ## claim-sheet still shows every payment handle at once
 
 Deferred 2026-09-08 while making Buy Tickets and Donate Only consistent.
