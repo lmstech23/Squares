@@ -805,11 +805,10 @@ export default async function HostBoardPage({ params }: Props) {
         </span>
       </div>
 
-      {/* Copy Link — always accessible */}
-      <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
-        <p className="text-xs text-gray-500 mb-2">Share this link with your group</p>
-        <ShareCard url={boardUrl} />
-      </div>
+      {/* Copy Link — always accessible. ShareCard brings its own bordered
+          card, its own mb-6 and its own heading, so this wrapper drew a box
+          inside a box and said "Share this link with your group" twice. */}
+      <ShareCard url={boardUrl} />
 
       {/* Fill Tracker */}
       <div className="flex items-center gap-4 mb-4">
