@@ -824,6 +824,8 @@ Entry tickets, no limit                        14 tickets sold
 A board doing both                             both lines
 ```
 
+**The money panel carries it too**, under the raised amount and above the state counters — that panel is where a host looks to answer *how is this going*, and on a ticketed board half the answer is how many tickets moved. Card, header and panel are one builder, because she reads all three in the same minute.
+
 The board header carries the same sentence after the raised figure — `$865.00 raised · 14 tickets sold · 86 remaining` — replacing a square count that read `0 of 100 tickets confirmed` on a board selling no squares.
 
 A square line appears when the board has squares to sell; a ticket line appears when the board offers entry tiers. **Game Day and square-selling fundraisers are unchanged** — they show the square counter exactly as before, because a board with no entry tiers can never take the ticket branch.
