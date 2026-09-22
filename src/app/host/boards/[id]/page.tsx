@@ -588,12 +588,10 @@ export default async function HostBoardPage({ params }: Props) {
           />
         </div>
 
-        <div className="rounded-lg border border-gray-800 bg-gray-900 p-4 mb-6">
-          <p className="text-xs text-gray-500 mb-2">
-            Share this link with your group
-          </p>
-          <ShareCard url={boardUrl} />
-        </div>
+        {/* ShareCard carries its own bordered card and its own heading, so a
+            wrapper here drew a box inside a box and said "Share this link with
+            your group" twice. */}
+        <ShareCard url={boardUrl} />
 
         <FundraiserPanel
           boardId={board.boardId}
@@ -612,6 +610,7 @@ export default async function HostBoardPage({ params }: Props) {
           openCount={counters.open}
           offersEntryTickets={offersEntry(board)}
           entryRemaining={entryAvail?.remaining ?? null}
+          entryTicketsLabel={entryAvail ? ticketsSoldLabel(entryAvail) : null}
           awaitingSquares={awaiting.map((sq) => ({
             squareId: sq.squareId,
             position: sq.position,

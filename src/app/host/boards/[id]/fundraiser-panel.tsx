@@ -50,6 +50,9 @@ interface Props {
   /// sells no tickets. Null renders no tile at all: an uncapped product has no
   /// remaining count, and a zero there would read as sold out.
   entryRemaining: number | null;
+  /// The same sentence the board card and the page header carry, built once
+  /// by `ticketsSoldLabel` - v2 §9. Null on a board that sells no tickets.
+  entryTicketsLabel: string | null;
   awaitingSquares: AwaitingSquare[];
   pendingBatches: PendingBatch[];
   /// THE DEPOSIT LIST - §7. Confirmed, unvoided money grouped by how it
@@ -148,6 +151,7 @@ export default function FundraiserPanel({
   openCount,
   offersEntryTickets,
   entryRemaining,
+  entryTicketsLabel,
   awaitingSquares,
   pendingBatches,
   rails,
@@ -191,8 +195,9 @@ export default function FundraiserPanel({
         </div>
       )}
 
-      {/* Raised. Summed from pricePaidCents on confirmed squares — never a
-          count multiplied by a price (invariant 49). */}
+      {/* Raised is `raisedCents` — the sum of totalPaidCents over confirmed
+          contributions, donations included. Never a count multiplied by a
+          price. */}
       <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-2xl font-bold tabular-nums">
@@ -202,6 +207,16 @@ export default function FundraiserPanel({
             {goalCents ? `raised of ${money(goalCents)}` : "raised"}
           </span>
         </div>
+
+        {/* TICKETS, UNDER THE MONEY - v2 §9. The money panel is where a host
+            looks to answer "how is this going", and on a ticketed board half
+            that answer is how many tickets moved. The same sentence the board
+            card and the page header carry, from the same builder, because a
+            host reads all three in the same minute. A board that sells no
+            entry tickets gets nothing here and is unchanged. */}
+        {entryTicketsLabel && (
+          <p className="text-xs text-gray-500 mt-1">{entryTicketsLabel}</p>
+        )}
 
         {/* The full state breakdown — money doc §10 host view. Awaiting
             payment is the number she works from: those are the contributors
