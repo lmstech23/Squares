@@ -1,4 +1,9 @@
 import { PLATFORM_OWNER_ID } from "@/lib/constants";
+import { offersEntry } from "@/lib/entry-pricing";
+import {
+  entryAvailabilityForBoards,
+  ticketsSoldLabel,
+} from "@/lib/entry-availability";
 import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
@@ -44,6 +49,22 @@ export default async function HostBoardsPage() {
       },
     },
   });
+
+  // TICKETS SOLD, for the boards that sell them - v2 §9.
+  //
+  // THE PURCHASE SIDE, NOT THE PASS SIDE. `entryTicketCount` is what was
+  // bought and never moves afterwards; a pass count moves when a pass is used
+  // at the gate or voided by the donate flag, and a ticket sold to someone who
+  // later says she cannot come is still a ticket sold. Passes stay the
+  // check-in answer.
+  //
+  // Three grouped queries for every entry board on the page, not three per
+  // card — and the same definitions the sale paths enforce on, because they
+  // come from the same module.
+  const availability = await entryAvailabilityForBoards(
+    prisma,
+    boards.filter((b) => offersEntry(b))
+  );
 
   const isPlatformOwner = host.id === PLATFORM_OWNER_ID;
   const activeBoards = boards.filter((b) => b.status === "open" || b.status === "closed");
@@ -99,9 +120,28 @@ export default async function HostBoardsPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium">{board.gameName}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      {/* EVERY COUNT THAT APPLIES, AND NO OTHERS - v2 §9.
+
+                        The square line used to be unconditional, so a
+                        board selling entry tickets read "0 / 100 paid"
+                        while money was arriving: those sales consume no
+                        square, and the board's square inventory sits
+                        untouched forever.
+
+                        An entry board with squares genuinely sold shows
+                        BOTH lines. Game Day and square-selling
+                        fundraisers offer no entry tier, so they can never
+                        take the ticket branch and are unchanged. */}
+                      {(!offersEntry(board) || board._count.squares > 0) && (
+                        <p className="text-xs text-gray-500 mt-0.5">
                         {board._count.squares} / {board.totalSquares} paid
-                      </p>
+                        </p>
+                      )}
+                      {offersEntry(board) && availability.has(board.boardId) && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {ticketsSoldLabel(availability.get(board.boardId)!)}
+                        </p>
+                      )}
                     </div>
                     <span
                       className={`text-xs px-2 py-0.5 rounded-full ${

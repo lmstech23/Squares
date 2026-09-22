@@ -3,6 +3,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normalizePhone } from "@/lib/roster-identity";
 import { quoteEntry, offersEntry, type EntryLine, type EntryTier } from "@/lib/entry-pricing";
+import {
+  entryAvailability,
+  entryLimitError,
+  lockBoardForEntry,
+} from "@/lib/entry-availability";
 import { generateReferenceCode } from "@/lib/reference-code";
 import { acceptedRails, RAIL_LABEL, type DirectRail } from "@/lib/accepted-payments";
 import { sendReservationEmail } from "@/lib/confirmation-email";
@@ -233,10 +238,32 @@ export async function POST(
       referenceCode: string;
       donationAmountCents: number;
     } | null = null;
-    for (let attempt = 0; attempt < CODE_ATTEMPTS && !created; attempt++) {
+    // Carried out of the transaction rather than thrown: a throw would roll
+    // back a transaction that wrote nothing, and the caller wants the number.
+    let refusal: string | null = null;
+    for (let attempt = 0; attempt < CODE_ATTEMPTS && !created && !refusal; attempt++) {
       const referenceCode = generateReferenceCode();
       try {
         created = await prisma.$transaction(async (tx) => {
+          // THE LIMIT, UNDER A ROW LOCK, IN THE TRANSACTION THAT WRITES —
+          // v2 §19.13, invariant 126. A reservation is unpaid, but it is a
+          // promise the host is waiting on and it holds its tickets until it
+          // is confirmed or released.
+          await lockBoardForEntry(tx, board.boardId);
+          const availability = await entryAvailability(
+            tx,
+            board.boardId,
+            board.entryTicketLimit
+          );
+          const wanted = lineRows.reduce((n, l) => n + l.quantity, 0);
+          if (
+            availability.remaining !== null &&
+            wanted > availability.remaining
+          ) {
+            refusal = entryLimitError(availability.remaining);
+            return null;
+          }
+
           const reservation = await tx.entryReservation.create({
             data: {
               boardId: board.boardId,
@@ -277,6 +304,12 @@ export async function POST(
         if (!collision) throw err;
         // Next attempt draws a new code. Nothing was written.
       }
+    }
+
+    // THE LIMIT REFUSED, and that is not a collision. Checked first so the
+    // 500 below keeps meaning what it says.
+    if (refusal) {
+      return NextResponse.json({ error: refusal }, { status: 409 });
     }
 
     if (!created) {

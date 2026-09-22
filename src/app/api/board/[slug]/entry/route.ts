@@ -4,6 +4,12 @@ import { stripe } from "@/lib/stripe";
 import { baseUrlFromRequest } from "@/lib/base-url";
 import { normalizePhone } from "@/lib/roster-identity";
 import { createPendingCardContribution } from "@/lib/contributions";
+import {
+  ENTRY_HOLD_TTL_MS,
+  entryAvailability,
+  entryLimitError,
+  lockBoardForEntry,
+} from "@/lib/entry-availability";
 import { acceptsCard } from "@/lib/accepted-payments";
 import {
   quoteEntry,
@@ -161,8 +167,29 @@ export async function POST(
 
     // Ledger row first, session second — the donation route's ordering, for the
     // same reason: a failed session leaves a released row and no charge.
-    const contribution = await prisma.$transaction((tx) =>
-      createPendingCardContribution(tx, {
+    //
+    // THE LIMIT IS CHECKED UNDER A ROW LOCK, INSIDE THE SAME TRANSACTION THAT
+    // WRITES — v2 §19.13, invariant 126. Checking before the transaction would
+    // read a number that another buyer can invalidate before this one writes.
+    let refusal: string | null = null;
+    const contribution = await prisma.$transaction(async (tx) => {
+      await lockBoardForEntry(tx, board.boardId);
+      const availability = await entryAvailability(
+        tx,
+        board.boardId,
+        board.entryTicketLimit
+      );
+      if (
+        availability.remaining !== null &&
+        quote.passes.length > availability.remaining
+      ) {
+        // Recorded rather than thrown: a throw would roll back a transaction
+        // that has written nothing, and the caller wants the number.
+        refusal = entryLimitError(availability.remaining);
+        return null;
+      }
+
+      return createPendingCardContribution(tx, {
         boardId: board.boardId,
         squareAmountCents: 0,
         donationAmountCents: 0,
@@ -187,10 +214,28 @@ export async function POST(
         // stamp the grant. Anything but an explicit `true` is false — an
         // unasked question and a declined one store the same value.
         wantsToHelp: body.wantsToHelp === true,
-        // Nothing is held, so nothing expires — the donation reading exactly.
-        holdExpiresAt: null,
-      })
-    );
+        // THE HOLD IS WHAT MAKES `held` HONEST. This row counts against
+        // remaining from the moment it is written, so it needs a way to stop
+        // counting when the buyer walks away. Without it the only release is
+        // Stripe's `checkout.session.expired`, up to twenty-four hours later
+        // and never at all if the webhook is lost.
+        //
+        // Set whatever the board's cap, so the sweep has one rule rather than
+        // two: an uncapped board's abandoned row is released on the same
+        // schedule instead of sitting pending forever.
+        holdExpiresAt: new Date(Date.now() + ENTRY_HOLD_TTL_MS),
+      });
+    });
+
+    if (refusal) {
+      return NextResponse.json({ error: refusal }, { status: 409 });
+    }
+    if (!contribution) {
+      return NextResponse.json(
+        { error: "Could not start checkout. Please try again." },
+        { status: 500 }
+      );
+    }
 
     // Stripe line items are grouped for the receipt. The PASSES are what get
     // minted, and they travel separately in metadata: grouping the display is

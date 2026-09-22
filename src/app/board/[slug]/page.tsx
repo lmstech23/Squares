@@ -4,6 +4,8 @@ import PlayerBoard from "./player-board";
 import FundraiserView from "./fundraiser-view";
 import { calculateWinners } from "@/lib/winners";
 import { publicPriceDisplay } from "@/lib/fundraiser-pricing";
+import { entryAvailability } from "@/lib/entry-availability";
+import { offersEntry } from "@/lib/entry-pricing";
 import { entryPriceFor } from "@/lib/entry-pricing";
 import { squareProductFor } from "@/lib/square-product";
 import {
@@ -288,6 +290,12 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
     // A board that priced none produces an empty array and the contributor
     // sees nothing about entry at all: that is the ordinary case, not a
     // degraded one.
+    // Entry availability - v2 §19.13. Null when the board prices no tier or
+    // sets no limit; only a real zero disables the control.
+    const entryAvail = offersEntry(board)
+      ? await entryAvailability(prisma, board.boardId, board.entryTicketLimit)
+      : null;
+
     const now = new Date();
     const entryOffers: EntryTierOffer[] = (
       [
@@ -368,6 +376,7 @@ export default async function PublicBoardPage({ params, searchParams }: Props) {
         hasEvent={board.event != null}
         signupSheetExists={board.event?.signupSheet != null}
         entryOffers={board.event != null ? entryOffers : []}
+        entrySoldOut={entryAvail != null && entryAvail.remaining === 0}
         entryRails={acceptedRails(board).map((rail) => ({
           rail,
           label: RAIL_LABEL[rail],

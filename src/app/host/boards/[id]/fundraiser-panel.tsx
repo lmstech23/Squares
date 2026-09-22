@@ -41,6 +41,15 @@ interface Props {
   awaitingCount: number;
   inCheckoutCount: number;
   openCount: number;
+  /// Whether this board sells Entry Tickets - v2 §9. An entry sale consumes
+  /// no square, so `Open` would sit at the board's full square count forever
+  /// and read as nothing having sold. The tile is removed rather than
+  /// renumbered: there is no ticket inventory in the model to report.
+  offersEntryTickets: boolean;
+  /// Tickets still available, or null when the board has no limit set - or
+  /// sells no tickets. Null renders no tile at all: an uncapped product has no
+  /// remaining count, and a zero there would read as sold out.
+  entryRemaining: number | null;
   awaitingSquares: AwaitingSquare[];
   pendingBatches: PendingBatch[];
   /// THE DEPOSIT LIST - §7. Confirmed, unvoided money grouped by how it
@@ -137,6 +146,8 @@ export default function FundraiserPanel({
   awaitingCount,
   inCheckoutCount,
   openCount,
+  offersEntryTickets,
+  entryRemaining,
   awaitingSquares,
   pendingBatches,
   rails,
@@ -219,16 +230,31 @@ export default function FundraiserPanel({
               ))}
             </div>
           </div>
-          <div className="flex-1">
-            {/* The unit, from the shared resolver - never the literal word
-                "tickets", which is wrong on a prize-only or no-event board.
-                Falls back to "Inventory" on the one board type where the unit
-                IS "Contributions", so the two group labels cannot collide. */}
-            <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">
-              {u.Many === "Contributions" ? "Inventory" : u.Many}
-            </p>
-            <Stat label="Open" value={openCount} tone="text-gray-400" />
-          </div>
+          {/* AN ENTRY BOARD COUNTS TICKETS, NOT SQUARES - v2 §9, §19.13.
+              `Open` counted the board's untouched square inventory and read as
+              nothing having sold. On an entry board the tile shows tickets
+              REMAINING, and only where a limit is set; with no limit there is no
+              remaining count and no tile. */}
+          {offersEntryTickets && entryRemaining !== null && (
+            <div className="flex-1">
+              <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">
+                {u.Many}
+              </p>
+              <Stat label="Remaining" value={entryRemaining} tone="text-gray-400" />
+            </div>
+          )}
+          {!offersEntryTickets && (
+            <div className="flex-1">
+              {/* The unit, from the shared resolver - never the literal word
+                  "tickets", which is wrong on a prize-only or no-event board.
+                  Falls back to "Inventory" on the one board type where the unit
+                  IS "Contributions", so the two group labels cannot collide. */}
+              <p className="text-[10px] text-gray-600 uppercase tracking-wider mb-1.5">
+                {u.Many === "Contributions" ? "Inventory" : u.Many}
+              </p>
+              <Stat label="Open" value={openCount} tone="text-gray-400" />
+            </div>
+          )}
         </div>
       </div>
 

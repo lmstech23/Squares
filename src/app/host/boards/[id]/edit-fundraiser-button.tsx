@@ -34,6 +34,10 @@ interface Props {
   initialCause: string;
   /** Dollars, as typed. Empty string means no goal. */
   initialGoal: string;
+  /// Blank string means no limit. v2 §19.13.
+  initialTicketLimit: string;
+  /// Only a board that prices an entry tier can cap tickets.
+  offersEntryTickets: boolean;
   /** Dollars, as typed. */
   initialPrice: string;
   /** Dollars, as typed. Empty string means no early bird. */
@@ -119,6 +123,7 @@ function toCents(v: string): number | null {
 export default function EditFundraiserButton({
   boardId, hasEvent, locked, lockReason,
   initialName, initialVenue, initialStartsAt, initialEndsAt, initialTimezone, initialGoal,
+  initialTicketLimit, offersEntryTickets,
   initialTitle, initialCause,
   initialPrice, initialEarlyBirdPrice, initialEarlyBirdEndsAt, currentTicketCount,
   initialAcceptedMethods, cardEligible,
@@ -143,6 +148,7 @@ export default function EditFundraiserButton({
   const [title, setTitle] = useState(initialTitle);
   const [cause, setCause] = useState(initialCause);
   const [goal, setGoal] = useState(initialGoal);
+  const [ticketLimit, setTicketLimit] = useState(initialTicketLimit);
   const [price, setPrice] = useState(initialPrice);
   // Reflects whether the board HAS an early bird price, not a stored flag -
   // there is no such column. Clearing the price is how a host turns it off.
@@ -320,6 +326,14 @@ export default function EditFundraiserButton({
       // it merely displayed.
       const body: Record<string, unknown> = {
         fundraisingGoalCents: goalCents,
+        // Blank means no limit. Sent whenever this board can have one, so
+        // clearing the field actually clears the cap.
+        ...(offersEntryTickets
+          ? {
+              entryTicketLimit:
+                ticketLimit.trim() === "" ? null : Number(ticketLimit.trim()),
+            }
+          : {}),
         causeDescription: cause.trim() || null,
       };
       // THE TITLE IS NOT IN THIS BODY, AND MUST NEVER BE.
@@ -461,6 +475,27 @@ export default function EditFundraiserButton({
           onChange={(e) => setCause(e.target.value)}
         />
       </div>
+
+      {/* THE TICKET LIMIT - v2 §19.13. Beside the goal because it behaves like
+          the goal: never locked, raise whenever. It sits above rather than
+          below so a host capping capacity meets it before the prize fields. */}
+      {offersEntryTickets && (
+        <div>
+          <label htmlFor="ticketLimit" className={labelClass}>
+            Ticket limit (optional)
+          </label>
+          <input
+            id="ticketLimit" type="number" min="1" step="1" inputMode="numeric"
+            className={inputClass} value={ticketLimit} placeholder="No limit"
+            onChange={(e) => setTicketLimit(e.target.value)}
+          />
+          <p className="text-xs text-gray-600 mt-1">
+            How many entry tickets this board may sell in total. Raise it at any
+            time. Leave blank for no limit. It cannot go below what is already
+            sold or reserved.
+          </p>
+        </div>
+      )}
 
       <div>
         <label htmlFor="goal" className={labelClass}>

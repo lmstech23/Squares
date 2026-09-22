@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolveExpiredHolds } from "@/lib/checkout-holds";
+import {
+  resolveExpiredHolds,
+  resolveExpiredEntryHolds,
+} from "@/lib/checkout-holds";
 import { sendPendingConfirmations } from "@/lib/confirmation-email";
 import { closeDueBoards } from "@/lib/close-board";
 
@@ -51,6 +54,12 @@ export async function GET(request: Request) {
 
   // 3. Fundraiser holds — resolve, do not release. Invariants 18-20.
   const holds = await resolveExpiredHolds(now);
+
+  // 3b. Entry ticket holds — resolve, do not release, for the same reason.
+  //     A pending entry purchase counts against the board's remaining
+  //     tickets from the moment it is written; this is what gives it back
+  //     when the buyer walks away. v2 §19.13.
+  const entryHolds = await resolveExpiredEntryHolds(now);
 
   // 4. Confirmation emails for anything confirmed but not yet mailed.
   //

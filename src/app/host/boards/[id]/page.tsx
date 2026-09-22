@@ -39,6 +39,11 @@ import { boardCounters } from "@/lib/board-counters";
 import EventPanel, { type GrantRow, type CheckinStaffLink } from "./event-panel";
 import { baseUrlFromHeaders } from "@/lib/base-url";
 import { tenderBreakdown } from "@/lib/tender-breakdown";
+import { offersEntry } from "@/lib/entry-pricing";
+import {
+  entryAvailability,
+  ticketsSoldLabel,
+} from "@/lib/entry-availability";
 export const dynamic = "force-dynamic";
 
 
@@ -162,6 +167,12 @@ export default async function HostBoardPage({ params }: Props) {
   // the countsTowardRaised filter boardTotals uses, so the two cannot drift.
   // Display only - close and finalization never read tender.
   const breakdown = await tenderBreakdown(board.boardId);
+
+  // Entry ticket availability - v2 §19.13. Null on a board with no entry
+  // tiers, which is what keeps the square wording below unchanged for them.
+  const entryAvail = offersEntry(board)
+    ? await entryAvailability(prisma, board.boardId, board.entryTicketLimit)
+    : null;
   // Built from this deployment's own host, so a preview's share panel and QR
   // point at the preview rather than at production.
   const boardUrl = `${await baseUrlFromHeaders()}/board/${board.slug}`;
@@ -494,13 +505,19 @@ export default async function HostBoardPage({ params }: Props) {
               your $25 ticket"; her own board must not say "$25 per square". */}
           {priceScheduleLabel(board, new Date(), hostUnit.one)}
         </p>
-        {/* Raised is the SUM of locked pricePaidCents over confirmed squares,
-            never price × count — invariant 49. With an early-bird window there
-            is no single price to multiply by. This reuses the aggregate already
-            computed above for FundraiserPanel; no extra query. */}
+        {/* Raised is `raisedCents` — the sum of totalPaidCents over confirmed
+            contributions, donations included. This reuses the aggregate already
+            computed above for FundraiserPanel; no extra query.
+
+            WHAT FOLLOWS IT DEPENDS ON WHAT THE BOARD SELLS - v2 §9. The square
+            count was unconditional and read "0 of 100 tickets confirmed" on a
+            board that sells no squares and had fourteen tickets sold. A board
+            with entry tiers states tickets; every other board is unchanged. */}
         <p className="text-sm text-gray-400 mt-0.5">
           {`$${((board.finalRaisedCents ?? totals.raisedCents) / 100).toFixed(2)} raised`}
-          {` · ${byStatus("paid").length} of ${board.totalSquares} ${hostUnit.many} confirmed`}
+          {entryAvail
+            ? ` · ${ticketsSoldLabel(entryAvail)}`
+            : ` · ${byStatus("paid").length} of ${board.totalSquares} ${hostUnit.many} confirmed`}
         </p>
         {board.causeDescription && (
           <p className="text-sm text-gray-400 mt-1.5">{board.causeDescription}</p>
@@ -519,6 +536,8 @@ export default async function HostBoardPage({ params }: Props) {
             initialTitle={board.gameName}
             initialCause={board.causeDescription ?? ""}
             initialGoal={board.fundraisingGoalCents != null ? String(board.fundraisingGoalCents / 100) : ""}
+            initialTicketLimit={board.entryTicketLimit != null ? String(board.entryTicketLimit) : ""}
+            offersEntryTickets={offersEntry(board)}
             initialPrice={String(board.squarePrice / 100)}
             initialEarlyBirdPrice={
               board.earlyBirdPriceCents != null ? String(board.earlyBirdPriceCents / 100) : ""
@@ -591,6 +610,8 @@ export default async function HostBoardPage({ params }: Props) {
           awaitingCount={counters.awaiting}
           inCheckoutCount={counters.inCheckout}
           openCount={counters.open}
+          offersEntryTickets={offersEntry(board)}
+          entryRemaining={entryAvail?.remaining ?? null}
           awaitingSquares={awaiting.map((sq) => ({
             squareId: sq.squareId,
             position: sq.position,

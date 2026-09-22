@@ -229,3 +229,90 @@ export async function resolveHoldBatch(
   }
 }
 
+
+/**
+ * Resolve every expired ENTRY TICKET hold — v2 §19.13, invariants 18–20.
+ *
+ * THE SAME ORDERING AS SQUARES, FOR THE SAME REASON. A pending entry
+ * contribution counts against the board's remaining tickets from the moment it
+ * is written, so it needs releasing when the buyer walks away. It must NOT be
+ * released on a timestamp: the Daali hold is ten minutes and a Stripe session
+ * lives at least thirty, so between those two a card can still succeed.
+ * Releasing on time alone would free the last tickets to someone else while the
+ * first buyer can still pay, and then two people own one ticket.
+ *
+ * So: ask Stripe. Paid or complete, leave it alone — the webhook owns that row
+ * and will confirm it. Otherwise expire the session FIRST, and only then
+ * release. An expired session cannot produce a late payment, which is why there
+ * is no late-success recovery path here either.
+ *
+ * A row with no session recorded never got that far; nothing can pay it, so it
+ * is released outright.
+ */
+export async function resolveExpiredEntryHolds(
+  now = new Date()
+): Promise<{ examined: number; released: number; leftPaid: number; errors: number }> {
+  const out = { examined: 0, released: 0, leftPaid: 0, errors: 0 };
+
+  const expired = await prisma.contribution.findMany({
+    where: {
+      status: "pending",
+      voidedAt: null,
+      entryAmountCents: { gt: 0 },
+      holdExpiresAt: { lt: now },
+    },
+    select: {
+      id: true,
+      checkoutSessionId: true,
+      board: { select: { host: { select: { stripeAccountId: true } } } },
+    },
+    take: MAX_BATCHES_PER_RUN,
+  });
+
+  for (const row of expired) {
+    out.examined++;
+    try {
+      let paid = false;
+      const stripeAccount = row.board.host.stripeAccountId;
+
+      if (row.checkoutSessionId && stripeAccount) {
+        const session = await stripe.checkout.sessions.retrieve(
+          row.checkoutSessionId,
+          { stripeAccount }
+        );
+        paid = session.status === "complete" || session.payment_status === "paid";
+
+        if (!paid && session.status === "open") {
+          // Expire BEFORE releasing. If this throws we leave the hold in place
+          // and try again next pass — a stuck hold is recoverable, a ticket
+          // sold twice is not.
+          await stripe.checkout.sessions.expire(row.checkoutSessionId, {
+            stripeAccount,
+          });
+        }
+      }
+
+      if (paid) {
+        out.leftPaid++;
+        continue;
+      }
+
+      // Conditional on `pending`: if the webhook confirmed it between the
+      // Stripe call and here, this matches nothing and writes nothing.
+      const { count } = await prisma.contribution.updateMany({
+        where: { id: row.id, status: "pending" },
+        data: {
+          status: "released",
+          releasedAt: new Date(),
+          holdExpiresAt: null,
+        },
+      });
+      if (count > 0) out.released++;
+    } catch (err) {
+      out.errors++;
+      console.error("resolveExpiredEntryHolds: contribution " + row.id, err);
+    }
+  }
+
+  return out;
+}

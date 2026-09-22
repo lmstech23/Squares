@@ -98,6 +98,9 @@ interface Props {
    * is not a question a render may ask.
    */
   entryOffers?: EntryTierOffer[];
+  /// Every ticket the board may sell is sold or held - v2 §19.13. The tiers
+  /// still show; only the control that would take money is disabled.
+  entrySoldOut?: boolean;
   /**
    * Direct-payment rails for entry tickets, ALREADY NARROWED by the server
    * through `acceptedRails` - the board lists it AND the handle exists. Empty
@@ -165,6 +168,7 @@ export default function FundraiserView({
   hasPrize,
   signupSheetExists,
   entryOffers,
+  entrySoldOut = false,
   entryRails,
   status,
   handles,
@@ -722,13 +726,23 @@ export default function FundraiserView({
           {/* BUY TICKETS FIRST. A parent arriving from a class group chat came
               to get into the event; the donation is the other thing they can
               do, not the first thing they are asked. */}
+          {/* SOLD OUT SHOWS THE TIERS AND REFUSES THE MONEY - v2 §19.13. The
+              prices stay visible because they are still what a ticket costs; a
+              board that hid them would look broken rather than full. Donate is
+              promoted below by the same predicate that promotes it when there
+              is nothing else to buy. */}
           {offers.length > 0 && (entryByCard || entryByReservation) && (
             <button
               type="button"
+              disabled={entrySoldOut}
               onClick={() => setBuyingEntry(true)}
-              className="mt-2 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
+              className={
+                entrySoldOut
+                  ? "mt-2 w-full rounded-lg border border-tone-800 bg-tone-900 px-4 py-3 text-sm font-medium text-tone-500 cursor-not-allowed"
+                  : "mt-2 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
+              }
             >
-              Buy Tickets
+              {entrySoldOut ? "Sold out" : "Buy Tickets"}
             </button>
           )}
 
@@ -745,7 +759,8 @@ export default function FundraiserView({
             type="button"
             onClick={() => setDonating(true)}
             className={
-              offers.length === 0 && (squareProduct ? squareProduct.openCount === 0 : true)
+              (offers.length === 0 || entrySoldOut) &&
+              (squareProduct ? squareProduct.openCount === 0 : true)
                 ? "mt-2 w-full rounded-lg bg-brand px-4 py-3 text-sm font-medium text-on-brand hover:bg-brand-hover transition-colors"
                 : "mt-2 w-full rounded-lg border border-tone-800 bg-tone-900 px-4 py-3 text-sm font-medium text-tone-200 hover:border-tone-700 transition-colors"
             }

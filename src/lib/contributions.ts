@@ -167,8 +167,15 @@ export async function createPendingCardContribution(
       contributorEmail: input.contributorEmail,
       contributorPhone: input.contributorPhone || null,
       wantsToHelp: input.wantsToHelp ?? false,
-      // Only squares are inventory. A donation-only contribution holds nothing.
-      holdExpiresAt: input.squareAmountCents > 0 ? input.holdExpiresAt : null,
+      // SQUARES AND CAPPED ENTRY TICKETS ARE BOTH INVENTORY. A donation-only
+      // contribution still holds nothing — invariant 64 is about donations and
+      // is untouched; an entry purchase carries entryAmountCents > 0 and is not
+      // donation-only. The caller decides whether a hold applies; this only
+      // stops one being written on a row that holds nothing. v2 §19.13.
+      holdExpiresAt:
+        input.squareAmountCents > 0 || entryAmountCents > 0
+          ? input.holdExpiresAt
+          : null,
     },
   });
 }

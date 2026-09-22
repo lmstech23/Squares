@@ -50,6 +50,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { entryAvailability } from "@/lib/entry-availability";
 import {
   normalizeAcceptedMethods,
   hasOfferableMethod,
@@ -92,6 +93,7 @@ type Body = {
   endsAt?: string | null;
   timezone?: string | null;
   fundraisingGoalCents?: number | null;
+  entryTicketLimit?: number | null;
   /// v2 §11 lists the description as always editable. Until now nothing
   /// could edit it: it was set at creation and reachable by no route.
   causeDescription?: string | null;
@@ -153,6 +155,7 @@ export async function PATCH(request: Request, { params }: Props) {
         entryAdultEarlyPriceCents: true,
         entryAdultRegularPriceCents: true,
         fundraisingGoalCents: true,
+        entryTicketLimit: true,
         causeDescription: true,
         acceptedPaymentMethods: true,
         hostVenmo: true,
@@ -259,6 +262,41 @@ export async function PATCH(request: Request, { params }: Props) {
           { status: 400 }
         );
       } else goalCents = g;
+    }
+
+    // --- the ticket limit, which is never locked either ----------------------
+    //
+    // UNLOCKED LIKE THE GOAL, NOT LIKE THE TIER PRICES - v2 §19.13. Raising a
+    // cap when more people want to come is ordinary and is always allowed.
+    // LOWERING BELOW WHAT IS ALREADY COMMITTED IS REFUSED, with the numbers:
+    // the host is told what she is already on the hook for rather than being
+    // silently capped at it, and a board is never left rendering a negative
+    // remaining.
+    let ticketLimit: number | null | undefined;
+    if ("entryTicketLimit" in body) {
+      const t = body.entryTicketLimit;
+      if (t === null || t === undefined) ticketLimit = null;
+      else if (!Number.isInteger(t) || t < 1) {
+        return NextResponse.json(
+          { error: "Enter a ticket limit of at least 1, or leave it blank for no limit." },
+          { status: 400 }
+        );
+      } else ticketLimit = t;
+
+      if (ticketLimit !== null) {
+        const a = await entryAvailability(prisma, board.boardId, ticketLimit);
+        const committed = a.sold + a.held;
+        if (ticketLimit < committed) {
+          return NextResponse.json(
+            {
+              error:
+                `${committed} ticket${committed === 1 ? " is" : "s are"} already sold or reserved. ` +
+                `The limit cannot go below ${committed}.`,
+            },
+            { status: 409 }
+          );
+        }
+      }
     }
 
     // --- the cause description, which is never locked ------------------------
@@ -730,6 +768,7 @@ export async function PATCH(request: Request, { params }: Props) {
     // --- write ---------------------------------------------------------------
     await prisma.$transaction(async (tx) => {
       if (goalCents !== undefined) boardData.fundraisingGoalCents = goalCents;
+      if (ticketLimit !== undefined) boardData.entryTicketLimit = ticketLimit;
       if (boardDataCause !== undefined) boardData.causeDescription = boardDataCause;
       if (Object.keys(boardData).length > 0) {
         await tx.board.update({ where: { boardId: board.boardId }, data: boardData });

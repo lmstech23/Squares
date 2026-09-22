@@ -171,6 +171,17 @@ model Board {
   entryChildPriceCents        Int?      @map("entry_child_price_cents")
   entryAdultEarlyPriceCents   Int?      @map("entry_adult_early_price_cents")
   entryAdultRegularPriceCents Int?      @map("entry_adult_regular_price_cents")
+
+  /// How many standalone Entry Tickets this board may sell in total.
+  ///
+  /// NULL MEANS UNLIMITED, never zero. A DEDICATED COLUMN, never
+  /// `totalSquares`: that is the grid size of the square product, which a
+  /// ticketed board may not be selling at all.
+  ///
+  /// Unlocked, like `fundraisingGoalCents`. Raising is always allowed;
+  /// lowering below what is already sold or held is refused by the route.
+  /// v2 §19.13, invariant 126.
+  entryTicketLimit          Int?      @map("entry_ticket_limit")
   earlyBirdPriceCents       Int?         @map("early_bird_price_cents")
   earlyBirdEndsAt           DateTime?    @map("early_bird_ends_at") @db.Timestamptz(6)
 
@@ -656,12 +667,19 @@ model Contribution {
   /// needs the second and was reading the first, so voiding a pass quietly
   /// reduced a purchase that had already happened.
   ///
-  /// NULL MEANS NOT KNOWN, and is not the same as zero. Card entry purchases
-  /// made before this column existed carry their quantity only in Stripe
-  /// session metadata, which this database never recorded - those rows stay
-  /// null and the roster says "$80 in tickets" rather than inventing a count.
-  /// There is no default for the same reason: a 0 would read as a known
-  /// quantity and bypass that fallback.
+  /// NULL MEANS NOT KNOWN, and is not the same as zero. There is no default for
+  /// the same reason: a 0 would read as a known quantity and bypass the
+  /// fallback that says "$80 in tickets" instead of inventing a count.
+  ///
+  /// A CARD purchase made before this column existed carries its quantity only
+  /// in Stripe session metadata, which this database never recorded. Those rows
+  /// stay null and are unrecoverable.
+  ///
+  /// A DIRECT-PAYMENT row is different, and three of them existed: the quantity
+  /// survives on `EntryReservationLine.quantityConfirmed`. Backfilled from there
+  /// on 2026-09-21 - never from the dollar amount - and no NULL remains on any
+  /// board that prices an entry tier. This column is now the sold side of
+  /// v2 §19.13 availability, so a NULL here undercounts a limit.
   ///
   /// A TOTAL, NOT A LINE MODEL. Per-tier detail lives on
   /// EntryReservationLine and on the passes, and stays authoritative there.
