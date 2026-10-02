@@ -264,6 +264,9 @@ Drawing eligibility is derived from the square being `paid`, not a separate writ
 
 **Page:** `/board/[slug]` (public, no login required)
 
+The public board page `<title>` is the board's `gameName` with no suffix.
+No og/twitter tags are set, so link previews fall back to this title.
+
 ### What the Player Sees
 
 - Game name, team names

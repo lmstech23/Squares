@@ -47,7 +47,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // $50 while the board itself said $40. Same helper as the header.
     const price = publicPriceDisplay(board);
     return {
-      title: `${board.gameName} — Daali Boards`,
+      // THE BOARD NAME, AND NOTHING AFTER IT. This <title> is the only
+      // title tag the page emits — there is no og:title and no
+      // twitter:title — so it is what every link preview falls back to and
+      // shows. The " — Daali Boards" suffix spent that line on the platform
+      // instead of the board, and in a group text the preview is often all
+      // anyone reads before deciding whether to tap.
+      title: board.gameName,
       description:
         board.causeDescription ??
         `$${price.amountCents / 100} per square. Claim a square and support the cause.`,
@@ -55,7 +61,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   return {
-    title: `${board.gameName} — Daali Boards`,
+    // Same for Game Day — one rule for both board types, so a preview cannot
+    // read differently depending on which kind of board was shared.
+    title: board.gameName,
     description: `$${board.squarePrice / 100} per square. Pick your square and pay to lock it in.`,
   };
 }
