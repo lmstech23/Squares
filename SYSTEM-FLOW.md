@@ -1,5 +1,7 @@
 # Squares — System Flow Document
 
+> SYSTEM-FLOW is authoritative for the legacy Board / Game Day path only. See AUTHORITY.md.
+
 Last updated: Aug 27, 2026
 
 This is the single source of truth for how **Game Day** works. Every screen, every redirect, every conditional. If it's not in this document, it doesn't exist. If this document says one thing and the code says another, fix the code.

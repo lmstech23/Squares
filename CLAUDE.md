@@ -50,18 +50,22 @@ A9   passes screen, donate  da6aa39   done
 A10  check-in surface, QR   99bb516   done
 ```
 
-Sign-up / volunteer sheets are a separate sequence, S0–S5, specified in
-`fundraiser-signup-addendum.md` §12:
+Verified build state beyond Phase A:
 
 ```
-S0  application rename VolunteerAccess -> CheckinStaffAccess   d36129d  done
-S1  schema — SignupSheet, SignupSlot, HelperSignup,
-    HelperSignupPosition, SignupLog, NotificationDelivery       NOT STARTED
-S2  host slot builder                                          not started
-S3  sign-up sheet screen — token auth, claim, cancel            not started
-S4  confirmation emails carrying the link                       not started
-S5  checkout checkbox, redirect, unified roster                 not started
+Legacy S1 sign-up sheets   shipped — e0cf25b; migration
+                           20260831150000_s1_signup_sheets; tables on production
+Legacy S2/S3 surfaces      present — api/host/boards/[id]/signup-sheet,
+                           signup-slots, src/app/signup/[token]/page.tsx
+Phase 0A                   not in the repo; partially recovered outside it
+                           (5 of 32 files)
+Phase 0B, 0C               not in the repo; source located in the Sep 9 build
+                           chat, not yet recovered
+Phase 0D.0                 not in the repo; built and tested Sep 9, not yet
+                           recovered
 ```
+
+New persistence uses the Daali prefix (see `AUTHORITY.md`).
 
 **S1 is next and has no blockers.** The addendum's dependency note — *"S3 onward
 depends on A8"* — is satisfied: A8 shipped in `0a55b79`, so eligibility can read
