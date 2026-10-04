@@ -53,27 +53,30 @@ A10  check-in surface, QR   99bb516   done
 Verified build state beyond Phase A:
 
 ```
+S0: done (d36129d)
 Legacy S1 sign-up sheets   shipped — e0cf25b; migration
                            20260831150000_s1_signup_sheets; tables on production
 Legacy S2/S3 surfaces      present — api/host/boards/[id]/signup-sheet,
                            signup-slots, src/app/signup/[token]/page.tsx
-Phase 0A                   not in the repo; partially recovered outside it
-                           (5 of 32 files)
-Phase 0B, 0C               not in the repo; source located in the Sep 9 build
-                           chat, not yet recovered
-Phase 0D.0                 not in the repo; built and tested Sep 9, not yet
-                           recovered
+S4: not started (no code in src writes NotificationDelivery)
+S5: not started (last recorded Aug 31; not re-verified)
+Phase 0A: not in the repo. Bundle had 32 files; 5 recovered
+          so far (per the Sep 9 build chat).
+Phase 0B, 0C, 0D.0: not in the repo. Built and tested in the
+          Sep 9 build chat; not yet recovered.
 ```
 
 New persistence uses the Daali prefix (see `AUTHORITY.md`).
 
-**S1 is next and has no blockers.** The addendum's dependency note — *"S3 onward
+**S1 shipped (e0cf25b). See build state above.** The addendum's dependency note — *"S3 onward
 depends on A8"* — is satisfied: A8 shipped in `0a55b79`, so eligibility can read
 `EventSupporter.status = active`. Confirmed by reading `src/lib/confirm-square.ts`,
 not the table: `mintPasses` runs inside `confirmSquares`, takes
 `SELECT … FOR UPDATE` on the supporter row, and CAS-writes `status: "active"`.
 
 ### Before S1 creates a single table
+
+Historical: written before S1 shipped. Whether each precondition was applied is unverified.
 
 Three preconditions from the baseline and containment work. Full reasoning in
 `PHASE-2-BACKLOG.md` under "S1 checklist"; the short form, because a backlog
