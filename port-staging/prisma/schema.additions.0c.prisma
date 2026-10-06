@@ -3,56 +3,62 @@
 // Plus RegistrationLog, which closes the 0B audit gap.
 // ─────────────────────────────────────────────────────────────
 
-enum RegistrationAction {
+enum DaaliRegistrationAction {
   CREATED
   PARTY_SIZE_CHANGED
   CANCELLED
   ORGANIZER_REMOVED
+
+  @@map("daali_registration_action")
 }
 
-model RegistrationLog {
-  id             String             @id @default(cuid())
+model DaaliRegistrationLog {
+  id             String             @id(map: "daali_registration_logs_pkey") @default(cuid())
   registrationId String
   eventId        String
   eventPersonId  String
-  action         RegistrationAction
+  action         DaaliRegistrationAction
   fromPartySize  Int?
   toPartySize    Int?
-  actorKind          ActorKind
+  actorKind          DaaliActorKind
   actorUserId        String?
   actorEventPersonId String?
   planExecutionId    String?
   createdAt      DateTime           @default(now())
 
-  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  registration DaaliRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade, map: "daali_registration_logs_registrationId_fkey")
 
-  @@index([registrationId])
-  @@index([eventId])
+  @@index([registrationId], map: "daali_registration_logs_registrationId_idx")
+  @@index([eventId], map: "daali_registration_logs_eventId_idx")
+
+  @@map("daali_registration_logs")
 }
 
-enum SlotType     { SHIFT  ITEM }
-enum SignupAction { CLAIMED  CANCELLED  ORGANIZER_REMOVED }
+enum DaaliSlotType     { SHIFT  ITEM  @@map("daali_slot_type") }
+enum DaaliSignupAction { CLAIMED  CANCELLED  ORGANIZER_REMOVED  @@map("daali_signup_action") }
 
-model SignupSheet {
-  id           String   @id @default(cuid())
-  eventId      String   @unique          // one sheet per event
+model DaaliSignupSheet {
+  id           String   @id(map: "daali_signup_sheets_pkey") @default(cuid())
+  eventId      String   @unique(map: "daali_signup_sheets_eventId_key")          // one sheet per event
   title        String?
   instructions String?
   isOpen       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  event Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  slots SignupSlot[]
+  event DaaliEvent        @relation(fields: [eventId], references: [id], onDelete: Cascade, map: "daali_signup_sheets_eventId_fkey")
+  slots DaaliSignupSlot[]
+
+  @@map("daali_signup_sheets")
 }
 
 /// One table for both kinds. A shift and an item are the same shape: a named
 /// thing with N openings. `capacity` carries both — six people on the gate and
 /// six cases of water are both capacity = 6.
-model SignupSlot {
-  id        String    @id @default(cuid())
+model DaaliSignupSlot {
+  id        String    @id(map: "daali_signup_slots_pkey") @default(cuid())
   sheetId   String
-  slotType  SlotType
+  slotType  DaaliSlotType
   name      String
   startsAt  DateTime?                     // SHIFT only
   endsAt    DateTime?                     // SHIFT only
@@ -63,39 +69,43 @@ model SignupSlot {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  sheet     SignupSheet            @relation(fields: [sheetId], references: [id], onDelete: Cascade)
-  signups   HelperSignup[]
-  positions HelperSignupPosition[]   // for _count on the public page
+  sheet     DaaliSignupSheet            @relation(fields: [sheetId], references: [id], onDelete: Cascade, map: "daali_signup_slots_sheetId_fkey")
+  signups   DaaliHelperSignup[]
+  positions DaaliHelperSignupPosition[]   // for _count on the public page
 
-  @@index([sheetId, sortOrder])
+  @@index([sheetId, sortOrder], map: "daali_signup_slots_sheetId_sortOrder_idx")
+
+  @@map("daali_signup_slots")
 }
 
 /// The row a human thinks about. NO quantity column — quantity is
 /// count(positions). Storing it would state the same fact twice, and a partial
 /// failure leaving quantity=4 against 3 positions is the drift this design refuses.
-model HelperSignup {
-  id            String   @id @default(cuid())
+model DaaliHelperSignup {
+  id            String   @id(map: "daali_helper_signups_pkey") @default(cuid())
   slotId        String
   eventPersonId String
   note          String?
   createdAt     DateTime @default(now())
-  actorKind          ActorKind
+  actorKind          DaaliActorKind
   actorUserId        String?
   actorEventPersonId String?
   planExecutionId    String?
 
-  slot      SignupSlot             @relation(fields: [slotId], references: [id], onDelete: Cascade)
-  person    EventPerson            @relation(fields: [eventPersonId], references: [id], onDelete: Cascade)
-  positions HelperSignupPosition[]
+  slot      DaaliSignupSlot             @relation(fields: [slotId], references: [id], onDelete: Cascade, map: "daali_helper_signups_slotId_fkey")
+  person    DaaliEventPerson            @relation(fields: [eventPersonId], references: [id], onDelete: Cascade, map: "daali_helper_signups_eventPersonId_fkey")
+  positions DaaliHelperSignupPosition[]
 
-  @@unique([slotId, eventPersonId])
-  @@unique([id, slotId])                 // FK target only — see below
-  @@index([eventPersonId])
+  @@unique([slotId, eventPersonId], map: "daali_helper_signups_slotId_eventPersonId_key")
+  @@unique([id, slotId], map: "daali_helper_signups_id_slotId_key")                 // FK target only — see below
+  @@index([eventPersonId], map: "daali_helper_signups_eventPersonId_idx")
+
+  @@map("daali_helper_signups")
 }
 
 /// The row the database thinks about. One per claimed capacity position.
-model HelperSignupPosition {
-  id             String @id @default(cuid())
+model DaaliHelperSignupPosition {
+  id             String @id(map: "daali_helper_signup_positions_pkey") @default(cuid())
   helperSignupId String
   slotId         String                  // denormalized ON PURPOSE
   position       Int
@@ -103,29 +113,33 @@ model HelperSignupPosition {
   // COMPOSITE relation against the parent's @@unique([id, slotId]). Two
   // independent FKs would let a coding error attach one slot's positions to
   // another slot's commitment while satisfying every index.
-  signup HelperSignup @relation(fields: [helperSignupId, slotId], references: [id, slotId], onDelete: Cascade)
-  slot   SignupSlot   @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  signup DaaliHelperSignup @relation(fields: [helperSignupId, slotId], references: [id, slotId], onDelete: Cascade, map: "daali_helper_signup_positions_signup_fkey")
+  slot   DaaliSignupSlot   @relation(fields: [slotId], references: [id], onDelete: Cascade, map: "daali_helper_signup_positions_slotId_fkey")
 
-  @@unique([slotId, position])           // THIS is the capacity guarantee
-  @@index([helperSignupId])
+  @@unique([slotId, position], map: "daali_helper_signup_positions_slotId_position_key")           // THIS is the capacity guarantee
+  @@index([helperSignupId], map: "daali_helper_signup_positions_helperSignupId_idx")
+
+  @@map("daali_helper_signup_positions")
 }
 
-model SignupLog {
-  id            String       @id @default(cuid())
+model DaaliSignupLog {
+  id            String       @id(map: "daali_signup_logs_pkey") @default(cuid())
   slotId        String
   eventPersonId String
-  action        SignupAction
+  action        DaaliSignupAction
   positions     Int?
-  actorKind          ActorKind
+  actorKind          DaaliActorKind
   actorUserId        String?
   actorEventPersonId String?
   planExecutionId    String?
   createdAt     DateTime     @default(now())
 
-  @@index([slotId])
+  @@index([slotId], map: "daali_signup_logs_slotId_idx")
+
+  @@map("daali_signup_logs")
 }
 
 // Add to earlier models:
-//   model Event        { signupSheet SignupSheet? }
-//   model EventPerson  { helperSignups HelperSignup[] }
-//   model Registration { logs RegistrationLog[] }
+//   model DaaliEvent        { signupSheet DaaliSignupSheet? }
+//   model DaaliEventPerson  { helperSignups DaaliHelperSignup[] }
+//   model DaaliRegistration { logs DaaliRegistrationLog[] }

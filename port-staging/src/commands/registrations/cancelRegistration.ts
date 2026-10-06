@@ -13,7 +13,7 @@ export type CancelRegistrationResult = { registrationId: string; status: 'CANCEL
  */
 export const cancelRegistration: Command<CancelRegistrationInput, CancelRegistrationResult> =
   async (input, ctx) => {
-    const reg = await prisma.registration.findUnique({
+    const reg = await prisma.daaliRegistration.findUnique({
       where: { id: input.registrationId },
       select: {
         id: true, status: true, partySize: true, eventPersonId: true,
@@ -39,7 +39,7 @@ export const cancelRegistration: Command<CancelRegistrationInput, CancelRegistra
       eventId: reg.event.id,
       execute: async (tx) => {
         const stamp = actorStamp(ctx.actor)
-        await tx.registration.update({
+        await tx.daaliRegistration.update({
           where: { id: reg.id },
           data: {
             status: 'CANCELLED',
@@ -50,7 +50,7 @@ export const cancelRegistration: Command<CancelRegistrationInput, CancelRegistra
             cancelledByPlanId: stamp.planExecutionId,
           },
         })
-        await tx.registrationLog.create({
+        await tx.daaliRegistrationLog.create({
           data: {
             registrationId: reg.id,
             eventId: reg.event.id,

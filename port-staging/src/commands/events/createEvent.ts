@@ -30,7 +30,7 @@ export const createEvent: Command<CreateEventInput, CreateEventResult> = async (
     input,
     ctx,
     execute: async (tx) => {
-      const event = await tx.event.create({
+      const event = await tx.daaliEvent.create({
         data: {
           organizerUserId,
           title: input.title.trim(),

@@ -3,17 +3,17 @@
 // 0D.1 adds: lockedAt, lockToken, nextAttemptAt — all nullable, all additive.
 // ─────────────────────────────────────────────────────────────
 
-enum NotificationType   { RSVP_CONFIRMED }
-enum NotificationStatus { pending  sent  failed }
+enum DaaliNotificationType   { RSVP_CONFIRMED  @@map("daali_notification_type") }
+enum DaaliNotificationStatus { pending  sent  failed  @@map("daali_notification_status") }
 
-model NotificationDelivery {
-  id               String             @id @default(cuid())
-  notificationType NotificationType
+model DaaliNotificationDelivery {
+  id               String             @id(map: "daali_notification_deliveries_pkey") @default(cuid())
+  notificationType DaaliNotificationType
   /// Names the THING being communicated: "registration:{id}", not the person.
   dedupeKey        String
   eventPersonId    String             // for querying. NOT part of any uniqueness rule
   registrationId   String?
-  status           NotificationStatus @default(pending)
+  status           DaaliNotificationStatus @default(pending)
   attempts         Int                @default(0)
   providerMessageId String?
   lastError        String?
@@ -21,14 +21,16 @@ model NotificationDelivery {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
-  person       EventPerson   @relation(fields: [eventPersonId], references: [id], onDelete: Cascade)
-  registration Registration? @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  person       DaaliEventPerson   @relation(fields: [eventPersonId], references: [id], onDelete: Cascade, map: "daali_notification_deliveries_eventPersonId_fkey")
+  registration DaaliRegistration? @relation(fields: [registrationId], references: [id], onDelete: Cascade, map: "daali_notification_deliveries_registrationId_fkey")
 
-  @@unique([notificationType, dedupeKey])
-  @@index([eventPersonId])
-  @@index([status])
+  @@unique([notificationType, dedupeKey], map: "daali_notification_deliveries_type_dedupeKey_key")
+  @@index([eventPersonId], map: "daali_notification_deliveries_eventPersonId_idx")
+  @@index([status], map: "daali_notification_deliveries_status_idx")
+
+  @@map("daali_notification_deliveries")
 }
 
 // Add to earlier models:
-//   model EventPerson  { notifications NotificationDelivery[] }
-//   model Registration { notifications NotificationDelivery[] }
+//   model DaaliEventPerson  { notifications DaaliNotificationDelivery[] }
+//   model DaaliRegistration { notifications DaaliNotificationDelivery[] }

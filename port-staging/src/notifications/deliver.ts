@@ -25,7 +25,7 @@ const SEND_TIMEOUT_MS = 4000
  */
 export async function deliverNotification(deliveryId: string): Promise<void> {
   try {
-    const delivery = await prisma.notificationDelivery.findUnique({
+    const delivery = await prisma.daaliNotificationDelivery.findUnique({
       where: { id: deliveryId },
       select: {
         id: true, notificationType: true, dedupeKey: true, status: true,
@@ -50,7 +50,7 @@ export async function deliverNotification(deliveryId: string): Promise<void> {
     }
     const email = built.email
 
-    await prisma.notificationDelivery.update({
+    await prisma.daaliNotificationDelivery.update({
       where: { id: deliveryId },
       data: { attempts: { increment: 1 } },
     })
@@ -74,7 +74,7 @@ async function settle(
   id: string,
   outcome: { ok: true; providerMessageId: string | null } | { ok: false; error: string },
 ) {
-  await prisma.notificationDelivery.update({
+  await prisma.daaliNotificationDelivery.update({
     where: { id },
     data: outcome.ok
       ? { status: 'sent', sentAt: new Date(), providerMessageId: outcome.providerMessageId, lastError: null }
@@ -100,7 +100,7 @@ async function buildEmail(
       // the same failure for every delivery, so fail it early and identically.
       const appUrl = resolveAppUrl()
       if (!appUrl.ok) return { ok: false, error: appUrl.error }
-      const reg = await prisma.registration.findUnique({
+      const reg = await prisma.daaliRegistration.findUnique({
         where: { id: registrationId },
         select: {
           partySize: true, status: true,

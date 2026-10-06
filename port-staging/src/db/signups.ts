@@ -43,7 +43,7 @@ export async function claimPositions(
     try {
       // One commitment per person per slot — enforced by the unique index, so
       // adding to an existing commitment is the only possible shape.
-      const signup = await tx.helperSignup.upsert({
+      const signup = await tx.daaliHelperSignup.upsert({
         where: { slotId_eventPersonId: { slotId, eventPersonId } },
         create: {
           slotId, eventPersonId,
@@ -57,7 +57,7 @@ export async function claimPositions(
         select: { id: true },
       })
 
-      const taken = await tx.helperSignupPosition.findMany({
+      const taken = await tx.daaliHelperSignupPosition.findMany({
         where: { slotId }, select: { position: true },
       })
 
@@ -66,7 +66,7 @@ export async function claimPositions(
         return { ok: false, reason: 'FULL', remaining: Math.max(0, capacity - taken.length) }
       }
 
-      await tx.helperSignupPosition.createMany({
+      await tx.daaliHelperSignupPosition.createMany({
         data: positions.map((position) => ({ helperSignupId: signup.id, slotId, position })),
       })
 
@@ -99,20 +99,20 @@ export async function releasePositions(
   const { helperSignupId, quantity } = args
 
   if (quantity === undefined) {
-    const { count } = await tx.helperSignupPosition.deleteMany({ where: { helperSignupId } })
-    await tx.helperSignup.delete({ where: { id: helperSignupId } })
+    const { count } = await tx.daaliHelperSignupPosition.deleteMany({ where: { helperSignupId } })
+    await tx.daaliHelperSignup.delete({ where: { id: helperSignupId } })
     return count
   }
 
   // Partial release on an ITEM — dropping from 4 cases to 2 deletes 2 position
   // rows and leaves the commitment standing. The displayed quantity follows
   // automatically because it was never stored.
-  const doomed = await tx.helperSignupPosition.findMany({
+  const doomed = await tx.daaliHelperSignupPosition.findMany({
     where: { helperSignupId }, orderBy: { position: 'desc' }, take: quantity, select: { id: true },
   })
-  await tx.helperSignupPosition.deleteMany({ where: { id: { in: doomed.map((d) => d.id) } } })
+  await tx.daaliHelperSignupPosition.deleteMany({ where: { id: { in: doomed.map((d) => d.id) } } })
 
-  const left = await tx.helperSignupPosition.count({ where: { helperSignupId } })
-  if (left === 0) await tx.helperSignup.delete({ where: { id: helperSignupId } })
+  const left = await tx.daaliHelperSignupPosition.count({ where: { helperSignupId } })
+  if (left === 0) await tx.daaliHelperSignup.delete({ where: { id: helperSignupId } })
   return doomed.length
 }

@@ -47,14 +47,14 @@ export async function getOrCreateAccessToken(
   tx: Prisma.TransactionClient,
   eventPersonId: string,
 ): Promise<string> {
-  const existing = await tx.eventPersonAccessToken.findUnique({ where: { eventPersonId } })
+  const existing = await tx.daaliEventPersonAccessToken.findUnique({ where: { eventPersonId } })
 
   if (existing && !existing.revokedAt) return deriveToken(eventPersonId, existing.version)
 
   const version = existing ? existing.version + 1 : 1
   const token = deriveToken(eventPersonId, version)
 
-  await tx.eventPersonAccessToken.upsert({
+  await tx.daaliEventPersonAccessToken.upsert({
     where: { eventPersonId },
     create: { eventPersonId, version, tokenHash: hashToken(token) },
     update: { version, tokenHash: hashToken(token), revokedAt: null },
@@ -67,7 +67,7 @@ export async function revokeAccessToken(
   tx: Prisma.TransactionClient,
   eventPersonId: string,
 ): Promise<void> {
-  await tx.eventPersonAccessToken.update({
+  await tx.daaliEventPersonAccessToken.update({
     where: { eventPersonId },
     data: { revokedAt: new Date() },
   })

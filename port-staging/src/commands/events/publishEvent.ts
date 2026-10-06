@@ -15,7 +15,7 @@ export const publishEvent: Command<PublishEventInput, PublishEventResult> = asyn
   const denied = requireOrganizer<PublishEventResult>(ctx.actor)
   if (denied) return denied
 
-  const event = await prisma.event.findUnique({
+  const event = await prisma.daaliEvent.findUnique({
     where: { id: input.eventId },
     select: {
       id: true, organizerUserId: true, status: true, slug: true,
@@ -50,7 +50,7 @@ export const publishEvent: Command<PublishEventInput, PublishEventResult> = asyn
       // Do not "check if taken, then insert" — that races. Try and retry.
       for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
         try {
-          const updated = await tx.event.update({
+          const updated = await tx.daaliEvent.update({
             where: { id: event.id },
             data: { slug: candidateSlug(event.title), status: 'PUBLISHED', publishedAt },
             select: { id: true, slug: true, publishedAt: true },

@@ -48,7 +48,7 @@ export async function runCommand<I, O>(opts: RunOpts<I, O>): Promise<CommandResu
       // Failures roll back. Nothing is recorded, and a retry runs cleanly.
       if (!result.ok) return result
 
-      await tx.commandExecution.create({
+      await tx.daaliCommandExecution.create({
         data: {
           commandName: name,
           idempotencyKey: ctx.idempotencyKey!,
@@ -77,7 +77,7 @@ async function lookup<O>(
   idempotencyKey: string,
   inputHash: string,
 ): Promise<CommandResult<O> | null> {
-  const prior = await prisma.commandExecution.findUnique({
+  const prior = await prisma.daaliCommandExecution.findUnique({
     where: { commandName_idempotencyKey: { commandName, idempotencyKey } },
   })
   if (!prior) return null

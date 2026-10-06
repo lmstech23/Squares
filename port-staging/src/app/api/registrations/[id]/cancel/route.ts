@@ -13,7 +13,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // Participant path: prove identity with the emailed token.
   if (body.token) {
-    const row = await prisma.eventPersonAccessToken.findUnique({
+    const row = await prisma.daaliEventPersonAccessToken.findUnique({
       where: { tokenHash: hashToken(String(body.token)) },
       select: { eventPersonId: true, revokedAt: true },
     })

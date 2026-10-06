@@ -3,40 +3,44 @@
 // Append to prisma/schema.prisma. Touches nothing that exists.
 // ─────────────────────────────────────────────────────────────
 
-enum EventStatus {
+enum DaaliEventStatus {
   DRAFT
   PUBLISHED
   CLOSED
   // CANCELLED is deliberately absent. See plan §2 [R1].
   // Adding it here breaks the build at every exhaustive switch,
   // which is the review we want.
+
+  @@map("daali_event_status")
 }
 
-model Event {
-  id              String      @id @default(cuid())
+model DaaliEvent {
+  id              String      @id(map: "daali_events_pkey") @default(cuid())
   organizerUserId String
   title           String
-  slug            String?     @unique          // assigned at publish, not at create
+  slug            String?     @unique(map: "daali_events_slug_key")          // assigned at publish, not at create
   description     String?
   startsAt        DateTime
   endsAt          DateTime?
   timezone        String                        // IANA. never derived from the browser
   venueName       String?
   venueAddress    String?
-  status          EventStatus @default(DRAFT)
+  status          DaaliEventStatus @default(DRAFT)
   capacity        Int?                          // null = uncapped. enforced in 0B
   publishedAt     DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  people            EventPerson[]
-  commandExecutions CommandExecution[]
+  people            DaaliEventPerson[]
+  commandExecutions DaaliCommandExecution[]
 
-  @@index([organizerUserId, status])
+  @@index([organizerUserId, status], map: "daali_events_organizerUserId_status_idx")
+
+  @@map("daali_events")
 }
 
-model EventPerson {
-  id          String   @id @default(cuid())
+model DaaliEventPerson {
+  id          String   @id(map: "daali_event_people_pkey") @default(cuid())
   eventId     String
   identityKey String                            // normalized email. opaque on purpose
   name        String
@@ -45,14 +49,16 @@ model EventPerson {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event DaaliEvent @relation(fields: [eventId], references: [id], onDelete: Cascade, map: "daali_event_people_eventId_fkey")
 
-  @@unique([eventId, identityKey])
-  @@index([eventId])
+  @@unique([eventId, identityKey], map: "daali_event_people_eventId_identityKey_key")
+  @@index([eventId], map: "daali_event_people_eventId_idx")
+
+  @@map("daali_event_people")
 }
 
-model CommandExecution {
-  id             String   @id @default(cuid())
+model DaaliCommandExecution {
+  id             String   @id(map: "daali_command_executions_pkey") @default(cuid())
   commandName    String
   idempotencyKey String
   eventId        String?
@@ -60,8 +66,10 @@ model CommandExecution {
   result         Json                           // the ACTUAL outbound payload [R4]
   createdAt      DateTime @default(now())
 
-  event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event DaaliEvent? @relation(fields: [eventId], references: [id], onDelete: Cascade, map: "daali_command_executions_eventId_fkey")
 
-  @@unique([commandName, idempotencyKey])
-  @@index([eventId])
+  @@unique([commandName, idempotencyKey], map: "daali_command_executions_commandName_idempotencyKey_key")
+  @@index([eventId], map: "daali_command_executions_eventId_idx")
+
+  @@map("daali_command_executions")
 }

@@ -11,7 +11,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let actor: ActorContext | null = null
   if (body.token) {
-    const row = await prisma.eventPersonAccessToken.findUnique({
+    const row = await prisma.daaliEventPersonAccessToken.findUnique({
       where: { tokenHash: hashToken(String(body.token)) },
       select: { eventPersonId: true, revokedAt: true },
     })

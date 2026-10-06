@@ -9,7 +9,7 @@ export type CancelClaimResult = { helperSignupId: string; released: number; rema
 
 /** One command, two callers. The helper drops their own; the organizer removes someone. */
 export const cancelClaim: Command<CancelClaimInput, CancelClaimResult> = async (input, ctx) => {
-  const signup = await prisma.helperSignup.findUnique({
+  const signup = await prisma.daaliHelperSignup.findUnique({
     where: { id: input.helperSignupId },
     select: {
       id: true, slotId: true, eventPersonId: true,
@@ -38,7 +38,7 @@ export const cancelClaim: Command<CancelClaimInput, CancelClaimResult> = async (
         quantity: input.quantity,
       })
 
-      await tx.signupLog.create({
+      await tx.daaliSignupLog.create({
         data: {
           slotId: signup.slotId,
           eventPersonId: signup.eventPersonId,

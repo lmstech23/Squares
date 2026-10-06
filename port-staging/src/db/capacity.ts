@@ -22,7 +22,7 @@ export async function lockEventForSeating(
   eventId: string,
 ): Promise<LockedEvent | null> {
   const rows = await tx.$queryRaw<LockedEvent[]>`
-    SELECT "id", "status", "capacity" FROM "Event" WHERE "id" = ${eventId} FOR UPDATE
+    SELECT "id", "status", "capacity" FROM daali_events WHERE "id" = ${eventId} FOR UPDATE
   `
   return rows[0] ?? null
 }
@@ -30,7 +30,7 @@ export async function lockEventForSeating(
 export async function seatsTaken(tx: Prisma.TransactionClient, eventId: string): Promise<number> {
   const rows = await tx.$queryRaw<{ seats: number }[]>`
     SELECT COALESCE(SUM("partySize"), 0)::int AS seats
-      FROM "Registration"
+      FROM daali_registrations
      WHERE "eventId" = ${eventId} AND "status" = 'CONFIRMED'
   `
   return Number(rows[0]?.seats ?? 0)

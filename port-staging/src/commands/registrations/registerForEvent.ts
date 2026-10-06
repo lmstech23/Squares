@@ -55,7 +55,7 @@ export const registerForEvent: Command<RegisterForEventInput, RegisterForEventRe
 
         // The partial unique index permits exactly one live registration, so an
         // existing one is a CHANGE of party size, not a second RSVP.
-        const existing = await tx.registration.findFirst({
+        const existing = await tx.daaliRegistration.findFirst({
           where: { eventId: event.id, eventPersonId: person.id, status: 'CONFIRMED' },
           select: { id: true, partySize: true },
         })
@@ -76,12 +76,12 @@ export const registerForEvent: Command<RegisterForEventInput, RegisterForEventRe
         const stamp = actorStamp(ctx.actor)
 
         const row = existing
-          ? await tx.registration.update({
+          ? await tx.daaliRegistration.update({
               where: { id: existing.id },
               data: { partySize: input.partySize, note: input.note?.trim() || null },
               select: { id: true },
             })
-          : await tx.registration.create({
+          : await tx.daaliRegistration.create({
               data: {
                 eventId: event.id,
                 eventPersonId: person.id,
@@ -100,7 +100,7 @@ export const registerForEvent: Command<RegisterForEventInput, RegisterForEventRe
         // in place, so without this the later actor was lost — a real gap once
         // both HUMAN and AGENT drive the same command.
         if (!existing || existing.partySize !== input.partySize) {
-          await tx.registrationLog.create({
+          await tx.daaliRegistrationLog.create({
             data: {
               registrationId: row.id,
               eventId: event.id,

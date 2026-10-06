@@ -10,7 +10,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!userId) return unauthenticated()
 
   const { id } = await params
-  const delivery = await prisma.notificationDelivery.findUnique({
+  const delivery = await prisma.daaliNotificationDelivery.findUnique({
     where: { id },
     select: { id: true, registration: { select: { event: { select: { organizerUserId: true } } } } },
   })
@@ -21,7 +21,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   await deliverNotification(delivery.id)
 
-  const after = await prisma.notificationDelivery.findUnique({
+  const after = await prisma.daaliNotificationDelivery.findUnique({
     where: { id }, select: { status: true, lastError: true, attempts: true },
   })
   return NextResponse.json(after)

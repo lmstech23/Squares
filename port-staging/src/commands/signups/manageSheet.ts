@@ -5,7 +5,7 @@ import { fail, ok, type Command } from '@/lib/commands/types'
 import type { SlotType } from '@/domain/signups'
 
 async function ownedEvent(eventId: string) {
-  return prisma.event.findUnique({ where: { id: eventId }, select: { id: true, organizerUserId: true } })
+  return prisma.daaliEvent.findUnique({ where: { id: eventId }, select: { id: true, organizerUserId: true } })
 }
 
 export type AddSlotInput = {
@@ -45,18 +45,18 @@ export const addSlot: Command<AddSlotInput, AddSlotResult> = async (input, ctx) 
     execute: async (tx) => {
       // The sheet is created lazily on the first slot. An organizer never has to
       // "create a sheet" as a separate act.
-      const sheet = await tx.signupSheet.upsert({
+      const sheet = await tx.daaliSignupSheet.upsert({
         where: { eventId: event.id },
         create: { eventId: event.id },
         update: {},
         select: { id: true },
       })
 
-      const last = await tx.signupSlot.findFirst({
+      const last = await tx.daaliSignupSlot.findFirst({
         where: { sheetId: sheet.id }, orderBy: { sortOrder: 'desc' }, select: { sortOrder: true },
       })
 
-      const slot = await tx.signupSlot.create({
+      const slot = await tx.daaliSignupSlot.create({
         data: {
           sheetId: sheet.id,
           slotType: input.slotType,
@@ -96,7 +96,7 @@ export const setSheetOpen: Command<SetSheetOpenInput, SetSheetOpenResult> = asyn
     ctx,
     eventId: event.id,
     execute: async (tx) => {
-      await tx.signupSheet.upsert({
+      await tx.daaliSignupSheet.upsert({
         where: { eventId: event.id },
         create: { eventId: event.id, isOpen: input.isOpen },
         update: { isOpen: input.isOpen },
@@ -113,7 +113,7 @@ export const removeSlot: Command<RemoveSlotInput, RemoveSlotResult> = async (inp
   const denied = requireOrganizer<RemoveSlotResult>(ctx.actor)
   if (denied) return denied
 
-  const slot = await prisma.signupSlot.findUnique({
+  const slot = await prisma.daaliSignupSlot.findUnique({
     where: { id: input.slotId },
     select: {
       id: true, _count: { select: { signups: true } },
@@ -130,7 +130,7 @@ export const removeSlot: Command<RemoveSlotInput, RemoveSlotResult> = async (inp
     ctx,
     eventId: slot.sheet.event.id,
     execute: async (tx) => {
-      await tx.signupSlot.delete({ where: { id: slot.id } })
+      await tx.daaliSignupSlot.delete({ where: { id: slot.id } })
       return ok({ slotId: slot.id, removedClaims: slot._count.signups })
     },
   })

@@ -22,7 +22,7 @@ export async function resolveEventPerson(
   const email = input.email.trim()
   const phone = input.phone?.trim() || null
 
-  return tx.eventPerson.upsert({
+  return tx.daaliEventPerson.upsert({
     where: { eventId_identityKey: { eventId, identityKey } },
     create: { eventId, identityKey, name, email, phone },
     update: {

@@ -7,7 +7,7 @@ const uid = () => 'c' + Math.random().toString(36).slice(2, 12)
 async function seedEvent(capacity) {
   const id = uid()
   await pool.query(
-    `INSERT INTO "Event"(id,"organizerUserId",title,"startsAt",timezone,status,capacity,"updatedAt")
+    `INSERT INTO daali_events(id,"organizerUserId",title,"startsAt",timezone,status,capacity,"updatedAt")
      VALUES ($1,'org','Field Day', now(), 'America/New_York','PUBLISHED',$2, now())`, [id, capacity])
   return id
 }
@@ -15,7 +15,7 @@ async function seedEvent(capacity) {
 async function seedPerson(eventId, i) {
   const id = uid()
   await pool.query(
-    `INSERT INTO "EventPerson"(id,"eventId","identityKey",name,email,"updatedAt")
+    `INSERT INTO daali_event_people(id,"eventId","identityKey",name,email,"updatedAt")
      VALUES ($1,$2,$3,$4,$5, now())`,
     [id, eventId, `p${i}@x.com`, `P${i}`, `p${i}@x.com`])
   return id
@@ -30,10 +30,10 @@ async function rsvp(eventId, personId, partySize) {
   const c = await pool.connect()
   try {
     await c.query('BEGIN')
-    const ev = await c.query(`SELECT capacity FROM "Event" WHERE id=$1 FOR UPDATE`, [eventId])
+    const ev = await c.query(`SELECT capacity FROM daali_events WHERE id=$1 FOR UPDATE`, [eventId])
     const cap = ev.rows[0].capacity
     const taken = Number((await c.query(
-      `SELECT COALESCE(SUM("partySize"),0)::int AS seats FROM "Registration"
+      `SELECT COALESCE(SUM("partySize"),0)::int AS seats FROM daali_registrations
         WHERE "eventId"=$1 AND status='CONFIRMED'`, [eventId])).rows[0].seats)
 
     if (cap !== null && taken + partySize > cap) {
@@ -41,7 +41,7 @@ async function rsvp(eventId, personId, partySize) {
       return { ok: false, remaining: cap - taken }
     }
     await c.query(
-      `INSERT INTO "Registration"(id,"eventId","eventPersonId","partySize",status,"actorKind")
+      `INSERT INTO daali_registrations(id,"eventId","eventPersonId","partySize",status,"actorKind")
        VALUES ($1,$2,$3,$4,'CONFIRMED','HUMAN')`, [uid(), eventId, personId, partySize])
     await c.query('COMMIT')
     return { ok: true }
@@ -53,7 +53,7 @@ async function rsvp(eventId, personId, partySize) {
 
 async function seats(eventId) {
   return Number((await pool.query(
-    `SELECT COALESCE(SUM("partySize"),0)::int AS s FROM "Registration"
+    `SELECT COALESCE(SUM("partySize"),0)::int AS s FROM daali_registrations
       WHERE "eventId"=$1 AND status='CONFIRMED'`, [eventId])).rows[0].s)
 }
 
@@ -96,7 +96,7 @@ async function testCancelFrees() {
   const blocked = await rsvp(eventId, c, 1)
   check('third is rejected while full', !blocked.ok)
   await pool.query(
-    `UPDATE "Registration" SET status='CANCELLED', "cancelledAt"=now()
+    `UPDATE daali_registrations SET status='CANCELLED', "cancelledAt"=now()
       WHERE "eventPersonId"=$1`, [a])
   const after = await rsvp(eventId, c, 1)
   check('third gets in after a cancellation', after.ok, `seatsTaken=${await seats(eventId)}`)
@@ -111,7 +111,7 @@ async function testLiveIndex() {
   const dup = await rsvp(eventId, p, 1)
   check('first RSVP succeeds', first.ok)
   check('duplicate live RSVP is blocked by the index', !dup.ok && dup.error === '23505', `code=${dup.error}`)
-  await pool.query(`UPDATE "Registration" SET status='CANCELLED' WHERE "eventPersonId"=$1`, [p])
+  await pool.query(`UPDATE daali_registrations SET status='CANCELLED' WHERE "eventPersonId"=$1`, [p])
   const again = await rsvp(eventId, p, 1)
   check('re-RSVP after cancelling is allowed', again.ok)
 }

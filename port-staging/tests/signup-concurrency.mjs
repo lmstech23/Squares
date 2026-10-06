@@ -5,17 +5,17 @@ const uid = () => 'c' + Math.random().toString(36).slice(2, 12)
 
 async function seedSlot(slotType, capacity, unitLabel = null) {
   const eventId = uid(), sheetId = uid(), slotId = uid()
-  await pool.query(`INSERT INTO "Event"(id,"organizerUserId",title,"startsAt",timezone,status,"updatedAt")
+  await pool.query(`INSERT INTO daali_events(id,"organizerUserId",title,"startsAt",timezone,status,"updatedAt")
     VALUES ($1,'org','E',now(),'America/New_York','PUBLISHED',now())`, [eventId])
-  await pool.query(`INSERT INTO "SignupSheet"(id,"eventId","updatedAt") VALUES ($1,$2,now())`, [sheetId, eventId])
-  await pool.query(`INSERT INTO "SignupSlot"(id,"sheetId","slotType",name,capacity,"unitLabel","updatedAt")
+  await pool.query(`INSERT INTO daali_signup_sheets(id,"eventId","updatedAt") VALUES ($1,$2,now())`, [sheetId, eventId])
+  await pool.query(`INSERT INTO daali_signup_slots(id,"sheetId","slotType",name,capacity,"unitLabel","updatedAt")
     VALUES ($1,$2,$3,'Slot',$4,$5,now())`, [slotId, sheetId, slotType, capacity, unitLabel])
   return { eventId, slotId }
 }
 
 async function seedPerson(eventId, i) {
   const id = uid()
-  await pool.query(`INSERT INTO "EventPerson"(id,"eventId","identityKey",name,email,"updatedAt")
+  await pool.query(`INSERT INTO daali_event_people(id,"eventId","identityKey",name,email,"updatedAt")
     VALUES ($1,$2,$3,$4,$5,now())`, [id, eventId, `h${i}-${id}@x.com`, `H${i}`, `h${i}@x.com`])
   return id
 }
@@ -36,14 +36,14 @@ async function claim(slotId, personId, quantity, capacity) {
       await c.query('BEGIN')
 
       const hs = await c.query(
-        `INSERT INTO "HelperSignup"(id,"slotId","eventPersonId","actorKind")
+        `INSERT INTO daali_helper_signups(id,"slotId","eventPersonId","actorKind")
          VALUES ($1,$2,$3,'HUMAN')
          ON CONFLICT ("slotId","eventPersonId") DO UPDATE SET "slotId"=EXCLUDED."slotId"
          RETURNING id`, [uid(), slotId, personId])
       const signupId = hs.rows[0].id
 
       const takenRows = await c.query(
-        `SELECT position FROM "HelperSignupPosition" WHERE "slotId"=$1`, [slotId])
+        `SELECT position FROM daali_helper_signup_positions WHERE "slotId"=$1`, [slotId])
       const taken = new Set(takenRows.rows.map((r) => r.position))
 
       const free = []
@@ -57,7 +57,7 @@ async function claim(slotId, personId, quantity, capacity) {
 
       for (const p of free) {
         await c.query(
-          `INSERT INTO "HelperSignupPosition"(id,"helperSignupId","slotId",position)
+          `INSERT INTO daali_helper_signup_positions(id,"helperSignupId","slotId",position)
            VALUES ($1,$2,$3,$4)`, [uid(), signupId, slotId, p])
       }
       await c.query('COMMIT')
@@ -76,7 +76,7 @@ async function claim(slotId, personId, quantity, capacity) {
 }
 
 const positions = async (slotId) =>
-  (await pool.query(`SELECT position FROM "HelperSignupPosition" WHERE "slotId"=$1 ORDER BY position`, [slotId]))
+  (await pool.query(`SELECT position FROM daali_helper_signup_positions WHERE "slotId"=$1 ORDER BY position`, [slotId]))
     .rows.map((r) => r.position)
 
 let failures = 0
@@ -121,12 +121,12 @@ async function testCompositeFk() {
   const b = await seedSlot('SHIFT', 5)
   const person = await seedPerson(a.eventId, 0)
   await claim(a.slotId, person, 1, 5)
-  const hs = (await pool.query(`SELECT id FROM "HelperSignup" WHERE "slotId"=$1`, [a.slotId])).rows[0].id
+  const hs = (await pool.query(`SELECT id FROM daali_helper_signups WHERE "slotId"=$1`, [a.slotId])).rows[0].id
   let rejected = false
   try {
     // A coding error attaching slot B's position to slot A's commitment.
     // Two independent FKs would ACCEPT this and the roster would be quietly wrong.
-    await pool.query(`INSERT INTO "HelperSignupPosition"(id,"helperSignupId","slotId",position)
+    await pool.query(`INSERT INTO daali_helper_signup_positions(id,"helperSignupId","slotId",position)
       VALUES ($1,$2,$3,1)`, [uid(), hs, b.slotId])
   } catch (e) { rejected = e.code === '23503' }
   check('cross-slot position is rejected by the composite FK', rejected)
@@ -139,7 +139,7 @@ async function testCancelReusesPositions() {
   await claim(slotId, a, 1, 2); await claim(slotId, b, 1, 2)
   check('third is blocked while full', !(await claim(slotId, c, 1, 2)).ok)
   // Cancelling deletes the commitment; positions cascade.
-  await pool.query(`DELETE FROM "HelperSignup" WHERE "slotId"=$1 AND "eventPersonId"=$2`, [slotId, a])
+  await pool.query(`DELETE FROM daali_helper_signups WHERE "slotId"=$1 AND "eventPersonId"=$2`, [slotId, a])
   check('positions cascaded away', (await positions(slotId)).length === 1)
   const after = await claim(slotId, c, 1, 2)
   check('freed position is reclaimable', after.ok, `got position ${after.positions}`)
@@ -151,9 +151,9 @@ async function testOneCommitmentPerPerson() {
   const p = await seedPerson(eventId, 0)
   await claim(slotId, p, 2, 6)
   await claim(slotId, p, 1, 6)
-  const rows = await pool.query(`SELECT count(*)::int c FROM "HelperSignup" WHERE "slotId"=$1`, [slotId])
+  const rows = await pool.query(`SELECT count(*)::int c FROM daali_helper_signups WHERE "slotId"=$1`, [slotId])
   const pos = await pool.query(
-    `SELECT count(*)::int c FROM "HelperSignupPosition" WHERE "slotId"=$1`, [slotId])
+    `SELECT count(*)::int c FROM daali_helper_signup_positions WHERE "slotId"=$1`, [slotId])
   check('still ONE commitment row', rows.rows[0].c === 1, `${rows.rows[0].c} rows`)
   check('quantity is derived from 3 positions', pos.rows[0].c === 3, `${pos.rows[0].c} positions`)
 }

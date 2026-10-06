@@ -11,7 +11,7 @@ export const closeEvent: Command<CloseEventInput, CloseEventResult> = async (inp
   const denied = requireOrganizer<CloseEventResult>(ctx.actor)
   if (denied) return denied
 
-  const event = await prisma.event.findUnique({
+  const event = await prisma.daaliEvent.findUnique({
     where: { id: input.eventId },
     select: { id: true, organizerUserId: true, status: true },
   })
@@ -32,7 +32,7 @@ export const closeEvent: Command<CloseEventInput, CloseEventResult> = async (inp
     ctx,
     eventId: event.id,
     execute: async (tx) => {
-      await tx.event.update({ where: { id: event.id }, data: { status: 'CLOSED' } })
+      await tx.daaliEvent.update({ where: { id: event.id }, data: { status: 'CLOSED' } })
       return ok({ eventId: event.id, status: 'CLOSED' as const })
     },
   })

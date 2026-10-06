@@ -8,9 +8,9 @@ const check = (n, pass, d) => { console.log(`${pass ? '  PASS' : '  FAIL'}  ${n}
 
 async function seed() {
   const eventId = uid(), personId = uid()
-  await pool.query(`INSERT INTO "Event"(id,"organizerUserId",title,"startsAt",timezone,status,"updatedAt")
+  await pool.query(`INSERT INTO daali_events(id,"organizerUserId",title,"startsAt",timezone,status,"updatedAt")
     VALUES ($1,'org','E',now(),'America/New_York','PUBLISHED',now())`, [eventId])
-  await pool.query(`INSERT INTO "EventPerson"(id,"eventId","identityKey",name,email,"updatedAt")
+  await pool.query(`INSERT INTO daali_event_people(id,"eventId","identityKey",name,email,"updatedAt")
     VALUES ($1,$2,$3,'P',$3,now())`, [personId, eventId, `${personId}@x.com`])
   return { eventId, personId }
 }
@@ -21,13 +21,13 @@ async function rsvpWithEnqueue(eventId, personId, { enqueueThrows = false } = {}
   const regId = uid()
   try {
     await c.query('BEGIN')
-    await c.query(`SELECT capacity FROM "Event" WHERE id=$1 FOR UPDATE`, [eventId])
-    await c.query(`INSERT INTO "Registration"(id,"eventId","eventPersonId","partySize",status,"actorKind")
+    await c.query(`SELECT capacity FROM daali_events WHERE id=$1 FOR UPDATE`, [eventId])
+    await c.query(`INSERT INTO daali_registrations(id,"eventId","eventPersonId","partySize",status,"actorKind")
       VALUES ($1,$2,$3,2,'CONFIRMED','HUMAN')`, [regId, eventId, personId])
 
     if (enqueueThrows) throw new Error('simulated enqueue failure')
 
-    const r = await c.query(`INSERT INTO "NotificationDelivery"
+    const r = await c.query(`INSERT INTO daali_notification_deliveries
       (id,"notificationType","dedupeKey","eventPersonId","registrationId",status,"updatedAt")
       VALUES ($1,'RSVP_CONFIRMED',$2,$3,$4,'pending',now())
       ON CONFLICT ("notificationType","dedupeKey") DO NOTHING RETURNING id`,
@@ -42,19 +42,19 @@ async function rsvpWithEnqueue(eventId, personId, { enqueueThrows = false } = {}
 
 /** deliverNotification: AFTER commit. Only ever writes NotificationDelivery. */
 async function deliver(deliveryId, providerResult) {
-  await pool.query(`UPDATE "NotificationDelivery" SET attempts=attempts+1, "updatedAt"=now() WHERE id=$1`, [deliveryId])
+  await pool.query(`UPDATE daali_notification_deliveries SET attempts=attempts+1, "updatedAt"=now() WHERE id=$1`, [deliveryId])
   if (providerResult.ok) {
-    await pool.query(`UPDATE "NotificationDelivery"
+    await pool.query(`UPDATE daali_notification_deliveries
       SET status='sent', "sentAt"=now(), "providerMessageId"=$2, "lastError"=NULL, "updatedAt"=now()
       WHERE id=$1`, [deliveryId, providerResult.id])
   } else {
-    await pool.query(`UPDATE "NotificationDelivery"
+    await pool.query(`UPDATE daali_notification_deliveries
       SET status='failed', "lastError"=$2, "updatedAt"=now() WHERE id=$1`, [deliveryId, providerResult.error])
   }
 }
 
-const reg = async (id) => (await pool.query(`SELECT status,"partySize" FROM "Registration" WHERE id=$1`, [id])).rows[0]
-const del = async (id) => (await pool.query(`SELECT status,attempts,"lastError","sentAt" FROM "NotificationDelivery" WHERE id=$1`, [id])).rows[0]
+const reg = async (id) => (await pool.query(`SELECT status,"partySize" FROM daali_registrations WHERE id=$1`, [id])).rows[0]
+const del = async (id) => (await pool.query(`SELECT status,attempts,"lastError","sentAt" FROM daali_notification_deliveries WHERE id=$1`, [id])).rows[0]
 
 // ── THE invariant ────────────────────────────────────────────────────────
 async function testFailedEmailNeverHarmsRsvp() {
@@ -77,14 +77,14 @@ async function testTotalProviderOutage() {
   const ids = []
   for (let i = 0; i < 10; i++) {
     const p = uid()
-    await pool.query(`INSERT INTO "EventPerson"(id,"eventId","identityKey",name,email,"updatedAt")
+    await pool.query(`INSERT INTO daali_event_people(id,"eventId","identityKey",name,email,"updatedAt")
       VALUES ($1,$2,$3,'P',$3,now())`, [p, eventId, `${p}@x.com`])
     const { regId, deliveryId } = await rsvpWithEnqueue(eventId, p)
     await deliver(deliveryId, { ok: false, error: 'ECONNREFUSED' })
     ids.push(regId)
   }
   const confirmed = (await pool.query(
-    `SELECT count(*)::int c FROM "Registration" WHERE id = ANY($1) AND status='CONFIRMED'`, [ids])).rows[0].c
+    `SELECT count(*)::int c FROM daali_registrations WHERE id = ANY($1) AND status='CONFIRMED'`, [ids])).rows[0].c
   check('all 10 RSVPs survive a dead mail provider', confirmed === 10, `${confirmed}/10`)
 }
 
@@ -107,12 +107,12 @@ async function testDedupeIsPerRegistration() {
   await deliver(a.deliveryId, { ok: true, id: 'm1' })
 
   // Same person cancels and RSVPs again — a NEW registration deserves a NEW receipt.
-  await pool.query(`UPDATE "Registration" SET status='CANCELLED' WHERE id=$1`, [a.regId])
+  await pool.query(`UPDATE daali_registrations SET status='CANCELLED' WHERE id=$1`, [a.regId])
   const b = await rsvpWithEnqueue(eventId, personId)
   check('a second registration gets its own delivery', b.deliveryId !== null && b.deliveryId !== a.deliveryId)
 
   // Re-enqueueing the SAME registration must not duplicate.
-  const dup = await pool.query(`INSERT INTO "NotificationDelivery"
+  const dup = await pool.query(`INSERT INTO daali_notification_deliveries
     (id,"notificationType","dedupeKey","eventPersonId","registrationId",status,"updatedAt")
     VALUES ($1,'RSVP_CONFIRMED',$2,$3,$4,'pending',now())
     ON CONFLICT ("notificationType","dedupeKey") DO NOTHING RETURNING id`,
@@ -125,7 +125,7 @@ async function testEnqueueIsInTheTransaction() {
   const { eventId, personId } = await seed()
   const res = await rsvpWithEnqueue(eventId, personId, { enqueueThrows: true })
   const orphan = await pool.query(
-    `SELECT count(*)::int c FROM "Registration" WHERE "eventPersonId"=$1`, [personId])
+    `SELECT count(*)::int c FROM daali_registrations WHERE "eventPersonId"=$1`, [personId])
   check('a failed enqueue rolls back with the RSVP — no unconfirmable registration',
     res.regId === null && orphan.rows[0].c === 0, `registrations=${orphan.rows[0].c}`)
 }

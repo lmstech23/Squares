@@ -27,7 +27,7 @@ export const claimSlot: Command<ClaimSlotInput, ClaimSlotResult> = async (input,
   if (!input.name?.trim()) return fail('VALIDATION_FAILED', 'Please add your name.', [{ field: 'name', message: 'Required.' }])
   if (!isPlausibleEmail(input.email ?? '')) return fail('VALIDATION_FAILED', 'Please add a valid email.', [{ field: 'email', message: 'Required.' }])
 
-  const slot = await prisma.signupSlot.findUnique({
+  const slot = await prisma.daaliSignupSlot.findUnique({
     where: { id: input.slotId },
     select: {
       id: true, slotType: true, capacity: true, name: true,
@@ -67,7 +67,7 @@ export const claimSlot: Command<ClaimSlotInput, ClaimSlotResult> = async (input,
           : fail<ClaimSlotResult>('CONFLICT', 'Several people signed up at once. Try again.')
       }
 
-      await tx.signupLog.create({
+      await tx.daaliSignupLog.create({
         data: {
           slotId: slot.id,
           eventPersonId: person.id,

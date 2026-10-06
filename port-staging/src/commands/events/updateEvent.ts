@@ -26,7 +26,7 @@ export const updateEvent: Command<UpdateEventInput, UpdateEventResult> = async (
   const denied = requireOrganizer<UpdateEventResult>(ctx.actor)
   if (denied) return denied
 
-  const event = await prisma.event.findUnique({
+  const event = await prisma.daaliEvent.findUnique({
     where: { id: input.eventId },
     select: {
       id: true, organizerUserId: true, status: true, publishedAt: true,
@@ -74,7 +74,7 @@ export const updateEvent: Command<UpdateEventInput, UpdateEventResult> = async (
         }
       }
 
-      const updated = await tx.event.update({
+      const updated = await tx.daaliEvent.update({
         where: { id: event.id },
         data: {
           ...(input.patch.title !== undefined ? { title: input.patch.title.trim() } : {}),
