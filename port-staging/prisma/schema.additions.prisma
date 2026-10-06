@@ -1,0 +1,67 @@
+// ─────────────────────────────────────────────────────────────
+// Phase 0A — Event foundation
+// Append to prisma/schema.prisma. Touches nothing that exists.
+// ─────────────────────────────────────────────────────────────
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  // CANCELLED is deliberately absent. See plan §2 [R1].
+  // Adding it here breaks the build at every exhaustive switch,
+  // which is the review we want.
+}
+
+model Event {
+  id              String      @id @default(cuid())
+  organizerUserId String
+  title           String
+  slug            String?     @unique          // assigned at publish, not at create
+  description     String?
+  startsAt        DateTime
+  endsAt          DateTime?
+  timezone        String                        // IANA. never derived from the browser
+  venueName       String?
+  venueAddress    String?
+  status          EventStatus @default(DRAFT)
+  capacity        Int?                          // null = uncapped. enforced in 0B
+  publishedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  people            EventPerson[]
+  commandExecutions CommandExecution[]
+
+  @@index([organizerUserId, status])
+}
+
+model EventPerson {
+  id          String   @id @default(cuid())
+  eventId     String
+  identityKey String                            // normalized email. opaque on purpose
+  name        String
+  email       String                            // display + delivery. NOT the key
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, identityKey])
+  @@index([eventId])
+}
+
+model CommandExecution {
+  id             String   @id @default(cuid())
+  commandName    String
+  idempotencyKey String
+  eventId        String?
+  inputHash      String                         // canonical hash of input, ctx excluded
+  result         Json                           // the ACTUAL outbound payload [R4]
+  createdAt      DateTime @default(now())
+
+  event Event? @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([commandName, idempotencyKey])
+  @@index([eventId])
+}

@@ -1,0 +1,61 @@
+.page { min-height: 100vh; background: #07070c; color: #edecf5; padding: 64px 24px;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.card { max-width: 620px; margin: 0 auto; border: 1px solid #22222f; border-radius: 14px;
+  background: #0e0e16; padding: 36px 34px 40px; }
+.notice { border: 1px solid rgba(169,162,245,.3); background: rgba(169,162,245,.09);
+  color: #c7c1fb; border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 24px; }
+.title { font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 34px;
+  line-height: 1.16; letter-spacing: -.015em; margin: 0 0 14px; }
+.when { color: #b6b5ca; font-size: 15.5px; margin: 0 0 6px; }
+.venue { color: #7f7f98; font-size: 14.5px; margin: 0 0 22px; }
+.body { color: #b6b5ca; font-size: 15.5px; line-height: 1.6; margin: 0 0 26px;
+  padding-top: 22px; border-top: 1px solid #1a1a25; white-space: pre-wrap; }
+.soon { color: #7f7f98; font-size: 14px; margin: 0; padding-top: 20px; border-top: 1px solid #1a1a25; }
+@media (max-width: 560px) { .page { padding: 28px 16px; } .card { padding: 26px 20px 30px; } .title { font-size: 27px; } }
+
+/* ── 0B: RSVP ── */
+.rsvp { padding-top: 24px; border-top: 1px solid #1a1a25; }
+.rsvpHead { display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 15px; font-weight: 600; margin: 0 0 18px; }
+.seats { font-size: 13px; font-weight: 400; color: #7f7f98; }
+.f { display: block; margin-bottom: 14px; }
+.l { display: block; font-size: 13px; color: #b6b5ca; margin-bottom: 6px; }
+.i { width: 100%; background: #0b0b12; border: 1px solid #22222f; border-radius: 8px;
+  color: #edecf5; font: inherit; font-size: 16px; padding: 11px 13px; }
+.i:focus { outline: 2px solid #a9a2f5; outline-offset: 1px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.submit { font: inherit; font-size: 15.5px; font-weight: 600; background: #a9a2f5;
+  color: #0a0918; border: 0; border-radius: 8px; padding: 14px 24px; cursor: pointer;
+  width: 100%; min-height: 52px; margin-top: 4px; }
+.submit:disabled { opacity: .55; cursor: not-allowed; }
+.error { border: 1px solid rgba(240,119,108,.35); background: rgba(240,119,108,.08);
+  color: #f0a49c; border-radius: 8px; padding: 11px 14px; font-size: 14px; margin-bottom: 16px; }
+.rsvpDone { padding-top: 24px; border-top: 1px solid #1a1a25; }
+.doneTitle { font-family: 'Newsreader', Georgia, serif; font-size: 24px; font-weight: 400; margin: 0 0 8px; }
+.doneBody { color: #b6b5ca; font-size: 15px; margin: 0; }
+.link { color: #a9a2f5; }
+.manage { padding-top: 22px; border-top: 1px solid #1a1a25; margin-top: 22px; }
+.linkBtn { background: none; border: 0; color: #7f7f98; font: inherit; font-size: 14px;
+  cursor: pointer; padding: 8px 0; text-decoration: underline; }
+.confirmRow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.confirmText { font-size: 14.5px; color: #b6b5ca; }
+.confirmRow .submit { width: auto; min-height: 44px; padding: 10px 18px; margin: 0; }
+@media (max-width: 560px) { .two { grid-template-columns: 1fr; } }
+
+/* ── 0C: sign-up sheet ── */
+.sheet { margin-top: 26px; padding-top: 24px; border-top: 1px solid #1a1a25; }
+.sheetHead { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+.sheetNote { font-size: 14px; color: #7f7f98; margin: 0 0 16px; }
+.slot { padding: 14px 0; border-bottom: 1px solid #1a1a25; }
+.slot:last-child { border-bottom: 0; }
+.slotMain { display: inline-block; }
+.slotName { font-size: 15px; font-weight: 500; }
+.slotMeta { font-size: 13px; color: #7f7f98; margin-top: 2px; }
+.slotRight { float: right; display: flex; align-items: center; gap: 12px; }
+.slotOpen { font-size: 12.5px; color: #f0a94c; border: 1px solid rgba(240,169,76,.3);
+  background: rgba(240,169,76,.08); border-radius: 99px; padding: 4px 10px; }
+.slotFull { font-size: 12.5px; color: #5fe39a; border: 1px solid rgba(95,227,154,.28);
+  background: rgba(95,227,154,.07); border-radius: 99px; padding: 4px 10px; }
+.slotBtn { font: inherit; font-size: 13.5px; background: transparent; color: #edecf5;
+  border: 1px solid #2b2b3c; border-radius: 8px; padding: 7px 14px; cursor: pointer; min-height: 40px; }
+.claim { clear: both; padding-top: 16px; }

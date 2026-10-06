@@ -1,0 +1,68 @@
+// ─────────────────────────────────────────────────────────────
+// Phase 0B — Registration / RSVP
+// Append after the 0A block.
+// ─────────────────────────────────────────────────────────────
+
+enum ActorKind {
+  HUMAN
+  AGENT
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+model Registration {
+  id            String             @id @default(cuid())
+  eventId       String
+  eventPersonId String
+  partySize     Int                @default(1)   // the RSVP plus guests
+  status        RegistrationStatus @default(CONFIRMED)
+  note          String?
+  createdAt     DateTime           @default(now())
+  cancelledAt   DateTime?
+
+  // actor stamp — creation
+  actorKind          ActorKind
+  actorUserId        String?
+  actorEventPersonId String?
+  planExecutionId    String?
+
+  // actor stamp — cancellation
+  cancelledByKind          ActorKind?
+  cancelledByUserId        String?
+  cancelledByEventPersonId String?
+  cancelledByPlanId        String?
+
+  event  Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  person EventPerson @relation(fields: [eventPersonId], references: [id], onDelete: Cascade)
+
+  // ⚠️ The one-live-registration rule is a PARTIAL unique index and Prisma cannot
+  // express it. It is created by hand in migration 0002:
+  //
+  //   CREATE UNIQUE INDEX "Registration_live_key"
+  //     ON "Registration"("eventId","eventPersonId") WHERE "status" = 'CONFIRMED';
+  //
+  // Legal because the predicate reads a column on Registration itself. The signup
+  // spec could not do this because its predicate needed slot.slotType from
+  // another table. Do not "fix" this by adding @@unique — that would forbid
+  // re-RSVP after a cancellation.
+  @@index([eventId, status])
+  @@index([eventPersonId])
+}
+
+model EventPersonAccessToken {
+  id            String    @id @default(cuid())
+  eventPersonId String    @unique          // one row per person
+  version       Int       @default(1)      // bumped to revoke
+  tokenHash     String    @unique          // sha256 of the derived token
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  person EventPerson @relation(fields: [eventPersonId], references: [id], onDelete: Cascade)
+}
+
+// Add to the 0A models:
+//   model Event       { registrations Registration[] }
+//   model EventPerson { registrations Registration[]  accessToken EventPersonAccessToken? }
