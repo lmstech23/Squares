@@ -1590,6 +1590,7 @@ model DaaliEventPerson {
   registrations DaaliRegistration[]
   accessToken   DaaliEventPersonAccessToken?
   helperSignups DaaliHelperSignup[]
+  notifications DaaliNotificationDelivery[]
 
   @@unique([eventId, identityKey], map: "daali_event_people_eventId_identityKey_key")
   @@index([eventId], map: "daali_event_people_eventId_idx")
@@ -1658,6 +1659,7 @@ model DaaliRegistration {
   event  DaaliEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade, map: "daali_registrations_eventId_fkey")
   person DaaliEventPerson @relation(fields: [eventPersonId], references: [id], onDelete: Cascade, map: "daali_registrations_eventPersonId_fkey")
   logs   DaaliRegistrationLog[]
+  notifications DaaliNotificationDelivery[]
 
   // ⚠️ The one-live-registration rule is a PARTIAL unique index and Prisma cannot
   // express it. It is created by hand in migration 0002:
@@ -1838,4 +1840,47 @@ model DaaliSignupLog {
   @@index([slotId], map: "daali_signup_logs_slotId_idx")
 
   @@map("daali_signup_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 0D.0 — Notification delivery (minimal)
+// 0D.1 adds: lockedAt, lockToken, nextAttemptAt — all nullable, all additive.
+// ─────────────────────────────────────────────────────────────
+
+enum DaaliNotificationType {
+  RSVP_CONFIRMED
+
+  @@map("daali_notification_type")
+}
+enum DaaliNotificationStatus {
+  pending
+  sent
+  failed
+
+  @@map("daali_notification_status")
+}
+
+model DaaliNotificationDelivery {
+  id               String             @id(map: "daali_notification_deliveries_pkey") @default(cuid())
+  notificationType DaaliNotificationType
+  /// Names the THING being communicated: "registration:{id}", not the person.
+  dedupeKey        String
+  eventPersonId    String             // for querying. NOT part of any uniqueness rule
+  registrationId   String?
+  status           DaaliNotificationStatus @default(pending)
+  attempts         Int                @default(0)
+  providerMessageId String?
+  lastError        String?
+  sentAt           DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  person       DaaliEventPerson   @relation(fields: [eventPersonId], references: [id], onDelete: Cascade, map: "daali_notification_deliveries_eventPersonId_fkey")
+  registration DaaliRegistration? @relation(fields: [registrationId], references: [id], onDelete: Cascade, map: "daali_notification_deliveries_registrationId_fkey")
+
+  @@unique([notificationType, dedupeKey], map: "daali_notification_deliveries_type_dedupeKey_key")
+  @@index([eventPersonId], map: "daali_notification_deliveries_eventPersonId_idx")
+  @@index([status], map: "daali_notification_deliveries_status_idx")
+
+  @@map("daali_notification_deliveries")
 }
