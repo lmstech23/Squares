@@ -1,4 +1,4 @@
-import { test, describe, after } from "node:test";
+import { test, describe, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 
@@ -50,6 +50,37 @@ function pgCode(e: unknown): string | undefined {
   return typeof err.code === "string" ? err.code : undefined;
 }
 
+// ── P6 additions ─────────────────────────────────────────────────────────
+// 1. Explicit, generous interactive-transaction limits. Prisma's defaults
+//    (maxWait 2s, timeout 5s) could expire under the contention these
+//    scenarios create, and an expired transaction would read as a rejection.
+const TX = { maxWait: 60_000, timeout: 120_000 };
+
+// 2. Every rejected operation is classified by cause, and each scenario asserts
+//    that only the causes it was written to expect occurred. A timeout or an
+//    unrecognised failure therefore fails the run instead of passing as an
+//    ordinary rejection.
+type Cause = "capacity" | "full" | "unique" | "fk" | "timeout" | "simulated" | "other";
+
+function classify(e: unknown): Cause {
+  const code = pgCode(e);
+  if (code === "23505") return "unique";
+  if (code === "23503") return "fk";
+  const err = e as { code?: unknown; message?: unknown };
+  if (err.code === "P2028" || err.code === "P2024" || err.code === "P1008") return "timeout";
+  if (typeof err.message === "string" && /timed? ?out|timeout|Unable to start a transaction/i.test(err.message)) return "timeout";
+  return "other";
+}
+
+const unexpected = (seen: Cause[], allowed: Cause[]) => seen.filter((c) => !allowed.includes(c));
+
+// 3. One original PASS check: printed in the harness's own format, so a run can
+//    be compared line for line with the recovery output, then asserted.
+function check(pass: boolean, message: string): void {
+  console.log(`${pass ? "  PASS" : "  FAIL"}  ${message}`);
+  assert.ok(pass, message);
+}
+
 /** Thrown inside the transaction to roll it back, as the harness's ROLLBACK did. */
 // The field is declared rather than a constructor parameter property, which
 // node --experimental-strip-types (the repo test runner) does not support.
@@ -67,6 +98,8 @@ type ClaimResult =
 
 describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   const db = prisma!;
+  const seen: Cause[] = [];
+  beforeEach(() => { seen.length = 0; });
   const eventIds: string[] = [];
 
   const uid = () => "c" + Math.random().toString(36).slice(2, 12);
@@ -127,19 +160,30 @@ describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL 
               VALUES (${uid()},${signupId},${slotId},${p})`;
           }
           return free;
-        });
+        }, TX);
         return { ok: true, positions: free };
       } catch (e) {
-        if (e instanceof SlotFull) return { ok: false, remaining: e.remaining, reason: "FULL" };
+        if (e instanceof SlotFull) {
+          seen.push("full");
+          return { ok: false, remaining: e.remaining, reason: "FULL" };
+        }
         // Lost a race. Retry — the TERMINAL condition is "the slot is actually
         // full", checked on a fresh read at the top of the loop, never "I have
         // tried N times". Giving up on attempt count tells a helper the slot is
         // full while positions remain.
         const code = pgCode(e);
-        if (code === "23505" && attempt < MAX_CLAIM_ATTEMPTS - 1) continue;
+        if (code === "23505" && attempt < MAX_CLAIM_ATTEMPTS - 1) {
+          seen.push("unique"); // a lost race, retried on a fresh read
+          continue;
+        }
+        // A TERMINAL race (retries spent, or a failure that is not a unique
+        // violation) is not an outcome any scenario expects: the terminal
+        // condition is "the slot is actually full".
+        seen.push(classify(e) === "unique" ? "other" : classify(e));
         return { ok: false, error: code, reason: "RACE" };
       }
     }
+    seen.push("other");
     return { ok: false, reason: "RACE_EXHAUSTED" };
   }
 
@@ -161,8 +205,9 @@ describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL 
     const people = await Promise.all([...Array(10)].map((_, i) => seedPerson(eventId, i)));
     const r = await Promise.all(people.map((p) => claim(slotId, p, 1, 1)));
     const won = r.filter((x) => x.ok).length;
-    assert.ok(won === 1, `exactly one claimant wins — ${won} won, ${10 - won} rejected`);
-    assert.ok((await positions(slotId)).length === 1, "slot holds exactly one position");
+    check(won === 1, `exactly one claimant wins — ${won} won, ${10 - won} rejected`);
+    check((await positions(slotId)).length === 1, "slot holds exactly one position");
+    assert.deepEqual(unexpected(seen, ["full", "unique"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("8 parallel claims against a 3-person shift", async () => {
@@ -171,8 +216,9 @@ describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL 
     const r = await Promise.all(people.map((p) => claim(slotId, p, 1, 3)));
     const won = r.filter((x) => x.ok).length;
     const pos = await positions(slotId);
-    assert.ok(won === 3, `exactly 3 claimed — ${won} won`);
-    assert.ok(JSON.stringify(pos) === "[1,2,3]", `positions are 1,2,3 with no gaps or dupes — ${JSON.stringify(pos)}`);
+    check(won === 3, `exactly 3 claimed — ${won} won`);
+    check(JSON.stringify(pos) === "[1,2,3]", `positions are 1,2,3 with no gaps or dupes — ${JSON.stringify(pos)}`);
+    assert.deepEqual(unexpected(seen, ["full", "unique"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("4 parallel claims of 2 cases against a 6-case item", async () => {
@@ -181,8 +227,9 @@ describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL 
     const r = await Promise.all(people.map((p) => claim(slotId, p, 2, 6)));
     const won = r.filter((x) => x.ok).length;
     const pos = await positions(slotId);
-    assert.ok(won === 3, `exactly 3 claimants fit — ${won} won`);
-    assert.ok(pos.length % 2 === 0 && pos.length === 6, `no claimant was partially filled — ${pos.length} positions`);
+    check(won === 3, `exactly 3 claimants fit — ${won} won`);
+    check(pos.length % 2 === 0 && pos.length === 6, `no claimant was partially filled — ${pos.length} positions`);
+    assert.deepEqual(unexpected(seen, ["full", "unique"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("composite FK integrity", async () => {
@@ -199,20 +246,22 @@ describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL 
       // Two independent FKs would ACCEPT this and the roster would be quietly wrong.
       await db.$executeRaw`INSERT INTO daali_helper_signup_positions(id,"helperSignupId","slotId",position)
         VALUES (${uid()},${hs},${b.slotId},1)`;
-    } catch (e) { rejected = pgCode(e) === "23503"; }
-    assert.ok(rejected, "cross-slot position is rejected by the composite FK");
+    } catch (e) { seen.push(classify(e)); rejected = pgCode(e) === "23503"; }
+    check(rejected, "cross-slot position is rejected by the composite FK");
+    assert.deepEqual(unexpected(seen, ["fk"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("cancellation frees positions for reuse", async () => {
     const { eventId, slotId } = await seedSlot("SHIFT", 2);
     const [a, b, c] = await Promise.all([0, 1, 2].map((i) => seedPerson(eventId, i)));
     await claim(slotId, a, 1, 2); await claim(slotId, b, 1, 2);
-    assert.ok(!(await claim(slotId, c, 1, 2)).ok, "third is blocked while full");
+    check(!(await claim(slotId, c, 1, 2)).ok, "third is blocked while full");
     // Cancelling deletes the commitment; positions cascade.
     await db.$executeRaw`DELETE FROM daali_helper_signups WHERE "slotId"=${slotId} AND "eventPersonId"=${a}`;
-    assert.ok((await positions(slotId)).length === 1, "positions cascaded away");
+    check((await positions(slotId)).length === 1, "positions cascaded away");
     const after = await claim(slotId, c, 1, 2);
-    assert.ok(after.ok, `freed position is reclaimable — got position ${after.ok ? after.positions : undefined}`);
+    check(after.ok, `freed position is reclaimable — got position ${after.ok ? after.positions : undefined}`);
+    assert.deepEqual(unexpected(seen, ["full"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("adding to an existing commitment", async () => {
@@ -223,7 +272,8 @@ describe("0C sign-up harness (integration)", { skip: !url && "TEST_DATABASE_URL 
     const rows = await db.$queryRaw<{ c: number }[]>`SELECT count(*)::int c FROM daali_helper_signups WHERE "slotId"=${slotId}`;
     const pos = await db.$queryRaw<{ c: number }[]>`
       SELECT count(*)::int c FROM daali_helper_signup_positions WHERE "slotId"=${slotId}`;
-    assert.ok(rows[0].c === 1, `still ONE commitment row — ${rows[0].c} rows`);
-    assert.ok(pos[0].c === 3, `quantity is derived from 3 positions — ${pos[0].c} positions`);
+    check(rows[0].c === 1, `still ONE commitment row — ${rows[0].c} rows`);
+    check(pos[0].c === 3, `quantity is derived from 3 positions — ${pos[0].c} positions`);
+    assert.deepEqual(unexpected(seen, []), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 });

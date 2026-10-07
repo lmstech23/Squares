@@ -1,4 +1,4 @@
-import { test, describe, after } from "node:test";
+import { test, describe, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 
@@ -47,6 +47,37 @@ function pgCode(e: unknown): string | undefined {
   return typeof err.code === "string" ? err.code : undefined;
 }
 
+// ── P6 additions ─────────────────────────────────────────────────────────
+// 1. Explicit, generous interactive-transaction limits. Prisma's defaults
+//    (maxWait 2s, timeout 5s) could expire under the contention these
+//    scenarios create, and an expired transaction would read as a rejection.
+const TX = { maxWait: 60_000, timeout: 120_000 };
+
+// 2. Every rejected operation is classified by cause, and each scenario asserts
+//    that only the causes it was written to expect occurred. A timeout or an
+//    unrecognised failure therefore fails the run instead of passing as an
+//    ordinary rejection.
+type Cause = "capacity" | "full" | "unique" | "fk" | "timeout" | "simulated" | "other";
+
+function classify(e: unknown): Cause {
+  const code = pgCode(e);
+  if (code === "23505") return "unique";
+  if (code === "23503") return "fk";
+  const err = e as { code?: unknown; message?: unknown };
+  if (err.code === "P2028" || err.code === "P2024" || err.code === "P1008") return "timeout";
+  if (typeof err.message === "string" && /timed? ?out|timeout|Unable to start a transaction/i.test(err.message)) return "timeout";
+  return "other";
+}
+
+const unexpected = (seen: Cause[], allowed: Cause[]) => seen.filter((c) => !allowed.includes(c));
+
+// 3. One original PASS check: printed in the harness's own format, so a run can
+//    be compared line for line with the recovery output, then asserted.
+function check(pass: boolean, message: string): void {
+  console.log(`${pass ? "  PASS" : "  FAIL"}  ${message}`);
+  assert.ok(pass, message);
+}
+
 /** Thrown inside the transaction to roll it back, as the harness's ROLLBACK did. */
 // The field is declared rather than a constructor parameter property, which
 // node --experimental-strip-types (the repo test runner) does not support.
@@ -62,6 +93,8 @@ type RsvpResult = { ok: true } | { ok: false; remaining?: number; error?: string
 
 describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   const db = prisma!;
+  const seen: Cause[] = [];
+  beforeEach(() => { seen.length = 0; });
   const eventIds: string[] = [];
 
   const uid = () => "c" + Math.random().toString(36).slice(2, 12);
@@ -109,9 +142,13 @@ describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL
           INSERT INTO daali_registrations(id,"eventId","eventPersonId","partySize",status,"actorKind")
           VALUES (${uid()},${eventId},${personId},${partySize},'CONFIRMED','HUMAN')`;
         return { ok: true as const };
-      });
+      }, TX);
     } catch (e) {
-      if (e instanceof OverCapacity) return { ok: false, remaining: e.remaining };
+      if (e instanceof OverCapacity) {
+        seen.push("capacity");
+        return { ok: false, remaining: e.remaining };
+      }
+      seen.push(classify(e));
       return { ok: false, error: pgCode(e) };
     }
   }
@@ -139,8 +176,9 @@ describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL
     const results = await Promise.all(people.map((p) => rsvp(eventId, p, 1)));
     const confirmed = results.filter((r) => r.ok).length;
     const taken = await seats(eventId);
-    assert.ok(confirmed === 10, `exactly 10 confirmed — ${confirmed} confirmed, ${20 - confirmed} rejected`);
-    assert.ok(taken === 10, `seats never exceed capacity — seatsTaken=${taken}`);
+    check(confirmed === 10, `exactly 10 confirmed — ${confirmed} confirmed, ${20 - confirmed} rejected`);
+    check(taken === 10, `seats never exceed capacity — seatsTaken=${taken}`);
+    assert.deepEqual(unexpected(seen, ["capacity"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   // ── party size: all-or-nothing, never a partial admit ────────────────────
@@ -150,8 +188,9 @@ describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL
     const results = await Promise.all(people.map((p) => rsvp(eventId, p, 3)));
     const confirmed = results.filter((r) => r.ok).length;
     const taken = await seats(eventId);
-    assert.ok(confirmed === 3 && taken === 9, `3 parties fit, 1 seat left unsold — confirmed=${confirmed} seats=${taken}`);
-    assert.ok(taken % 3 === 0, `no party was partially admitted — seatsTaken=${taken}`);
+    check(confirmed === 3 && taken === 9, `3 parties fit, 1 seat left unsold — confirmed=${confirmed} seats=${taken}`);
+    check(taken % 3 === 0, `no party was partially admitted — seatsTaken=${taken}`);
+    assert.deepEqual(unexpected(seen, ["capacity"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   // ── cancellation frees seats, because the count is derived ───────────────
@@ -160,12 +199,13 @@ describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL
     const [a, b, c] = await Promise.all([0, 1, 2].map((i) => seedPerson(eventId, i)));
     await rsvp(eventId, a, 1); await rsvp(eventId, b, 1);
     const blocked = await rsvp(eventId, c, 1);
-    assert.ok(!blocked.ok, "third is rejected while full");
+    check(!blocked.ok, "third is rejected while full");
     await db.$executeRaw`
       UPDATE daali_registrations SET status='CANCELLED', "cancelledAt"=now()
        WHERE "eventPersonId"=${a}`;
     const after = await rsvp(eventId, c, 1);
-    assert.ok(after.ok, `third gets in after a cancellation — seatsTaken=${await seats(eventId)}`);
+    check(after.ok, `third gets in after a cancellation — seatsTaken=${await seats(eventId)}`);
+    assert.deepEqual(unexpected(seen, ["capacity"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   // ── the partial unique index ─────────────────────────────────────────────
@@ -174,12 +214,13 @@ describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL
     const p = await seedPerson(eventId, 0);
     const first = await rsvp(eventId, p, 1);
     const dup = await rsvp(eventId, p, 1);
-    assert.ok(first.ok, "first RSVP succeeds");
+    check(first.ok, "first RSVP succeeds");
     const dupError = dup.ok ? undefined : dup.error;
-    assert.ok(!dup.ok && dupError === "23505", `duplicate live RSVP is blocked by the index — code=${dupError}`);
+    check(!dup.ok && dupError === "23505", `duplicate live RSVP is blocked by the index — code=${dupError}`);
     await db.$executeRaw`UPDATE daali_registrations SET status='CANCELLED' WHERE "eventPersonId"=${p}`;
     const again = await rsvp(eventId, p, 1);
-    assert.ok(again.ok, "re-RSVP after cancelling is allowed");
+    check(again.ok, "re-RSVP after cancelling is allowed");
+    assert.deepEqual(unexpected(seen, ["unique"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   // ── uncapped events ──────────────────────────────────────────────────────
@@ -187,6 +228,7 @@ describe("0B capacity harness (integration)", { skip: !url && "TEST_DATABASE_URL
     const eventId = await seedEvent(null);
     const people = await Promise.all([...Array(15)].map((_, i) => seedPerson(eventId, i)));
     const r = await Promise.all(people.map((p) => rsvp(eventId, p, 2)));
-    assert.ok(r.every((x) => x.ok), `all 15 admitted — seatsTaken=${await seats(eventId)}`);
+    check(r.every((x) => x.ok), `all 15 admitted — seatsTaken=${await seats(eventId)}`);
+    assert.deepEqual(unexpected(seen, []), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 });

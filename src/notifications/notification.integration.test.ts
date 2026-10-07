@@ -1,4 +1,4 @@
-import { test, describe, after } from "node:test";
+import { test, describe, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 
@@ -36,6 +36,44 @@ const prisma = url
   ? new PrismaClient({ datasources: { db: { url: withConnectionLimit(url, 10) } } })
   : null;
 
+/** The Postgres SQLSTATE behind a failed statement, whichever client raised it. */
+function pgCode(e: unknown): string | undefined {
+  const err = e as { meta?: { code?: unknown }; code?: unknown };
+  if (typeof err.meta?.code === "string") return err.meta.code;
+  return typeof err.code === "string" ? err.code : undefined;
+}
+
+// ── P6 additions ─────────────────────────────────────────────────────────
+// 1. Explicit, generous interactive-transaction limits. Prisma's defaults
+//    (maxWait 2s, timeout 5s) could expire under the contention these
+//    scenarios create, and an expired transaction would read as a rejection.
+const TX = { maxWait: 60_000, timeout: 120_000 };
+
+// 2. Every rejected operation is classified by cause, and each scenario asserts
+//    that only the causes it was written to expect occurred. A timeout or an
+//    unrecognised failure therefore fails the run instead of passing as an
+//    ordinary rejection.
+type Cause = "capacity" | "full" | "unique" | "fk" | "timeout" | "simulated" | "other";
+
+function classify(e: unknown): Cause {
+  const code = pgCode(e);
+  if (code === "23505") return "unique";
+  if (code === "23503") return "fk";
+  const err = e as { code?: unknown; message?: unknown };
+  if (err.code === "P2028" || err.code === "P2024" || err.code === "P1008") return "timeout";
+  if (typeof err.message === "string" && /timed? ?out|timeout|Unable to start a transaction/i.test(err.message)) return "timeout";
+  return "other";
+}
+
+const unexpected = (seen: Cause[], allowed: Cause[]) => seen.filter((c) => !allowed.includes(c));
+
+// 3. One original PASS check: printed in the harness's own format, so a run can
+//    be compared line for line with the recovery output, then asserted.
+function check(pass: boolean, message: string): void {
+  console.log(`${pass ? "  PASS" : "  FAIL"}  ${message}`);
+  assert.ok(pass, message);
+}
+
 type ProviderResult = { ok: true; id: string } | { ok: false; error: string };
 // The harness returned { regId, deliveryId } on success and { regId: null, error }
 // on failure, and destructured both the same way, so deliveryId reads as
@@ -44,6 +82,8 @@ type Enqueued = { regId: string | null; deliveryId?: string | null; error?: stri
 
 describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   const db = prisma!;
+  const seen: Cause[] = [];
+  beforeEach(() => { seen.length = 0; });
   const eventIds: string[] = [];
 
   const uid = () => "c" + Math.random().toString(36).slice(2, 12);
@@ -78,9 +118,11 @@ describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABA
           VALUES (${uid()},'RSVP_CONFIRMED',${`registration:${regId}`},${personId},${regId},'pending',now())
           ON CONFLICT ("notificationType","dedupeKey") DO NOTHING RETURNING id`;
         return r[0]?.id ?? null;
-      });
+      }, TX);
       return { regId, deliveryId };
     } catch (e) {
+      // The scenario's own deliberate failure is its own cause; anything else is classified.
+      seen.push(e instanceof Error && e.message === "simulated enqueue failure" ? "simulated" : classify(e));
       return { regId: null, error: e instanceof Error ? e.message : String(e) };
     }
   }
@@ -121,10 +163,11 @@ describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABA
     await deliver(deliveryId, { ok: false, error: "provider 500" });
 
     const r = await reg(regId), d = await del(deliveryId);
-    assert.ok(r?.status === "CONFIRMED", `RSVP is still CONFIRMED after a failed send — status=${r?.status}`);
-    assert.ok(r?.partySize === 2, "party size untouched");
-    assert.ok(d.status === "failed" && d.lastError === "provider 500", "delivery is visibly failed with the error");
-    assert.ok(d.attempts === 1, `the failure is countable — attempts=${d.attempts}`);
+    check(r?.status === "CONFIRMED", `RSVP is still CONFIRMED after a failed send — status=${r?.status}`);
+    check(r?.partySize === 2, "party size untouched");
+    check(d.status === "failed" && d.lastError === "provider 500", "delivery is visibly failed with the error");
+    check(d.attempts === 1, `the failure is countable — attempts=${d.attempts}`);
+    assert.deepEqual(unexpected(seen, []), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("Total provider outage across many RSVPs", async () => {
@@ -142,7 +185,8 @@ describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABA
       await db.$queryRaw<{ c: number }[]>`
         SELECT count(*)::int c FROM daali_registrations WHERE id = ANY(${ids}) AND status='CONFIRMED'`
     )[0].c;
-    assert.ok(confirmed === 10, `all 10 RSVPs survive a dead mail provider — ${confirmed}/10`);
+    check(confirmed === 10, `all 10 RSVPs survive a dead mail provider — ${confirmed}/10`);
+    assert.deepEqual(unexpected(seen, []), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("Manual resend after a failure", async () => {
@@ -151,9 +195,10 @@ describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABA
     await deliver(deliveryId, { ok: false, error: "timeout" });
     await deliver(deliveryId, { ok: true, id: "msg_123" });
     const d = await del(deliveryId);
-    assert.ok(d.status === "sent", `delivery reaches sent — status=${d.status}`);
-    assert.ok(d.lastError === null, "error is cleared on success");
-    assert.ok(d.attempts === 2, `both attempts counted — attempts=${d.attempts}`);
+    check(d.status === "sent", `delivery reaches sent — status=${d.status}`);
+    check(d.lastError === null, "error is cleared on success");
+    check(d.attempts === 2, `both attempts counted — attempts=${d.attempts}`);
+    assert.deepEqual(unexpected(seen, []), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("The dedupe key names the thing being communicated", async () => {
@@ -164,14 +209,15 @@ describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABA
     // Same person cancels and RSVPs again — a NEW registration deserves a NEW receipt.
     await db.$executeRaw`UPDATE daali_registrations SET status='CANCELLED' WHERE id=${a.regId ?? null}`;
     const b = await rsvpWithEnqueue(eventId, personId);
-    assert.ok(b.deliveryId !== null && b.deliveryId !== a.deliveryId, "a second registration gets its own delivery");
+    check(b.deliveryId !== null && b.deliveryId !== a.deliveryId, "a second registration gets its own delivery");
 
     // Re-enqueueing the SAME registration must not duplicate.
     const dup = await db.$queryRaw<{ id: string }[]>`INSERT INTO daali_notification_deliveries
       (id,"notificationType","dedupeKey","eventPersonId","registrationId",status,"updatedAt")
       VALUES (${uid()},'RSVP_CONFIRMED',${`registration:${a.regId}`},${personId},${a.regId},'pending',now())
       ON CONFLICT ("notificationType","dedupeKey") DO NOTHING RETURNING id`;
-    assert.ok(dup.length === 0, "re-enqueue of the same registration is a no-op");
+    check(dup.length === 0, "re-enqueue of the same registration is a no-op");
+    assert.deepEqual(unexpected(seen, []), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 
   test("Enqueue is a local insert inside the RSVP transaction", async () => {
@@ -179,9 +225,10 @@ describe("0D.0 notification harness (integration)", { skip: !url && "TEST_DATABA
     const res = await rsvpWithEnqueue(eventId, personId, { enqueueThrows: true });
     const orphan = await db.$queryRaw<{ c: number }[]>`
       SELECT count(*)::int c FROM daali_registrations WHERE "eventPersonId"=${personId}`;
-    assert.ok(
+    check(
       res.regId === null && orphan[0].c === 0,
       `a failed enqueue rolls back with the RSVP — no unconfirmable registration — registrations=${orphan[0].c}`
     );
+    assert.deepEqual(unexpected(seen, ["simulated"]), [], `unexpected rejection causes: ${seen.join(", ")}`);
   });
 });
