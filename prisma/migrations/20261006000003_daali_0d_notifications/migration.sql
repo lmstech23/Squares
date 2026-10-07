@@ -49,17 +49,49 @@ ALTER TABLE "daali_notification_deliveries" ADD CONSTRAINT "daali_notification_d
 ALTER TABLE "daali_notification_deliveries" ADD CONSTRAINT "daali_notification_deliveries_registrationId_fkey" FOREIGN KEY ("registrationId") REFERENCES "daali_registrations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ---------------------------------------------------------------------------
--- Containment. LAST, and in this same transaction (Port Plan R1). Same
--- pattern as 20260831150000_s1_signup_sheets: REVOKE ... ON ALL TABLES
--- resolves at execution time, so it must run after the CREATE TABLEs above.
+-- Containment. LAST, and in this same transaction (Port Plan R1).
+--
+-- TABLE-SCOPED, NOT SCHEMA-WIDE. Every statement below names one daali_*
+-- table this migration creates. There is no ON ALL TABLES / ON ALL SEQUENCES
+-- statement, so this migration touches no legacy table, including its grants.
+-- The daali_* tables use cuid() TEXT ids and own no sequences.
 -- ---------------------------------------------------------------------------
 
-ALTER TABLE public."daali_notification_deliveries" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."daali_notification_deliveries"  ENABLE ROW LEVEL SECURITY;
 
 -- Zero client policies, deliberately. Nothing authenticates as anon or
 -- authenticated against these tables; every read is server-side through Prisma.
-REVOKE ALL ON ALL TABLES    IN SCHEMA public FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public."daali_notification_deliveries"  FROM PUBLIC, anon, authenticated;
 
-GRANT ALL ON ALL TABLES    IN SCHEMA public TO service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT ALL ON TABLE public."daali_notification_deliveries"  TO service_role;
+
+-- FAIL CLOSED. Modeled on 20260908210000_entry_reservations_rls. Covers every
+-- daali_* table that exists when this runs (this migration's and every earlier
+-- daali migration's), so a later phase also re-proves the earlier ones. If any
+-- has RLS off, or grants anything to PUBLIC, anon or authenticated, the whole
+-- migration rolls back.
+DO $$
+DECLARE
+  unprotected TEXT;
+  leaked      TEXT;
+BEGIN
+  SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO unprotected
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public'
+     AND c.relkind = 'r'
+     AND c.relname LIKE 'daali\_%'
+     AND c.relrowsecurity IS NOT TRUE;
+  IF unprotected IS NOT NULL THEN
+    RAISE EXCEPTION 'daali 0D.0 containment aborted: RLS disabled on %', unprotected;
+  END IF;
+
+  SELECT string_agg(DISTINCT format('%s/%s', table_name, grantee), ', ') INTO leaked
+    FROM information_schema.role_table_grants
+   WHERE table_schema = 'public'
+     AND table_name LIKE 'daali\_%'
+     AND grantee IN ('anon', 'authenticated', 'PUBLIC');
+  IF leaked IS NOT NULL THEN
+    RAISE EXCEPTION 'daali 0D.0 containment aborted: client grants remain on %', leaked;
+  END IF;
+END $$;
