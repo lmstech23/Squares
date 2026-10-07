@@ -107,15 +107,22 @@ GRANT ALL ON TABLE public."daali_events"              TO service_role;
 GRANT ALL ON TABLE public."daali_event_people"        TO service_role;
 GRANT ALL ON TABLE public."daali_command_executions"  TO service_role;
 
--- FAIL CLOSED. Modeled on 20260908210000_entry_reservations_rls. Covers every
--- daali_* table that exists when this runs (this migration's and every earlier
--- daali migration's), so a later phase also re-proves the earlier ones. If any
--- has RLS off, or grants anything to PUBLIC, anon or authenticated, the whole
--- migration rolls back.
+-- FAIL CLOSED. Modeled on 20260908210000_entry_reservations_rls, but reads the
+-- catalog directly rather than information_schema.role_table_grants, which
+-- only lists grants whose grantor or grantee is a role the CURRENT user holds,
+-- and so can miss a grant made by some other role. Covers every daali_* table
+-- that exists when this runs (this migration's and every earlier daali
+-- migration's), so a later phase also re-proves the earlier ones. Any finding
+-- rolls the whole migration back:
+--   1. RLS off;
+--   2. anon or authenticated holds any table privilege, by any route
+--      (direct grant, PUBLIC, or role membership) - has_table_privilege;
+--   3. any ACL entry granted to PUBLIC (grantee 0) - aclexplode(relacl).
 DO $$
 DECLARE
   unprotected TEXT;
-  leaked      TEXT;
+  exposed     TEXT;
+  to_public   TEXT;
 BEGIN
   SELECT string_agg(c.relname, ', ' ORDER BY c.relname) INTO unprotected
     FROM pg_class c
@@ -128,12 +135,30 @@ BEGIN
     RAISE EXCEPTION 'daali 0A containment aborted: RLS disabled on %', unprotected;
   END IF;
 
-  SELECT string_agg(DISTINCT format('%s/%s', table_name, grantee), ', ') INTO leaked
-    FROM information_schema.role_table_grants
-   WHERE table_schema = 'public'
-     AND table_name LIKE 'daali\_%'
-     AND grantee IN ('anon', 'authenticated', 'PUBLIC');
-  IF leaked IS NOT NULL THEN
-    RAISE EXCEPTION 'daali 0A containment aborted: client grants remain on %', leaked;
+  SELECT string_agg(format('%s/%s/%s', c.relname, r.role, p.priv), ', '
+                    ORDER BY c.relname, r.role, p.priv) INTO exposed
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN (VALUES ('anon'), ('authenticated')) AS r(role)
+   CROSS JOIN (VALUES ('SELECT'), ('INSERT'), ('UPDATE'), ('DELETE'),
+                      ('TRUNCATE'), ('REFERENCES'), ('TRIGGER')) AS p(priv)
+   WHERE n.nspname = 'public'
+     AND c.relkind = 'r'
+     AND c.relname LIKE 'daali\_%'
+     AND has_table_privilege(r.role, c.oid, p.priv);
+  IF exposed IS NOT NULL THEN
+    RAISE EXCEPTION 'daali 0A containment aborted: client privileges on %', exposed;
+  END IF;
+
+  SELECT string_agg(DISTINCT c.relname, ', ') INTO to_public
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   CROSS JOIN LATERAL aclexplode(c.relacl) AS a
+   WHERE n.nspname = 'public'
+     AND c.relkind = 'r'
+     AND c.relname LIKE 'daali\_%'
+     AND a.grantee = 0;
+  IF to_public IS NOT NULL THEN
+    RAISE EXCEPTION 'daali 0A containment aborted: PUBLIC grant on %', to_public;
   END IF;
 END $$;
