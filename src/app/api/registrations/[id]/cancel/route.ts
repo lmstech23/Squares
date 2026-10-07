@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma'
 import { cancelRegistration } from '@/commands/registrations'
 import { hashToken } from '@/lib/accessToken'
-import { humanOrganizerActor } from '@/lib/currentOrganizer'
+import { humanOrganizerActor } from '@/lib/commands/organizerActor'
 import { toResponse, idempotencyKeyFrom } from '@/lib/httpResult'
 import type { ActorContext } from '@/lib/commands/types'
 

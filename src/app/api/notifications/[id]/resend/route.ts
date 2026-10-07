@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { deliverNotification } from '@/notifications/deliver'
-import { currentOrganizerUserId } from '@/lib/currentOrganizer'
+import { currentOrganizerUserId } from '@/lib/commands/organizerActor'
 import { NextResponse } from 'next/server'
 import { unauthenticated } from '@/lib/httpResult'
 
