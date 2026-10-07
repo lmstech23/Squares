@@ -1,61 +1,62 @@
-import { describe, it, expect } from 'vitest'
-import { isPubliclyVisible, acceptsRegistrations, canTransition, publicStateCopy } from '../src/domain/eventStatus'
-import { resolveIdentityKey, isPlausibleEmail } from '../src/domain/identity'
-import { slugifyTitle, candidateSlug } from '../src/domain/slug'
-import { validateEventDraft } from '../src/domain/eventValidation'
-import { canonicalize, hashInput } from '../src/lib/commands/canonical'
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { isPubliclyVisible, acceptsRegistrations, canTransition, publicStateCopy } from './eventStatus.ts'
+import { resolveIdentityKey, isPlausibleEmail } from './identity.ts'
+import { slugifyTitle, candidateSlug } from './slug.ts'
+import { validateEventDraft } from './eventValidation.ts'
+import { canonicalize, hashInput } from '../lib/commands/canonical.ts'
 
 describe('event status — allowlist behaviour [R1]', () => {
   it('drafts are not public', () => {
-    expect(isPubliclyVisible('DRAFT')).toBe(false)
-    expect(isPubliclyVisible('PUBLISHED')).toBe(true)
-    expect(isPubliclyVisible('CLOSED')).toBe(true)
+    assert.equal(isPubliclyVisible('DRAFT'), false)
+    assert.equal(isPubliclyVisible('PUBLISHED'), true)
+    assert.equal(isPubliclyVisible('CLOSED'), true)
   })
 
   it('closed keeps the URL alive but stops registration', () => {
-    expect(isPubliclyVisible('CLOSED')).toBe(true)
-    expect(acceptsRegistrations('CLOSED')).toBe(false)
+    assert.equal(isPubliclyVisible('CLOSED'), true)
+    assert.equal(acceptsRegistrations('CLOSED'), false)
   })
 
   it('closed has its own sentence, so CANCELLED can have a different one', () => {
-    expect(publicStateCopy('PUBLISHED').headline).toBeNull()
-    expect(publicStateCopy('CLOSED').headline).toBe('Registration is closed.')
+    assert.equal(publicStateCopy('PUBLISHED').headline, null)
+    assert.equal(publicStateCopy('CLOSED').headline, 'Registration is closed.')
   })
 
   it('transitions are one-way through the lifecycle', () => {
-    expect(canTransition('DRAFT', 'PUBLISHED')).toBe(true)
-    expect(canTransition('PUBLISHED', 'CLOSED')).toBe(true)
-    expect(canTransition('PUBLISHED', 'DRAFT')).toBe(false)
-    expect(canTransition('CLOSED', 'PUBLISHED')).toBe(false)
+    assert.equal(canTransition('DRAFT', 'PUBLISHED'), true)
+    assert.equal(canTransition('PUBLISHED', 'CLOSED'), true)
+    assert.equal(canTransition('PUBLISHED', 'DRAFT'), false)
+    assert.equal(canTransition('CLOSED', 'PUBLISHED'), false)
   })
 })
 
 describe('identity normalization', () => {
   it('collapses case and whitespace to one key', () => {
-    expect(resolveIdentityKey('Sarah@Example.com ')).toBe('sarah@example.com')
-    expect(resolveIdentityKey('  SARAH@EXAMPLE.COM')).toBe(resolveIdentityKey('sarah@example.com'))
+    assert.equal(resolveIdentityKey('Sarah@Example.com '), 'sarah@example.com')
+    assert.equal(resolveIdentityKey('  SARAH@EXAMPLE.COM'), resolveIdentityKey('sarah@example.com'))
   })
   it('rejects obvious non-addresses', () => {
-    expect(isPlausibleEmail('sarah@example.com')).toBe(true)
-    expect(isPlausibleEmail('sarah')).toBe(false)
-    expect(isPlausibleEmail('')).toBe(false)
+    assert.equal(isPlausibleEmail('sarah@example.com'), true)
+    assert.equal(isPlausibleEmail('sarah'), false)
+    assert.equal(isPlausibleEmail(''), false)
   })
 })
 
 describe('slug', () => {
   it('strips accents and punctuation', () => {
-    expect(slugifyTitle('Hampton Parent Tailgate 2026!')).toBe('hampton-parent-tailgate-2026')
-    expect(slugifyTitle('Café Night')).toBe('cafe-night')
+    assert.equal(slugifyTitle('Hampton Parent Tailgate 2026!'), 'hampton-parent-tailgate-2026')
+    assert.equal(slugifyTitle('Café Night'), 'cafe-night')
   })
   it('never produces an empty or trailing-dash base', () => {
-    expect(slugifyTitle('!!!')).toBe('event')
-    expect(slugifyTitle('a')).toBe('event')
+    assert.equal(slugifyTitle('!!!'), 'event')
+    assert.equal(slugifyTitle('a'), 'event')
   })
   it('appends a suffix so two identical titles do not collide', () => {
     const a = candidateSlug('Spring Field Day')
     const b = candidateSlug('Spring Field Day')
-    expect(a).not.toBe(b)
-    expect(a.startsWith('spring-field-day-')).toBe(true)
+    assert.notEqual(a, b)
+    assert.equal(a.startsWith('spring-field-day-'), true)
   })
 })
 
@@ -65,31 +66,31 @@ describe('validation', () => {
       title: 'Field Day', timezone: 'America/New_York',
       startsAt: new Date('2026-04-11T14:00:00Z'), endsAt: new Date('2026-04-11T13:00:00Z'),
     })
-    expect(errs.some((e) => e.field === 'endsAt')).toBe(true)
+    assert.equal(errs.some((e) => e.field === 'endsAt'), true)
   })
   it('rejects a bogus timezone', () => {
-    expect(validateEventDraft({ timezone: 'Mars/Olympus' }).some((e) => e.field === 'timezone')).toBe(true)
-    expect(validateEventDraft({ timezone: 'America/New_York' })).toEqual([])
+    assert.equal(validateEventDraft({ timezone: 'Mars/Olympus' }).some((e) => e.field === 'timezone'), true)
+    assert.deepEqual(validateEventDraft({ timezone: 'America/New_York' }), [])
   })
   it('rejects fractional or zero capacity', () => {
-    expect(validateEventDraft({ capacity: 0 }).length).toBe(1)
-    expect(validateEventDraft({ capacity: 2.5 }).length).toBe(1)
-    expect(validateEventDraft({ capacity: null })).toEqual([])
+    assert.equal(validateEventDraft({ capacity: 0 }).length, 1)
+    assert.equal(validateEventDraft({ capacity: 2.5 }).length, 1)
+    assert.deepEqual(validateEventDraft({ capacity: null }), [])
   })
 })
 
 describe('canonical input hashing [R4]', () => {
   it('is stable across key order', () => {
-    expect(hashInput({ a: 1, b: 2 })).toBe(hashInput({ b: 2, a: 1 }))
+    assert.equal(hashInput({ a: 1, b: 2 }), hashInput({ b: 2, a: 1 }))
   })
   it('treats undefined and absent as the same input', () => {
-    expect(hashInput({ a: 1, b: undefined })).toBe(hashInput({ a: 1 }))
+    assert.equal(hashInput({ a: 1, b: undefined }), hashInput({ a: 1 }))
   })
   it('distinguishes genuinely different input', () => {
-    expect(hashInput({ title: 'Field Day' })).not.toBe(hashInput({ title: 'Field Night' }))
+    assert.notEqual(hashInput({ title: 'Field Day' }), hashInput({ title: 'Field Night' }))
   })
   it('serializes dates stably', () => {
     const d = new Date('2026-04-11T14:00:00Z')
-    expect(canonicalize({ startsAt: d })).toBe('{"startsAt":"2026-04-11T14:00:00.000Z"}')
+    assert.equal(canonicalize({ startsAt: d }), '{"startsAt":"2026-04-11T14:00:00.000Z"}')
   })
 })
