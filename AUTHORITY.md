@@ -10,6 +10,8 @@
 | Standalone Fundraiser | Its dedicated architecture spec, once approved |
 | Standalone Raffle | Its dedicated architecture spec, once approved |
 
+The Event Path Gate Independence Spec is at `docs/phase0/event-path-gate-independence.md`.
+
 The repo is implementation evidence, not product authority.
 
 If two governing specs genuinely conflict, stop and surface the conflict.

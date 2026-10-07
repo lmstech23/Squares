@@ -84,6 +84,15 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # EVENT PATH ISOLATION. scripts/check-event-isolation.sh is the static guard
+      # for RULE E2 (docs/phase0/event-path-gate-independence.md), extended at the
+      # Event port: no Board, Host, credit or Stripe references on the Event
+      # path, no legacy model accessors, no Prisma writes outside the command
+      # layer, and nothing added under or imported from src/app/host. A grep,
+      # so it needs no database and no secrets.
+      - name: Event path isolation
+        run: npm run check:event-isolation
+
       # `tee` would swallow the exit code without pipefail, turning every test
       # failure into a green run — which is precisely the class of silent pass
       # this workflow exists to prevent.
@@ -157,8 +166,3 @@ jobs:
           else
             echo "All tests ran; nothing skipped." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      # NOT ADDED YET, DELIBERATELY. `scripts/check-event-isolation.sh` ships
-      # with the Event package, which has not landed in this repository. Wiring
-      # it in belongs to that change, not this one — a CI step that calls a
-      # missing script is a red build that teaches people to ignore red builds.
