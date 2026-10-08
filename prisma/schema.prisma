@@ -1532,3 +1532,22 @@ model PublicTheme {
 
   @@map("public_themes")
 }
+
+/// One profile per Supabase auth user — Daali Slice 1 (Auth + Onboarding).
+///
+/// user_id is the Supabase auth user id, held as TEXT with NO foreign key into
+/// auth.users, matching hosts.supabase_user_id and public_themes.organizer_user_id
+/// (ruling, 2026-10-08). A profile does not require, and never creates, a hosts row.
+///
+/// CHECK (created_via IN ('SIGNUP', 'BACKFILL')) lives in SQL only.
+model OrganizerProfile {
+  userId              String   @id(map: "organizer_profiles_pkey") @map("user_id")
+  displayName         String?  @map("display_name")
+  avatarUrl           String?  @map("avatar_url")
+  legacyBoardsVisible Boolean  @default(false) @map("legacy_boards_visible")
+  createdVia          String   @map("created_via")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("organizer_profiles")
+}
