@@ -26,6 +26,14 @@
   font-size: var(--daali-text-body);
 }
 
+/* 16px at mobile widths: iOS Safari zooms the page on focus for anything
+ * smaller. 15px, as drawn, above. */
+@media (max-width: 767px) {
+  .input {
+    font-size: 16px;
+  }
+}
+
 .input::placeholder {
   color: var(--daali-muted);
   opacity: 1;
