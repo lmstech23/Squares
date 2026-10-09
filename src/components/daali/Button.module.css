@@ -1,0 +1,70 @@
+/* Button — UI System 1.0 "Buttons & states" and 1.0 extension "Buttons & actions".
+ * 48px controls; primary is warm, secondary stays quiet; text actions keep a
+ * 48px touch target. Pill shape as drawn on both boards. */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--daali-space-8);
+  min-height: var(--daali-control-height);
+  padding: 0 22px;
+  border: 1px solid transparent;
+  border-radius: var(--daali-radius-pill);
+  font-family: var(--daali-font-body);
+  font-size: var(--daali-text-body);
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.button:focus-visible {
+  outline: var(--daali-focus-ring);
+  outline-offset: 0;
+}
+
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--daali-accent);
+  color: var(--daali-on-accent);
+}
+.primary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--daali-accent-strong);
+}
+/* The ring is the accent colour, so on an accent fill it needs air to be seen. */
+.primary:focus-visible {
+  outline-offset: 2px;
+}
+
+.secondary {
+  background: var(--daali-surface);
+  border-color: var(--daali-line-strong);
+  color: var(--daali-ink);
+}
+.secondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--daali-accent-wash);
+}
+
+.text {
+  padding: 0 var(--daali-space-8);
+  background: transparent;
+  color: var(--daali-accent);
+}
+.text:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--daali-accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fullWidth {
+  display: flex;
+  width: 100%;
+}

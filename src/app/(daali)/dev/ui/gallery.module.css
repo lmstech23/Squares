@@ -1,0 +1,172 @@
+/* Review-only layout for the dev component gallery. Not a component. */
+
+.intro {
+  margin: 0 0 var(--daali-space-48);
+}
+
+.eyebrow {
+  margin: 0 0 var(--daali-space-8);
+  color: var(--daali-accent);
+  font-size: var(--daali-text-body);
+}
+
+.display {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-display);
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.lede {
+  margin: var(--daali-space-16) 0 0;
+  color: var(--daali-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--daali-space-24);
+  align-items: start;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 767px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--daali-space-24);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .swatches {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.swatch {
+  height: 58px;
+  border: 1px solid var(--daali-line);
+  border-radius: var(--daali-radius-control);
+}
+
+.swatchName {
+  margin-top: 8px;
+  font-size: var(--daali-text-small);
+}
+
+.swatchHex {
+  font-size: 11px;
+  color: var(--daali-muted);
+}
+
+.spaceRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: var(--daali-text-small);
+}
+
+.spaceBar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--daali-accent);
+}
+
+.radii {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 767px) {
+  .radii {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.radius {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--daali-text-small);
+}
+
+.radiusSample {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  background: var(--daali-accent-tint);
+}
+
+.h1 {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-h1);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.h2 {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-h2);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.h3 {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-h3);
+  font-weight: 600;
+}
+
+.bodyText {
+  margin: 0;
+  color: var(--daali-ink-soft);
+}
+
+.label {
+  margin: 0;
+  color: var(--daali-accent);
+  font-size: var(--daali-text-label);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.note {
+  margin: 0;
+  color: var(--daali-muted);
+  font-size: var(--daali-text-small);
+}
+
+.menuDemo {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--daali-space-8);
+  border: 1px dashed var(--daali-line);
+  border-radius: var(--daali-radius-input);
+}

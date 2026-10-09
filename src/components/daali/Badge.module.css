@@ -1,0 +1,30 @@
+/* Badge — UI System 1.0 "Chips, badges & status": 25px pill, 12px text,
+ * restrained colour. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 25px;
+  padding: 0 10px;
+  border-radius: var(--daali-radius-pill);
+  font-family: var(--daali-font-body);
+  font-size: var(--daali-text-label);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.type {
+  background: var(--daali-sunken);
+  color: var(--daali-ink-soft);
+}
+
+.live {
+  background: var(--daali-live-bg);
+  color: var(--daali-live-fg);
+}
+
+.draft {
+  background: var(--daali-draft-bg);
+  color: var(--daali-draft-fg);
+}
