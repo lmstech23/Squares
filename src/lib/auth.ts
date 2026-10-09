@@ -28,6 +28,11 @@ export async function getHostOrNull() {
 
   if (!user) return null;
 
+  // AN ANONYMOUS USER IS SIGNED OUT. Never resolved to a Host and never given
+  // one, so no row and no default credits (Auth + Onboarding spec, "Host
+  // creation guard"). Every caller already treats null as signed out.
+  if (user.is_anonymous) return null;
+
   let host = await prisma.host.findUnique({
     where: { supabaseUserId: user.id },
   });
