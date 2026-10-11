@@ -1,9 +1,10 @@
 // The ONE allowlist for a post-auth `next` — Daali Slice 1, S1.2.
 //
-// Used by the login page (through `safeReturnPath` in login-return.ts) and by
-// /auth/callback. Before this, the callback honoured any `next` at all; the
-// login page had its own invite-only pattern. One validator means one place to
-// add a destination and one place to get it wrong.
+// Used by the post-auth gate (post-auth-destination.ts), which /auth/callback
+// and every browser sign-in go through. Before this, the callback honoured any
+// `next` at all; the old login page had its own invite-only pattern. One
+// validator means one place to add a destination and one place to get it
+// wrong.
 //
 // AN OPEN REDIRECT IS THE CLASSIC BUG HERE, and the classic cause is a
 // validator that asks "does it start with a slash". `//evil.com` starts with a
@@ -18,8 +19,8 @@
 //     board list itself are NOT matched. Segments beneath it are plain word
 //     characters, so `.` and `..` can never appear.
 //   - /invite/<token> — the existing board-manager invite, base64url tokens.
-//   - /home — NOT YET. It joins the list in S1.6 when the page exists, together
-//     with its rule that /home requires a COMPLETE organizer state.
+//   - /home — Your Daali (S1.6). Its rule that /home requires a COMPLETE
+//     organizer state is the caller's (post-auth-destination.ts).
 //
 // No query string and no fragment: none of the allowed destinations takes one.
 //
@@ -29,6 +30,7 @@
 const ALLOWED: readonly RegExp[] = [
   /^\/host\/boards\/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?:\/[A-Za-z0-9_-]+)*$/,
   /^\/invite\/[A-Za-z0-9_-]{16,128}$/,
+  /^\/home$/,
 ];
 
 /**

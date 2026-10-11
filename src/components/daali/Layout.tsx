@@ -29,3 +29,28 @@ export function Divider({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+/** An accent eyebrow over a Lora display line — the page's h1. */
+export function PageHeading({ eyebrow, title }: { eyebrow?: ReactNode; title: ReactNode }) {
+  return (
+    <header className={styles.pageHeading}>
+      {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
+      <h1 className={styles.display}>{title}</h1>
+    </header>
+  );
+}
+
+/** A section's Lora h2, with an optional muted line under it. */
+export function SectionHeading({ title, subtitle }: { title: ReactNode; subtitle?: ReactNode }) {
+  return (
+    <div className={styles.sectionHeading}>
+      <h2 className={styles.sectionTitle}>{title}</h2>
+      {subtitle ? <p className={styles.sectionSubtitle}>{subtitle}</p> : null}
+    </div>
+  );
+}
+
+/** The organizer footer: "Organized with care by Daali." */
+export function OrganizerFooter() {
+  return <footer className={styles.footer}>Organized with care by Daali.</footer>;
+}

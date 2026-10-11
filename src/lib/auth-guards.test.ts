@@ -194,11 +194,11 @@ describe("/auth/callback", () => {
     for (const next of OFF_LIST) assert.equal(await hit(q(next)), `${ORIGIN}/setup`, `next=${next}`);
   });
 
-  test("complete: no next, or one off the allowlist, lands on today's default until /home exists", async () => {
+  test("complete: no next, or one off the allowlist, lands on /home (S1.6)", async () => {
     const done = "2026-10-10T00:00:00Z";
     exchange = { user: { id: "u1", email: "a@example.com", email_confirmed_at: done, phone_confirmed_at: done }, error: null };
     currentProfile = { displayName: "Pat" };
-    for (const next of OFF_LIST) assert.equal(await hit(q(next)), `${ORIGIN}/host/boards`, `next=${next}`);
+    for (const next of OFF_LIST) assert.equal(await hit(q(next)), `${ORIGIN}/home`, `next=${next}`);
   });
 
   test("a failed exchange goes to /sign-in?error=auth", async () => {

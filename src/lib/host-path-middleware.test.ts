@@ -54,6 +54,18 @@ describe("updateSession", () => {
     );
   });
 
+  test("/host goes to /home in the middleware, before the legacy layout can run (S1.6)", async () => {
+    currentUser = { id: "u1" };
+    assert.equal(await run("/host"), "https://beta.daali.app/home");
+    assert.equal(await run("/host?x=1"), "https://beta.daali.app/home");
+    assert.equal(await run("/host/boards"), null, "/host/boards itself still opens");
+  });
+
+  test("/home needs a signed-in user too (S1.6)", async () => {
+    assert.equal(await run("/home"), `https://beta.daali.app/sign-in?next=${encodeURIComponent("/home")}`);
+    assert.equal(await run("/homes"), null);
+  });
+
   test("/setup needs a signed-in user too (S1.5); its lookalikes do not", async () => {
     assert.equal(await run("/setup"), `https://beta.daali.app/sign-in?next=${encodeURIComponent("/setup")}`);
     assert.equal(await run("/setupX"), null);
@@ -76,6 +88,7 @@ describe("updateSession", () => {
   test("signed in passes through to /host/*", async () => {
     currentUser = { id: "u1" };
     assert.equal(await run("/host/boards"), null);
-    assert.equal(await run("/host"), null);
+    assert.equal(await run("/host/boards/abc"), null);
+    // /host itself is retired and redirects to /home (S1.6), tested above.
   });
 });

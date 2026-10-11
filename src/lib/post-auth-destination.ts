@@ -1,14 +1,18 @@
-// Where a person goes after signing in — Daali Slice 1, S1.5.
+// Where a person goes after signing in — Daali Slice 1, S1.5, with /home from
+// S1.6.
 //
 // Auth spec, "Post-auth gate and routing" and "Allowlisted next":
 //   - an allowlisted `next` under /host or /invite needs only a non-anonymous
 //     signed-in user, so an organizer mid-setup can still follow a link
-//     straight to their fundraiser;
+//     straight to their fundraiser or invitation;
+//   - a `next` of /home requires COMPLETE;
 //   - otherwise the organizer state decides:
-//       SIGNED_OUT                  /sign-in
+//       SIGNED_OUT                   /sign-in
 //       NO_PROFILE, SETUP_INCOMPLETE /setup
-//       COMPLETE                    today's default (/host/boards) until /home
-//                                   exists in S1.6
+//       COMPLETE                     /home
+//
+// No path here leads to /host/boards, /host/payment-setup or /host/stripe
+// (T16). Those pages still open for anyone who goes to them directly.
 //
 // NO_PROFILE goes to /setup too: a confirmed-email user never stays there
 // (finalize creates the row first), so what remains is an existing account
@@ -17,13 +21,14 @@
 // PURE. Both /auth/callback and completeSignIn use it.
 
 import { allowedNext } from "@/lib/next-path";
-import { DEFAULT_AFTER_LOGIN } from "@/lib/login-return";
 import type { OrganizerState } from "@/lib/organizer-state";
+
+/** Your Daali. Where a COMPLETE organizer lands when there is no allowlisted next. */
+export const HOME = "/home";
 
 export function postAuthDestination(state: OrganizerState, next: string | null | undefined): string {
   if (state === "SIGNED_OUT") return "/sign-in";
   const allowed = allowedNext(next);
   if (allowed && (allowed.startsWith("/host/") || allowed.startsWith("/invite/"))) return allowed;
-  if (state === "COMPLETE") return DEFAULT_AFTER_LOGIN;
-  return "/setup";
+  return state === "COMPLETE" ? HOME : "/setup";
 }

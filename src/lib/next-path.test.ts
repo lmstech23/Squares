@@ -22,6 +22,11 @@ describe("allowedNext: accepts", () => {
     }
   });
 
+  test("/home, exactly (S1.6; COMPLETE is the caller's rule)", () => {
+    assert.equal(allowedNext("/home"), "/home");
+    assert.equal(allowedNext("%2Fhome"), "/home");
+  });
+
   test("an invite path", () => {
     const p = `/invite/${TOKEN}`;
     assert.equal(allowedNext(p), p);
@@ -115,8 +120,7 @@ describe("allowedNext: rejects", () => {
       `/hostboards/${BOARD}`,
       `/board/${BOARD}`,
       "/login",
-      // Not yet: /home joins the allowlist in S1.6, when the page exists.
-      "/home",
+"/home/", "/home?x=1", "/homes",
       "/invite/short",
       "/invite/" + "a".repeat(200),
     ]) {
@@ -126,8 +130,12 @@ describe("allowedNext: rejects", () => {
 });
 
 describe("safeReturnPath uses the shared validator", () => {
-  test("an allowed path passes through; everything else is today's default", () => {
-    assert.equal(DEFAULT_AFTER_LOGIN, "/host/boards", "S1.2 keeps today's destination");
+  // safeReturnPath has had no caller since /login became a redirect (S1.4);
+  // routing goes through post-auth-destination.ts, whose fallback is /home.
+  // Its old constant is left as it was, so the origin/main invite tests that
+  // pin it stay unchanged.
+  test("an allowed path passes through; everything else is its legacy default", () => {
+    assert.equal(DEFAULT_AFTER_LOGIN, "/host/boards", "unchanged; no longer a routing destination");
     assert.equal(safeReturnPath(`/host/boards/${BOARD}`), `/host/boards/${BOARD}`);
     assert.equal(safeReturnPath(`/invite/${TOKEN}`), `/invite/${TOKEN}`);
     assert.equal(safeReturnPath("//evil.com"), DEFAULT_AFTER_LOGIN);

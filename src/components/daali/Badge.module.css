@@ -14,7 +14,8 @@
   white-space: nowrap;
 }
 
-.type {
+.type,
+.closed {
   background: var(--daali-sunken);
   color: var(--daali-ink-soft);
 }

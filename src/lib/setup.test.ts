@@ -25,9 +25,21 @@ describe("postAuthDestination: where each resolver state lands", () => {
     }
   });
 
-  test("COMPLETE lands on today's default until /home exists (S1.6)", () => {
-    assert.equal(postAuthDestination("COMPLETE", null), "/host/boards");
-    assert.equal(postAuthDestination("COMPLETE", "/setup"), "/host/boards");
+  test("COMPLETE lands on /home (S1.6), including when next is /home", () => {
+    assert.equal(postAuthDestination("COMPLETE", null), "/home");
+    assert.equal(postAuthDestination("COMPLETE", "/setup"), "/home");
+    assert.equal(postAuthDestination("COMPLETE", "/home"), "/home");
+    assert.equal(postAuthDestination("COMPLETE", "//evil.com"), "/home");
+  });
+
+  test("T16: no state and no next leads to a retired legacy destination", () => {
+    const nexts = [null, "/host", "/host/boards", "/host/boards/new", "/host/payment-setup", "/host/stripe", "/host/stripe/return", "/login", "/home", "/setup"];
+    for (const s of ["SIGNED_OUT", "NO_PROFILE", "SETUP_INCOMPLETE", "COMPLETE"] as const) {
+      for (const n of nexts) {
+        const d = postAuthDestination(s, n);
+        assert.ok(!d.startsWith("/host"), `${s} next=${n} -> ${d}`);
+      }
+    }
   });
 
   test("an allowlisted /host or /invite next is honoured for any signed-in state (T15, T18)", () => {
