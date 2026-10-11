@@ -1,9 +1,9 @@
 <!--
-IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (corrected Oct 11, 2026: Host creation guard withdrawn)
-Source: Claude Docs export, received as "daali-auth-onboarding-spec (2).md"
+IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (amended Oct 11, 2026: Game Day access by link)
+Source: Claude Docs export, received as "daali-auth-onboarding-spec (3).md"
 Export date: Oct 11, 2026
-sha256 of the received file: 1eb791d69c5e0e6189af090bd655b285908668a05b5ee8cf9d104e05117153cc
-Supersedes the copy imported in 2c49c25 (sha256 591ae5cd06c3245452eafa76b8d8a69d8e20d4f078fa32d79ff4a53cd50b86af).
+sha256 of the received file: f3b700d66de4833cb268b5e9f13df7c4848c24b8666320670ded0059b9578cb8
+Supersedes the copy imported in 2439fe2 (sha256 1eb791d69c5e0e6189af090bd655b285908668a05b5ee8cf9d104e05117153cc).
 Everything below this comment is that file, byte for byte; it has not been edited.
 Per CLAUDE.md ("If a spec is not in this repository, it is not authoritative"),
 this repository copy is now the authoritative version.
@@ -17,7 +17,7 @@ Oct 2, 2026 · @Daaliyah
 
 This spec replaces the Board-era sign-in with one passwordless Daali account system with open signup, moves the app from beta.daali.app to daali.app, and ships a minimal Your Daali for every signed-in organizer to land on.
 
-**In scope:** sign-in, open account creation through Get started, profile setup with phone verification, the post-auth gate, minimal Your Daali, the organizer-item read model, Legacy Boards visibility, and the domain move.
+**In scope:** sign-in, open account creation through Get started, profile setup with phone verification, the post-auth gate, minimal Your Daali, the organizer-item read model, Game Day access and the Legacy Boards entry, and the domain move.
 
 **Out of scope:** the standalone Fundraiser and Event roots, the creation flow behind "What are you organizing?", replacing the fundraiser management surface, and the landing page design (on the Daali Landing Page canvas).
 
@@ -45,7 +45,7 @@ These are settled and not open for reinterpretation during the build.
 | D8 | No Host, credit, payment preference or Stripe check participates in new Daali auth or routing. |
 | D9 | Organizer display name lives on an organizer profile, not on `Host`. |
 | D10 | Your Daali ships minimally with this work and lists existing fundraiser Boards as Fundraisers through a read-only read model. |
-| D11 | Seeing a fundraiser you own never requires `legacy_boards_visible`. The flag controls whether the Legacy Boards entry is shown; it becomes an authorization entitlement only when the Game Day check (L2) ships. |
+| D11 | Seeing a fundraiser you own never requires `legacy_boards_enabled`. The flag is the Game Day entitlement and controls the Legacy Boards entry (amended Oct 11). |
 | D12 | UI uses Organizer and Daali account, never Host or New Host. |
 | D13 | The app lives at daali.app. Every beta.daali.app URL permanently redirects to the same path on daali.app. |
 | D14 | daali.app is not advertised until every Launch readiness item is done. |
@@ -274,7 +274,7 @@ One new table carries this work, `organizer_profiles`. No existing table gains o
 | `user_id` | text, pk | Supabase user id. No foreign key, matching every other user-id column in the repo: no table references the `auth` schema, and the test database has none (amended Oct 8). |
 | `display_name` | text, null | "What should we call you?" Prefilled from Google; otherwise null until setup. |
 | `avatar_url` | text, null | From Google's picture when available. Otherwise initials are shown. |
-| `legacy_boards_visible` | boolean | Default `false`. Shows the Legacy Boards link. Becomes the Game Day entitlement when L2 ships (Legacy isolation). |
+| `legacy_boards_enabled` | boolean | Default `false`. The Game Day entitlement: allows creating Game Day boards and shows the Legacy Boards link. Granted by a Game Day access link or by the backfill (Game Day access). Renamed from `legacy_boards_visible` in S1.7 (Oct 11). |
 | `created_via` | text | `SIGNUP` or `BACKFILL`. |
 | `created_at`, `updated_at` | timestamptz |  |
 
@@ -284,7 +284,9 @@ The row's existence is what makes a Supabase user a Daali account. Phone and ema
 
 ### Backfill for existing users
 
-A one-time script creates an `organizer_profiles` row, `created_via = BACKFILL`, for each existing non-anonymous auth user. It copies `Host.name` into `display_name` where one exists, and sets `legacy_boards_visible = true` only for the account you name as the legacy tester.
+A one-time script creates an `organizer_profiles` row, `created_via = BACKFILL`, for each existing non-anonymous auth user. It copies `Host.name` into `display_name` where one exists, and sets `legacy_boards_enabled = true` for every account whose Host owns at least one Game Day board, so no current Game Day user loses access (2 accounts in production on Oct 11). No other account gets the flag from the backfill; everyone else receives Game Day through an access link (amended Oct 11).
+
+The Game Day part of the backfill runs once, at the L2 release, before the release is reachable by users. Rerunning it is safe: it only inserts `organizer_profiles` rows that are missing and never updates an existing row, so it cannot restore Game Day access an administrator removed and cannot clear access granted by a link. If it finds a Game Day owner who already has a row without the flag, it changes nothing and reports the count, for the administrator to resolve with an access link (amended Oct 11).
 
 The script reads `hosts` and writes only `organizer_profiles`. Because production user counts are unverified, it runs in dry-run mode first and prints the list for your review.
 
@@ -299,10 +301,10 @@ Your Daali at `/home` lists everything an organizer runs as common organizer ite
 ### What ships on `/home`
 
 1. **Signed-in shell:** Daali wordmark on the left; organizer avatar, display name and "Organizer" on the right, opening a small menu: Organizer profile, Settings, Legacy Boards (entitled users only), Sign out. Visuals follow Daali UI System 1.0 (Lora headings, Inter body) as defined in the Product Flow Spec.
-2. **Greeting:** Hi, {display name}.
+2. **Greeting:** Hi, {first name}. The first word of the display name, per the Product Flow Spec, which governs `/home` content (aligned Oct 11).
 3. **Your items:** one card per organizer item, newest activity first. Each card shows the type chip (Fundraiser), title, status pill, last-updated date, **Manage**, and **View page** when there's a public URL.
 4. **What are you organizing?** The full home from the Product Flow Spec in every state: AI card, organizer type cards, then Your organizing or its empty state. Only organizer types whose creation flow is live in production are shown. No Coming soon, no dead-end action, and Fundraiser never falls back to legacy Board creation.
-5. **Legacy Boards entry:** an item in the avatar menu, rendered only when `legacy_boards_visible` is true. It opens the existing Board list and is never presented as an organizer type.
+5. **Legacy Boards entry:** an item in the avatar menu, rendered only when `legacy_boards_enabled` is true. It opens the existing Board list and is never presented as an organizer type.
 
 No copy on `/home` says Board, Game Day, squares, credits or Host, except the Legacy Boards link itself for entitled users.
 
@@ -344,7 +346,7 @@ Game Day boards (`boardType = 'game'`) are never projected. They're reachable on
 ### Rules for the bridge
 
 - **Read-only.** The provider runs selects only. It never writes, migrates, backfills or touches a Board, square, contribution or Host.
-- **Owning is enough.** A fundraiser owner sees it whether or not they have `legacy_boards_visible`.
+- **Owning is enough.** A fundraiser owner sees it whether or not they have `legacy_boards_enabled`.
 - **Management is unchanged.** **Manage** goes to the existing `/host/boards/[id]` surface until that surface is replaced separately.
 - **Replaceable.** When the Fundraiser root exists, a `fundraiserProvider` is registered and `legacyFundraiserProvider` is retired. The item shape and `/home` stay the same.
 - **Unknown statuses** are omitted from the list and raise an error event in monitoring. Known statuses map only as the table above shows. An unrecognized state is never shown as CLOSED or as any other status, because the provider doesn't know what it means.
@@ -368,18 +370,32 @@ The upsert in `auth/callback/route.ts:19` is removed. The callback resolves iden
 ### What stays exactly as it is
 
 - `boardCreationGate`, `/host/payment-setup`, `/host/stripe`, `/host/stripe/return`, and the Connect Stripe banner
-- `POST /api/boards` and every Board, square, contribution, tender, payout and credit write
+- `POST /api/boards`, except the Game Day entitlement check defined in L2, and every Board, square, contribution, tender, payout and credit write
 - Board Credits: removed from the product on Sep 16 (`f7b472c`). The inert `board_credits` column, the dead `credit_purchase` webhook branch and the historical `credit_transactions` table are left as they are; finishing that cleanup is a separate legacy change.
 - Board-manager invites (`/invite/[token]`, `acceptInvite`)
 - Public board pages, `organizerAttribution`, and cron jobs
 
 None of these is reached as part of auth.
 
-### Legacy Boards visibility
+### Game Day access (amended Oct 11)
 
-`legacy_boards_visible` on `organizer_profiles` controls whether `/home` shows the Legacy Boards link to the existing Board list. On its own, that is navigation visibility, not authorization: a user without it can still open Board URLs directly.
+Game Day is part of Daali but is never advertised: it does not appear on the landing page, `/home`, sign-up or any organizer type list. It is available on request, through a link only Daali's administrator creates.
 
-The Game Day check (L2) makes it real. `POST /api/boards` rejects `boardType = 'game'` for users without the flag, and the board-type picker on `/host/boards/new` hides Game Day for them. In the same change the flag is renamed `legacy_boards_enabled`, so its name matches what it does. This is a Board write-path change, so it ships as its own reviewed change, before launch.
+`legacy_boards_enabled` on `organizer_profiles` is the entitlement. It allows creating Game Day boards and shows the Legacy Boards item in the avatar menu.
+
+**Enforcement (L2).** `POST /api/boards` rejects a board whose type resolves to `game` with 403 for accounts without the flag, and the board-type picker on `/host/boards/new` hides Game Day for them. The route treats a missing or unknown `boardType` as `game`; the check applies to that resolved type, and the default itself does not change. An account with no `organizer_profiles` row is treated as not entitled, so the production backfill must run before this ships. Existing Game Day boards, their public pages, their management and their payments stay exactly as they are. This is a Board write-path change and ships as its own reviewed commit.
+
+**Access links.**
+
+- **Created by the administrator only,** from a private page at `/admin/game-day`. Administrators are listed by Supabase user id in server configuration; the page is 404 to everyone else and never reads `hosts`.
+- **One person, one use.** Each link is a random token; only its hash is stored. It works once and expires after 14 days if unused. The full link is shown once, when created, for the administrator to copy and send by any channel.
+- **Redeeming.** The link opens `/gameday/[token]`. A signed-out visitor goes to `/sign-in?next=/gameday/[token]` and can create an account from there. A signed-in, non-anonymous account sees "Add Game Day to your Daali account" with one button; nothing happens on page load, because link scanners open links. Pressing it sets `legacy_boards_enabled = true` and marks the link used, in one transaction that succeeds only if the link is unused, unrevoked and unexpired. It then opens `/host/boards/new`. A used, expired or revoked link shows "This Game Day link can't be used. Ask the person who sent it for a new one." An account that already has access is sent straight to `/host/boards/new` and the link stays unused.
+- **Administrator view.** Lists links with status (unused, used by whom and when, expired, revoked), revokes unused links, and removes Game Day access from an account. Removing access stops new Game Day boards; that account's existing boards are untouched.
+- `/gameday/[token]` joins the allowlisted `next` paths and works whether or not setup is complete, like invites. `gameday` joins the vanity-path reserved words.
+
+Every server action and endpoint that creates, lists or revokes access links, or removes Game Day access, checks on its own that the signed-in user is in `DAALI_ADMIN_USER_IDS`; protecting the page is not enough. Redeeming and revoking the same link are mutually exclusive: each is a single conditional update on an unused, unrevoked link, so whichever lands first wins. A revoked link grants nothing; a redeemed link is used and can no longer be revoked as unused (amended Oct 11).
+
+Data: `daali_game_day_links` — id, `token_hash` (unique), `created_by_user_id`, `created_at`, `expires_at`, `used_by_user_id`, `used_at`, `revoked_at` — with the same containment as other Daali tables. The flag rename and this table are one migration.
 
 ## Configuration prerequisites
 
@@ -495,10 +511,20 @@ The work is done when every test below passes on dev, and the gate and isolation
 
 ### Your Daali
 
-- [ ] T21. A fundraiser owner without `legacy_boards_visible` sees their fundraiser on `/home` as a Fundraiser, and **Manage** opens the existing surface.
+- [ ] T21. A fundraiser owner without `legacy_boards_enabled` sees their fundraiser on `/home` as a Fundraiser, and **Manage** opens the existing surface.
 - [ ] T22. Game Day boards never appear as items; the Legacy Boards link appears only with the flag.
-- [ ] T23. Rendering `/home` issues no writes; row counts and `updated_at` on boards are unchanged.
+- [ ] T23. Rendering `/home` issues no writes and creates no Host; board row counts and a hash of every board row's content are unchanged (boards have no `updated_at` column; amended Oct 11).
 - [ ] T24. `/home` contains no Board, Game Day, squares, credits or Host wording for a user without the flag.
+
+  T29. Without `legacy_boards_enabled`, `POST /api/boards` with `boardType = 'game'` returns 403 and creates nothing, and the `/host/boards/new` picker offers no Game Day option; an account with no profile row is refused the same way. With the flag, Game Day creation behaves exactly as today. Fundraiser creation, existing Game Day boards and their management are unchanged.
+
+  T30. A Game Day link redeemed by a signed-out new person: the link survives sign-in, account creation, email confirmation and every setup step, the confirm page appears, and pressing it grants access and opens `/host/boards/new`. Opening the link does nothing until the button is pressed.
+
+  T31. A used, expired or revoked link grants nothing and shows its message; two accounts redeeming one link at once, exactly one succeeds; a redemption racing the administrator's revocation of the same link, exactly one wins (revocation first: no access granted; redemption first: the link is used and cannot be revoked as unused); an account that already has access leaves the link unused.
+
+  T32. `/admin/game-day` returns 404 for anyone not listed as an administrator, and each create, list, revoke and remove-access action or endpoint refuses a non-administrator called directly; the full link is shown once and only its hash is stored; revoking and removing access work. After access is removed, both the picker and `POST /api/boards` refuse new Game Day boards, while that account's existing boards, their management, public pages and payments keep working.
+
+  T33. The backfill grants the flag to exactly the accounts that own a Game Day board and to no one else; a rerun changes nothing, does not restore access an administrator removed and does not clear access granted by a link.
 
 ## Moving to daali.app
 
@@ -540,7 +566,7 @@ daali.app is not advertised until every item here is done. Signup works from the
 | # | Blocker | Why |
 | --- | --- | --- |
 | L1 | This spec complete, with every acceptance test passing on production | The account system is the front door |
-| L2 | Game Day check: `POST /api/boards` and the `/host/boards/new` picker refuse Game Day for users without the flag, and the flag becomes `legacy_boards_enabled` | With open signup, any new account could otherwise create a squares board by URL |
+| L2 | Game Day check: `POST /api/boards` and the `/host/boards/new` picker refuse Game Day without `legacy_boards_enabled`; access is granted only by administrator-created single-use links or the backfill (Game Day access) | With open signup, any new account could otherwise create a squares board by URL |
 | L3 | Domain move done and verified (M1 to M4) | Advertising should point at the final address |
 | L4 | Every organizer type shown on `/home` leads to a live creation flow; types not yet buildable are hidden, never Coming soon (O3) | A new organizer's first tap can't be a dead end |
 | L5 | The landing page only shows what works | It currently shows events, volunteers and raffles; each must exist at launch or come off the page |
@@ -571,7 +597,7 @@ Each step is its own commit with a report before the next one starts.
 | # | Item | Needed by |
 | --- | --- | --- |
 | O1 | Production dashboard: linking toggles, configured hooks, email templates, redirect allowlist, Twilio Verify service and Fraud Guard, auth user counts by provider | Step 1 |
-| O2 | Which account is the legacy tester, so the backfill can set `legacy_boards_visible` | Step 3 |
+| O2 | Resolved Oct 11: there is no single legacy tester. The backfill grants Game Day to every account that owns a Game Day board; anyone else, including the administrator's own account, gets it through an access link. | Step 3 |
 | O3 | Resolved Oct 4: "What are you organizing?" shows only organizer types whose creation flow is live in production. Start a fundraiser never opens or falls back to legacy Board creation, Event is never shown as Coming soon, and Fundraiser and Raffle stay hidden until their standalone roots are buildable. Legacy Boards are reached only through the entitled-user Legacy Boards entry. Behavior is governed by the Daali Product Flow Spec. | Step 7 |
 | O4 | Every beta.daali.app reference: code, Supabase, Google, Stripe, Twilio, DNS and email sending | Step 1 |
 | O5 | Password signups: how many production users signed up with a password while `mailer_autoconfirm` was on (and whether they must re-verify before Google can link to them), and whether the `before-user-created` payload can identify a password signup so the hook can reject it | Step 9 |
