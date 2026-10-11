@@ -1,0 +1,42 @@
+/* Stack, Text and Divider — the spacing and copy primitives that keep page
+ * code free of styling. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.gap8 { gap: var(--daali-space-8); }
+.gap16 { gap: var(--daali-space-16); }
+.gap24 { gap: var(--daali-space-24); }
+.gap32 { gap: var(--daali-space-32); }
+
+.text {
+  margin: 0;
+  font-size: var(--daali-text-body);
+  color: var(--daali-ink-soft);
+}
+
+.small {
+  font-size: var(--daali-text-small);
+}
+
+.muted {
+  color: var(--daali-muted);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--daali-muted);
+  font-size: var(--daali-text-small);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--daali-line);
+}

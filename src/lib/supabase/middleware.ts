@@ -34,10 +34,13 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protect /host routes
-  if (!user && isHostPath(request.nextUrl.pathname)) {
+  // Protect /host routes. An anonymous user counts as signed out (Auth spec,
+  // "Where the gate runs"); `next` is checked against the allowlist where it
+  // is used, not here.
+  if ((!user || user.is_anonymous) && isHostPath(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/sign-in";
+    url.search = `?next=${encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)}`;
     return NextResponse.redirect(url);
   }
 

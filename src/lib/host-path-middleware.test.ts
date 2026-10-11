@@ -2,12 +2,12 @@ import { test, describe, mock, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 // The middleware's /host match, Daali Slice 1 S1.2: `/host` and `/host/...`
-// only, so it no longer catches `/hostX`. The login target is still /login;
-// /sign-in arrives in S1.4.
+// only, so it no longer catches `/hostX`. From S1.4 the target is
+// /sign-in?next=…, and an anonymous user counts as signed out.
 //
 // `@supabase/ssr` is mocked so updateSession runs without a Supabase project.
 
-let currentUser: { id: string } | null = null;
+let currentUser: { id: string; is_anonymous?: boolean } | null = null;
 
 mock.module("@supabase/ssr", {
   namedExports: {
@@ -44,10 +44,19 @@ describe("isHostPath", () => {
 });
 
 describe("updateSession", () => {
-  test("signed out on /host or /host/... goes to /login, as today", async () => {
+  test("signed out on /host or /host/... goes to /sign-in, carrying the path as next", async () => {
     for (const p of ["/host", "/host/boards", "/host/boards/abc"]) {
-      assert.equal(await run(p), "https://beta.daali.app/login", p);
+      assert.equal(await run(p), `https://beta.daali.app/sign-in?next=${encodeURIComponent(p)}`, p);
     }
+    assert.equal(
+      await run("/host/boards/abc?tab=x"),
+      `https://beta.daali.app/sign-in?next=${encodeURIComponent("/host/boards/abc?tab=x")}`
+    );
+  });
+
+  test("an anonymous user counts as signed out", async () => {
+    currentUser = { id: "anon", is_anonymous: true };
+    assert.equal(await run("/host/boards"), `https://beta.daali.app/sign-in?next=${encodeURIComponent("/host/boards")}`);
   });
 
   test("signed out on a /host lookalike is not redirected", async () => {

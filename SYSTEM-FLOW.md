@@ -44,7 +44,7 @@ This is the single source of truth for how **Game Day** works. Every screen, eve
 4. Taps "Send sign-in code"
 5. Receives OTP via SMS or email
 6. Enters 6-digit OTP
-7. System verifies OTP via `/api/auth/verify-otp`
+7. The page verifies the code with Supabase (`verifyOtp`) in the browser; there is no app verify route (`/api/auth/verify-otp` was removed as dead code in Daali Slice 1). Sign-in now lives at `/sign-in`, and `/login` permanently redirects there
 8. On success: Host record is created (upsert) with `boardCredits: 2`
 9. Redirect → `/host/boards`
 

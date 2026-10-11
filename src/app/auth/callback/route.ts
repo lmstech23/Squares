@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { finalizeOrganizerProfile } from "@/lib/finalize-organizer";
 import { DEFAULT_AFTER_LOGIN } from "@/lib/login-return";
 import { allowedNext } from "@/lib/next-path";
 
-// CREATES NOTHING IN `hosts`. It exchanges the code and redirects. A Host is
-// still created lazily by getHostOrNull the first time a legacy page needs one
+// CREATES NOTHING IN `hosts`. It exchanges the code, runs finalize (the
+// organizer_profiles row, insert-or-nothing) and redirects. A Host is still
+// created lazily by getHostOrNull the first time a legacy page needs one
 // (Auth + Onboarding spec, "Host creation guard").
 //
 // `next` goes through the shared allowlist; anything else lands on the same
-// default the login page uses.
+// default the sign-in screens use.
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
@@ -19,10 +21,11 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user) {
+      await finalizeOrganizerProfile(data.user);
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
 
-  // Auth failed — redirect to login with error hint
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  // Auth failed — redirect to sign-in with error hint
+  return NextResponse.redirect(`${origin}/sign-in?error=auth`);
 }

@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 //                  payload as before, which leaves boardCredits to the column
 //                  default of 2.
 //   /auth/callback creates nothing in hosts, and passes `next` through the
-//                  shared allowlist with today's fallback.
+//                  shared allowlist with today's fallback. From S1.4 it also
+//                  runs finalize — an organizer_profiles insert-or-nothing —
+//                  for a user with a confirmed email, and nothing else.
 //
 // NO DATABASE. `@/lib/supabase/server` and `@/lib/prisma` are mocked before
 // either module is imported. The real-database version of the Host guard is
@@ -21,6 +23,7 @@ type FakeUser = {
   email?: string;
   phone?: string;
   phone_confirmed_at?: string;
+  email_confirmed_at?: string;
   user_metadata?: Record<string, unknown>;
 };
 
@@ -43,6 +46,7 @@ const record = (model: string) =>
             const { create } = arg as { create: Record<string, unknown> };
             return { hostId: "h-new", ...create };
           }
+          if (model === "organizerProfile" && method === "createMany") return { count: 1 };
           throw new Error(`unexpected prisma.${model}.${method}`);
         };
       },
@@ -154,10 +158,20 @@ const hit = async (query: string) => {
 };
 
 describe("/auth/callback", () => {
-  test("creates nothing in hosts and touches no table", async () => {
+  test("creates nothing in hosts; without a confirmed email it touches no table", async () => {
     exchange = { user: { id: "u1", email: "a@example.com" }, error: null };
     await hit("?code=c");
     assert.deepEqual(calls, []);
+  });
+
+  test("finalize: a confirmed email gets an organizer_profiles insert-or-nothing, and nothing else", async () => {
+    exchange = { user: { id: "u1", email: "a@example.com", email_confirmed_at: "2026-10-10T00:00:00Z" }, error: null };
+    await hit("?code=c");
+    assert.deepEqual(calls.map((c) => c.op), ["organizerProfile.createMany"]);
+    assert.deepEqual(calls[0].arg, {
+      data: [{ userId: "u1", displayName: null, avatarUrl: null, createdVia: "SIGNUP" }],
+      skipDuplicates: true,
+    });
   });
 
   test("an allowlisted next is followed", async () => {
@@ -175,10 +189,10 @@ describe("/auth/callback", () => {
     }
   });
 
-  test("a failed exchange still goes to /login?error=auth", async () => {
+  test("a failed exchange goes to /sign-in?error=auth", async () => {
     exchange = { user: null, error: new Error("bad code") };
-    assert.equal(await hit("?code=c"), `${ORIGIN}/login?error=auth`);
-    assert.equal(await hit(""), `${ORIGIN}/login?error=auth`);
+    assert.equal(await hit("?code=c"), `${ORIGIN}/sign-in?error=auth`);
+    assert.equal(await hit(""), `${ORIGIN}/sign-in?error=auth`);
     assert.deepEqual(calls, []);
   });
 });
