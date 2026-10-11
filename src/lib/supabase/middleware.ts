@@ -6,6 +6,11 @@ export function isHostPath(pathname: string): boolean {
   return pathname === "/host" || pathname.startsWith("/host/");
 }
 
+/** Paths that need a signed-in, non-anonymous user: /host/… and /setup. */
+export function requiresSignIn(pathname: string): boolean {
+  return isHostPath(pathname) || pathname === "/setup";
+}
+
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -34,10 +39,10 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protect /host routes. An anonymous user counts as signed out (Auth spec,
+  // Protect /host routes and /setup. An anonymous user counts as signed out (Auth spec,
   // "Where the gate runs"); `next` is checked against the allowlist where it
   // is used, not here.
-  if ((!user || user.is_anonymous) && isHostPath(request.nextUrl.pathname)) {
+  if ((!user || user.is_anonymous) && requiresSignIn(request.nextUrl.pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     url.search = `?next=${encodeURIComponent(request.nextUrl.pathname + request.nextUrl.search)}`;

@@ -1,20 +1,18 @@
 "use server";
 
 // The server half of every sign-in that completes in the browser — Daali
-// Slice 1, S1.4.
+// Slice 1, S1.4, routed by the organizer state from S1.5.
 //
 // The Auth spec has the client call Supabase (signInWithOtp, verifyOtp), so
 // rate limits and, later, CAPTCHA tokens stay per browser. What must happen on
 // the server afterwards is the same for each of them: read the session the
-// browser just stored, run finalize, and say where to go next.
-//
-// WHERE TO GO, in S1.4: an allowlisted `next`, else today's default. The gate's
-// own destinations, /setup (S1.5) and /home (S1.6), do not exist yet, so the
-// organizer state does not change the destination in this step.
+// browser just stored, run finalize, and say where to go next
+// (post-auth-destination.ts).
 
 import { createClient } from "@/lib/supabase/server";
 import { finalizeOrganizerProfile } from "@/lib/finalize-organizer";
-import { safeReturnPath } from "@/lib/login-return";
+import { resolveOrganizerState } from "@/lib/organizer-state";
+import { postAuthDestination } from "@/lib/post-auth-destination";
 
 export async function completeSignIn(next: string | null): Promise<string> {
   const supabase = await createClient();
@@ -25,5 +23,5 @@ export async function completeSignIn(next: string | null): Promise<string> {
   if (!user || user.is_anonymous) return "/sign-in";
 
   await finalizeOrganizerProfile(user);
-  return safeReturnPath(next);
+  return postAuthDestination(await resolveOrganizerState(user), next);
 }

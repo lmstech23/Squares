@@ -23,8 +23,8 @@ import { completeSignIn } from "@/lib/complete-sign-in";
 const WRONG_CODE = "That code didn't work. Check it or send a new one.";
 const TRY_AGAIN = "Please try again.";
 
-export function useCooldown(seconds: number) {
-  const [left, setLeft] = useState(seconds);
+export function useCooldown(seconds: number, initial: number = seconds) {
+  const [left, setLeft] = useState(initial);
   useEffect(() => {
     if (left <= 0) return;
     const t = setTimeout(() => setLeft((n) => n - 1), 1000);
@@ -41,6 +41,18 @@ export type CodeStepProps = {
   resend: () => Promise<string | null>;
   next: string | null;
   autoContinue?: boolean;
+  /**
+   * What the code proves. Sign-in uses the defaults ("email", "sms"); /setup
+   * attaches a new address or number to the signed-in user ("email_change",
+   * "phone_change").
+   */
+  verifyType?: "email" | "sms" | "email_change" | "phone_change";
+  /** Seconds left before Resend, when resuming a code sent earlier. */
+  cooldownLeft?: number;
+  /** A text action under Resend, e.g. Change number. */
+  secondary?: { label: string; onClick: () => void };
+  /** Where to go once the code is verified. Defaults to the post-auth gate. */
+  onVerified?: () => void | Promise<void>;
 };
 
 export function displayPhone(e164: string): string {
@@ -53,11 +65,22 @@ async function finish(next: string | null) {
   window.location.assign(destination);
 }
 
-export function CodeStep({ channel, target, resend, next, autoContinue = false }: CodeStepProps) {
+export function CodeStep({
+  channel,
+  target,
+  resend,
+  next,
+  autoContinue = false,
+  verifyType,
+  cooldownLeft,
+  secondary,
+  onVerified,
+}: CodeStepProps) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const cooldown = useCooldown(channel === "email" ? 60 : 30);
+  const full = channel === "email" ? 60 : 30;
+  const cooldown = useCooldown(full, cooldownLeft ?? full);
 
   useEffect(() => {
     if (!autoContinue) return;
@@ -82,16 +105,18 @@ export function CodeStep({ channel, target, resend, next, autoContinue = false }
     setError(null);
     setBusy(true);
     const supabase = createClient();
+    const token = code.trim();
     const { error: err } =
       channel === "email"
-        ? await supabase.auth.verifyOtp({ email: target, token: code.trim(), type: "email" })
-        : await supabase.auth.verifyOtp({ phone: target, token: code.trim(), type: "sms" });
+        ? await supabase.auth.verifyOtp({ email: target, token, type: verifyType === "email_change" ? "email_change" : "email" })
+        : await supabase.auth.verifyOtp({ phone: target, token, type: verifyType === "phone_change" ? "phone_change" : "sms" });
     if (err) {
       setError(WRONG_CODE);
       setBusy(false);
       return;
     }
-    await finish(next);
+    if (onVerified) await onVerified();
+    else await finish(next);
   }
 
   async function onResend() {
@@ -123,6 +148,11 @@ export function CodeStep({ channel, target, resend, next, autoContinue = false }
         <Button variant="text" onClick={onResend} disabled={cooldown.left > 0}>
           {cooldown.left > 0 ? `Resend in ${cooldown.left}s` : "Resend"}
         </Button>
+        {secondary ? (
+          <Button variant="text" onClick={secondary.onClick}>
+            {secondary.label}
+          </Button>
+        ) : null}
       </Stack>
     </form>
   );

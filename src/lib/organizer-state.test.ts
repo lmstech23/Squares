@@ -46,10 +46,16 @@ mock.module("@/lib/auth", {
 const { resolveOrganizerState, organizerStateFor } = await import("./organizer-state.ts");
 
 const CONFIRMED = "2026-10-01T12:00:00Z";
-const user = (id: string, opts: { anonymous?: boolean; phoneConfirmedAt?: string | null } = {}) => ({
+// A confirmed email is the default (every new account has one); emailConfirmedAt: null
+// is an existing account created by phone with no email (amended Oct 10).
+const user = (
+  id: string,
+  opts: { anonymous?: boolean; phoneConfirmedAt?: string | null; emailConfirmedAt?: string | null } = {}
+) => ({
   id,
   is_anonymous: opts.anonymous ?? false,
   phone_confirmed_at: opts.phoneConfirmedAt === null ? undefined : opts.phoneConfirmedAt,
+  email_confirmed_at: opts.emailConfirmedAt === null ? undefined : (opts.emailConfirmedAt ?? CONFIRMED),
 });
 
 beforeEach(() => {
@@ -92,7 +98,15 @@ describe("resolveOrganizerState", () => {
     assert.equal(await resolveOrganizerState(user("u1")), "SETUP_INCOMPLETE");
   });
 
-  test("COMPLETE: a name and a confirmed phone", async () => {
+  test("SETUP_INCOMPLETE: no confirmed email (an existing phone-only account), even with a name and a phone", async () => {
+    profiles.set("u1", { displayName: "Daaliyah" });
+    assert.equal(
+      await resolveOrganizerState(user("u1", { phoneConfirmedAt: CONFIRMED, emailConfirmedAt: null })),
+      "SETUP_INCOMPLETE"
+    );
+  });
+
+  test("COMPLETE: a name, a confirmed phone and a confirmed email", async () => {
     profiles.set("u1", { displayName: "Daaliyah" });
     assert.equal(await resolveOrganizerState(user("u1", { phoneConfirmedAt: CONFIRMED })), "COMPLETE");
   });
@@ -114,5 +128,7 @@ describe("organizerStateFor (the decision table, no database)", () => {
     assert.equal(organizerStateFor(user("a"), named), "SETUP_INCOMPLETE");
     assert.equal(organizerStateFor(user("a", { phoneConfirmedAt: CONFIRMED }), { displayName: null }), "SETUP_INCOMPLETE");
     assert.equal(organizerStateFor(user("a", { phoneConfirmedAt: CONFIRMED }), named), "COMPLETE");
+    assert.equal(organizerStateFor(user("a", { phoneConfirmedAt: CONFIRMED, emailConfirmedAt: null }), named), "SETUP_INCOMPLETE");
+    assert.equal(organizerStateFor(user("a", { phoneConfirmedAt: CONFIRMED, emailConfirmedAt: null }), null), "NO_PROFILE");
   });
 });

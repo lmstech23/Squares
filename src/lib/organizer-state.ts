@@ -5,18 +5,20 @@
 //
 //   SIGNED_OUT        no user, or an anonymous user
 //   NO_PROFILE        signed in, no organizer_profiles row
-//   SETUP_INCOMPLETE  profile exists, but display_name is empty or the user's
-//                     phone_confirmed_at is null
-//   COMPLETE          profile with a name, and a confirmed phone
+//   SETUP_INCOMPLETE  profile exists, but display_name is empty, the user's
+//                     phone_confirmed_at is null, or the user's
+//                     email_confirmed_at is null (existing accounts created
+//                     without an email; amended Oct 10)
+//   COMPLETE          profile with a name, a confirmed phone and a confirmed
+//                     email
 //
 // IT READS ONLY THE SUPABASE USER AND organizer_profiles. Never `hosts`, never
 // getHost / getHostOrNull, credits, paymentPreference, Stripe fields or boards
-// (spec D8). Phone confirmation comes from the Supabase user, which is its
-// source of truth; organizer_profiles holds no phone.
+// (spec D8). Phone and email confirmation come from the Supabase user, which
+// is their source of truth; organizer_profiles holds neither.
 //
-// Nothing routes on this yet. /sign-in, /setup and /home arrive in S1.4–S1.6
-// and are where the states turn into redirects. Legacy /host/* pages are
-// deliberately NOT gated on it in this release.
+// Where each state goes after sign-in is post-auth-destination.ts. Legacy
+// /host/* pages are deliberately NOT gated on it in this release.
 
 import type { User } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
@@ -24,7 +26,7 @@ import { prisma } from "@/lib/prisma";
 export type OrganizerState = "SIGNED_OUT" | "NO_PROFILE" | "SETUP_INCOMPLETE" | "COMPLETE";
 
 /** The fields of the Supabase user the resolver reads, and nothing more. */
-export type OrganizerStateUser = Pick<User, "id" | "is_anonymous" | "phone_confirmed_at">;
+export type OrganizerStateUser = Pick<User, "id" | "is_anonymous" | "phone_confirmed_at" | "email_confirmed_at">;
 
 /** The fields of an organizer_profiles row the resolver reads. */
 export type OrganizerStateProfile = { displayName: string | null };
@@ -41,7 +43,8 @@ export function organizerStateFor(
   if (!profile) return "NO_PROFILE";
   const hasName = (profile.displayName?.trim() ?? "") !== "";
   const hasPhone = Boolean(user.phone_confirmed_at);
-  return hasName && hasPhone ? "COMPLETE" : "SETUP_INCOMPLETE";
+  const hasEmail = Boolean(user.email_confirmed_at);
+  return hasName && hasPhone && hasEmail ? "COMPLETE" : "SETUP_INCOMPLETE";
 }
 
 /** The organizer state for this Supabase user, reading organizer_profiles. */

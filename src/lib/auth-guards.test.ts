@@ -30,6 +30,8 @@ type FakeUser = {
 let currentUser: FakeUser | null = null;
 let exchange: { user: FakeUser | null; error: unknown } = { user: null, error: null };
 let existingHost: Record<string, unknown> | null = null;
+/** The organizer_profiles row the callback's gate reads (S1.5). */
+let currentProfile: { displayName: string | null } | null = null;
 /** Every Prisma call made, as "model.method" with its argument. */
 let calls: { op: string; arg: unknown }[] = [];
 
@@ -47,6 +49,7 @@ const record = (model: string) =>
             return { hostId: "h-new", ...create };
           }
           if (model === "organizerProfile" && method === "createMany") return { count: 1 };
+          if (model === "organizerProfile" && method === "findUnique") return currentProfile;
           throw new Error(`unexpected prisma.${model}.${method}`);
         };
       },
@@ -85,6 +88,7 @@ beforeEach(() => {
   currentUser = null;
   exchange = { user: null, error: null };
   existingHost = null;
+  currentProfile = null;
   calls = [];
 });
 
@@ -158,16 +162,16 @@ const hit = async (query: string) => {
 };
 
 describe("/auth/callback", () => {
-  test("creates nothing in hosts; without a confirmed email it touches no table", async () => {
+  test("creates nothing in hosts; without a confirmed email it writes nothing (it only reads the profile to route)", async () => {
     exchange = { user: { id: "u1", email: "a@example.com" }, error: null };
     await hit("?code=c");
-    assert.deepEqual(calls, []);
+    assert.deepEqual(calls.map((c) => c.op), ["organizerProfile.findUnique"]);
   });
 
   test("finalize: a confirmed email gets an organizer_profiles insert-or-nothing, and nothing else", async () => {
     exchange = { user: { id: "u1", email: "a@example.com", email_confirmed_at: "2026-10-10T00:00:00Z" }, error: null };
     await hit("?code=c");
-    assert.deepEqual(calls.map((c) => c.op), ["organizerProfile.createMany"]);
+    assert.deepEqual(calls.map((c) => c.op), ["organizerProfile.createMany", "organizerProfile.findUnique"]);
     assert.deepEqual(calls[0].arg, {
       data: [{ userId: "u1", displayName: null, avatarUrl: null, createdVia: "SIGNUP" }],
       skipDuplicates: true,
@@ -181,12 +185,20 @@ describe("/auth/callback", () => {
     assert.equal(await hit(`?code=c&next=${encodeURIComponent(invite)}`), `${ORIGIN}${invite}`);
   });
 
-  test("no next, or one off the allowlist, lands on today's default", async () => {
+  // S1.5: without an allowlisted next, the organizer state decides.
+  const OFF_LIST = [null, "//evil.com", "https://evil.com", "/\\evil.com", "%2f%2fevil.com", "/host/stripe", "/host/payment-setup", "/home", "/setup"];
+  const q = (next: string | null) => (next === null ? "?code=c" : `?code=c&next=${encodeURIComponent(next)}`);
+
+  test("setup incomplete: no next, or one off the allowlist, goes to /setup", async () => {
     exchange = { user: { id: "u1" }, error: null };
-    for (const next of [null, "//evil.com", "https://evil.com", "/\\evil.com", "%2f%2fevil.com", "/host/stripe", "/host/payment-setup", "/home"]) {
-      const q = next === null ? "?code=c" : `?code=c&next=${encodeURIComponent(next)}`;
-      assert.equal(await hit(q), `${ORIGIN}/host/boards`, `next=${next}`);
-    }
+    for (const next of OFF_LIST) assert.equal(await hit(q(next)), `${ORIGIN}/setup`, `next=${next}`);
+  });
+
+  test("complete: no next, or one off the allowlist, lands on today's default until /home exists", async () => {
+    const done = "2026-10-10T00:00:00Z";
+    exchange = { user: { id: "u1", email: "a@example.com", email_confirmed_at: done, phone_confirmed_at: done }, error: null };
+    currentProfile = { displayName: "Pat" };
+    for (const next of OFF_LIST) assert.equal(await hit(q(next)), `${ORIGIN}/host/boards`, `next=${next}`);
   });
 
   test("a failed exchange goes to /sign-in?error=auth", async () => {

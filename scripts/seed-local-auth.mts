@@ -14,6 +14,10 @@
 //   email-2  email only, no Host, no profile
 //   both-1   email and phone, no Host, no profile
 //
+// Collaborator grants across fixtures (S1.5): phone-2 is an active MANAGER on
+// email-1's fundraiser, and phone-3 on phone-2's — phone-only organizers who
+// own one Board and help run another.
+//
 // REFUSES ANY TARGET THAT IS NOT THIS MACHINE: the Supabase URL and the
 // database host must both be loopback. Re-running replaces the fixtures (each
 // is found by its email or phone and removed first, with its boards, grants,
@@ -54,6 +58,14 @@ export const FIXTURES: Fixture[] = [
   { key: "email-2", email: "no.name@example.com" },
   { key: "both-1", email: "both.methods@example.com", phone: "+15555550104" },
 ];
+
+/** [manager fixture, owning fixture]: the manager gets an active MANAGER grant on the owner's board. */
+const MANAGER_GRANTS: [string, string][] = [
+  ["phone-2", "email-1"],
+  ["phone-3", "phone-2"],
+];
+
+const fixture = (key: string): Fixture => FIXTURES.find((f) => f.key === key)!;
 
 const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 const db = new PrismaClient({ datasources: { db: { url: dbUrl } } });
@@ -122,6 +134,15 @@ try {
       });
     }
     console.log(`${f.key.padEnd(8)} ${userId}${f.host ? `  host+${f.host.board}` : ""}${f.profile ? "  profile" : ""}`);
+  }
+
+  for (const [manager, owner] of MANAGER_GRANTS) {
+    const host = await db.host.findFirstOrThrow({ where: { supabaseUserId: (await findUserId(fixture(manager)))! } });
+    const board = await db.board.findUniqueOrThrow({ where: { slug: `fixture-${owner}` } });
+    await db.boardCollaborator.create({
+      data: { boardId: board.boardId, hostId: host.id, role: "MANAGER", status: "active", acceptedAt: new Date() },
+    });
+    console.log(`${manager.padEnd(8)} MANAGER on fixture-${owner}`);
   }
 } finally {
   await db.$disconnect();

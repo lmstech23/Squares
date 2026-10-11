@@ -13,14 +13,23 @@ import { withNext } from "../../_auth/links";
 // spent by a scanner would leave the person with a dead link. verifyOtp runs
 // only when the button is pressed.
 
-export function ConfirmButton({ tokenHash, next }: { tokenHash: string | null; next: string | null }) {
+export function ConfirmButton({
+  tokenHash,
+  type,
+  next,
+}: {
+  tokenHash: string | null;
+  /** "email" for sign-in and sign-up links; "email_change" for adding an email at /setup. */
+  type: "email" | "email_change";
+  next: string | null;
+}) {
   const [expired, setExpired] = useState(!tokenHash);
   const [busy, setBusy] = useState(false);
 
   async function confirm() {
     if (!tokenHash) return;
     setBusy(true);
-    const { error } = await createClient().auth.verifyOtp({ token_hash: tokenHash, type: "email" });
+    const { error } = await createClient().auth.verifyOtp({ token_hash: tokenHash, type });
     if (error) {
       setExpired(true);
       setBusy(false);

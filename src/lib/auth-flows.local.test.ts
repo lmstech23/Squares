@@ -156,7 +156,9 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
   // A phone-only person who types an email on /sign-in is not recognised: no
   // account has that email. Sign-in itself creates nothing. If they then tap
   // "Create an account", the Get started link creates a SECOND, unrelated user.
-  // Email attachment for phone-only users is the pending S1.5 amendment.
+  // S1.5 (amended Oct 10) answers this two ways without changing it: the
+  // unknown-email state now offers "Use your number instead." (T28), and a
+  // phone-only account adds its email at /setup (T25).
   test("RECORD: a phone-only user entering an email on /sign-in — refused as unknown; 'Create an account' would make a second user", async () => {
     const theirEmail = unique("phone-only-person");
     const before = await userCount();

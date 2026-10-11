@@ -25,7 +25,7 @@ import { sendStartLink } from "../start/start-flow";
 //   - unknown phone: "Create an account" opens /start. Phone never creates.
 
 type Step =
-  | { at: "field" }
+  | { at: "field"; forPhone?: boolean }
   | { at: "email-code"; email: string; created: boolean }
   | { at: "phone-code"; phone: string }
   | { at: "unknown-email"; email: string }
@@ -133,6 +133,21 @@ export function SignInFlow({ next }: { next: string | null }) {
           <Button variant="text" onClick={() => setStep({ at: "field" })}>
             Try a different email or number
           </Button>
+          {/* T28 (amended Oct 10): an existing phone-only organizer reaches their
+              original account instead of creating a second one. */}
+          <Text size="small" muted>
+            Signed in with your phone number before?
+          </Text>
+          <Button
+            variant="text"
+            onClick={() => {
+              setValue("");
+              setError(null);
+              setStep({ at: "field", forPhone: true });
+            }}
+          >
+            Use your number instead.
+          </Button>
         </Stack>
       </AuthFrame>
     );
@@ -164,7 +179,9 @@ export function SignInFlow({ next }: { next: string | null }) {
             <TextField
               label="Email or mobile number"
               name="identifier"
-              autoComplete="username"
+              autoComplete={step.forPhone ? "tel" : "username"}
+              inputMode={step.forPhone ? "tel" : undefined}
+              autoFocus={step.forPhone}
               required
               value={value}
               onChange={(e) => setValue(e.target.value)}

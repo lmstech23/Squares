@@ -257,6 +257,15 @@ content_path = "./supabase/templates/magic_link.html"
 subject = "Confirm your Daali account"
 content_path = "./supabase/templates/confirmation.html"
 
+# Daali: the Change Email Address template, used when an existing phone-only
+# account adds its first email at /setup (Auth spec, "Existing accounts without
+# an email"). Same token_hash link to /auth/confirm, typed email_change, and the
+# same six-digit code. With no current address, {{ .Token }} is the code for the
+# new address; secure email change (double_confirm_changes) stays at its default.
+[auth.email.template.email_change]
+subject = "Confirm your email for Daali"
+content_path = "./supabase/templates/email_change.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"
@@ -275,7 +284,10 @@ content_path = "./supabase/templates/confirmation.html"
 # before-user-created hook; the tests here exercise the app-side guarantee.
 enable_signup = true
 # If enabled, users need to confirm their phone number before signing in.
-enable_confirmations = false
+# Daali: ON. With it off, Supabase autoconfirms phones: updateUser({ phone })
+# attaches the number at once with no code, so /setup's phone step would skip
+# verification entirely (found in S1.5). The hosted projects must match (O1).
+enable_confirmations = true
 # Template for sending OTP to users
 template = "Your code is {{ .Code }}"
 # Controls the minimum amount of time that must pass before sending another sms otp.
@@ -288,6 +300,10 @@ max_frequency = "5s"
 15555550102 = "102102"
 15555550103 = "103103"
 15555550104 = "104104"
+# Free numbers for attaching a phone at /setup (phone_change).
+15555550105 = "105105"
+15555550106 = "106106"
+15555550107 = "107107"
 15555550199 = "199199"
 
 # Configure logged in session timeouts.

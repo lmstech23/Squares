@@ -54,6 +54,13 @@ describe("updateSession", () => {
     );
   });
 
+  test("/setup needs a signed-in user too (S1.5); its lookalikes do not", async () => {
+    assert.equal(await run("/setup"), `https://beta.daali.app/sign-in?next=${encodeURIComponent("/setup")}`);
+    assert.equal(await run("/setupX"), null);
+    currentUser = { id: "u1" };
+    assert.equal(await run("/setup"), null);
+  });
+
   test("an anonymous user counts as signed out", async () => {
     currentUser = { id: "anon", is_anonymous: true };
     assert.equal(await run("/host/boards"), `https://beta.daali.app/sign-in?next=${encodeURIComponent("/host/boards")}`);
