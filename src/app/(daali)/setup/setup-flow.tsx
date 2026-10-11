@@ -11,6 +11,7 @@ import type { SetupStep } from "@/lib/setup-steps";
 import { createClient } from "@/lib/supabase/client";
 import { CodeStep, displayPhone, TRY_AGAIN } from "../_auth/code-step";
 import { confirmRedirect } from "../_auth/links";
+import { SignOutLink } from "../_auth/sign-out-link";
 
 // /setup — Daali Slice 1, S1.5. Auth spec, "Screen 3", "Screen 4" and
 // "Existing accounts without an email". Copy is the spec's, verbatim, except
@@ -37,6 +38,17 @@ const PHONE_INVALID = "Enter a mobile number."; // INTERIM
 const PHONE_TAKEN = "That number is already on another Daali account.";
 const SMS_FAILED = "We couldn't send a code to that number. Check it and try again.";
 const EMAIL_TAKEN = "That email is already on another Daali account.";
+const changeAgainIn = (n: number) => `You can change it again in ${n}s.`; // INTERIM
+
+/**
+ * Seconds Supabase says to wait before another change, from its "For security
+ * purposes, you can only request this after N seconds." refusal; else null.
+ */
+function waitSeconds(err: { code?: string; message?: string }): number | null {
+  const m = /after (\d+) seconds?/i.exec(err.message ?? "");
+  if (m) return Number(m[1]);
+  return err.code === "over_email_send_rate_limit" ? 60 : null;
+}
 
 const reloadSetup = () => window.location.assign("/setup");
 
@@ -111,7 +123,7 @@ function DetailsStep({ askName, askPhone }: { askName: boolean; askPhone: boolea
   }
 
   return (
-    <AuthFrame title="Finish setting up your Daali">
+    <AuthFrame title="Finish setting up your Daali" footer={<SignOutLink />}>
       <form onSubmit={submit}>
         <Stack gap={24}>
           {askName ? (
@@ -158,7 +170,7 @@ function PhoneCodeStep({ phone }: { phone: string }) {
   if (changing) return <DetailsStep askName={false} askPhone />;
 
   return (
-    <AuthFrame title={`Enter the code we texted to ${displayPhone(phone)}`}>
+    <AuthFrame title={`Enter the code we texted to ${displayPhone(phone)}`} footer={<SignOutLink />}>
       {cooldownLeft === null ? null : (
         <CodeStep
           channel="phone"
@@ -189,6 +201,14 @@ function EmailStep({ pending, cooldownLeft }: { pending: string | null; cooldown
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Supabase refuses a change inside 60 seconds of the last send; count it down
+  // the way Resend does, instead of a bare "Please try again."
+  const [wait, setWait] = useState(0);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -200,14 +220,21 @@ function EmailStep({ pending, cooldownLeft }: { pending: string | null; cooldown
     );
     if (err) {
       setBusy(false);
-      return setError(err.code === "email_exists" ? EMAIL_TAKEN : TRY_AGAIN);
+      if (err.code === "email_exists") return setError(EMAIL_TAKEN);
+      const seconds = waitSeconds(err);
+      if (seconds) return setWait(seconds);
+      return setError(TRY_AGAIN);
     }
     reloadSetup();
   }
 
   if (pending && !changing) {
     return (
-      <AuthFrame title="Add your email" subtitle="We'll use it to sign you in and send your receipts.">
+      <AuthFrame
+        title="Add your email"
+        subtitle="We'll use it to sign you in and send your receipts."
+        footer={<SignOutLink />}
+      >
         <CodeStep
           channel="email"
           target={pending}
@@ -229,7 +256,11 @@ function EmailStep({ pending, cooldownLeft }: { pending: string | null; cooldown
   }
 
   return (
-    <AuthFrame title="Add your email" subtitle="We'll use it to sign you in and send your receipts.">
+    <AuthFrame
+        title="Add your email"
+        subtitle="We'll use it to sign you in and send your receipts."
+        footer={<SignOutLink />}
+      >
       <form onSubmit={send}>
         <Stack gap={16}>
           <TextField
@@ -240,9 +271,9 @@ function EmailStep({ pending, cooldownLeft }: { pending: string | null; cooldown
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            error={error}
+            error={wait > 0 ? changeAgainIn(wait) : error}
           />
-          <Button type="submit" fullWidth disabled={busy}>
+          <Button type="submit" fullWidth disabled={busy || wait > 0}>
             Send code
           </Button>
         </Stack>

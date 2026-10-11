@@ -15,19 +15,31 @@
   color: var(--daali-muted);
 }
 
-.footer a {
+.footer a,
+.footer button {
   color: var(--daali-accent);
   font-weight: 500;
   text-decoration: none;
 }
 
-.footer a:hover {
+.footer button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.footer a:hover,
+.footer button:hover {
   color: var(--daali-accent-strong);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.footer a:focus-visible {
+.footer a:focus-visible,
+.footer button:focus-visible {
   outline: var(--daali-focus-ring);
   outline-offset: 2px;
   border-radius: 4px;
