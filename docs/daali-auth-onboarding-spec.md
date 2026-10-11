@@ -1,9 +1,9 @@
 <!--
-IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (amended Oct 10, 2026, after the S1.5 review)
-Source: Claude Docs export, received as "daali-auth-onboarding-spec (1).md"
-Export date: Oct 10, 2026
-sha256 of the received file: 591ae5cd06c3245452eafa76b8d8a69d8e20d4f078fa32d79ff4a53cd50b86af
-Supersedes the copy imported in 0431e33 (sha256 0de06252ed300f9856329c3408e2607ba2e7144d004f8eeabd3b289b6ce9f83a).
+IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (corrected Oct 11, 2026: Host creation guard withdrawn)
+Source: Claude Docs export, received as "daali-auth-onboarding-spec (2).md"
+Export date: Oct 11, 2026
+sha256 of the received file: 1eb791d69c5e0e6189af090bd655b285908668a05b5ee8cf9d104e05117153cc
+Supersedes the copy imported in 2c49c25 (sha256 591ae5cd06c3245452eafa76b8d8a69d8e20d4f078fa32d79ff4a53cd50b86af).
 Everything below this comment is that file, byte for byte; it has not been edited.
 Per CLAUDE.md ("If a spec is not in this repository, it is not authoritative"),
 this repository copy is now the authoritative version.
@@ -355,13 +355,13 @@ The legacy Board product keeps working exactly as it does today; this work only 
 
 ### Host creation guard
 
-`getHostOrNull` (`auth.ts:38`) lazily upserts a Host, with the 2-credit column default, on any authenticated request. One change, inside the function before the upsert:
+`getHostOrNull` (`auth.ts:38`) lazily creates a Host on any authenticated request that needs one. Host is an internal record the legacy Board and collaborator code depends on, not a user-facing organizer type. One change, inside the function before the upsert:
 
 - If `user.is_anonymous` is true, return null. Never upsert.
 
-Every existing non-anonymous user behaves as today: an existing Host is returned, and a missing one is created as before, with the 2-credit default. The one exception is a new Daali account (created\_via = SIGNUP), which never gets a Host (amended Oct 10, below). Profile completeness is deliberately not checked here, so existing users with no name or phone keep managing their fundraisers. The function's return type and every caller stay the same; callers already handle null as signed out.
+Every non-anonymous user behaves as today: an existing Host is returned, and a missing one is created as before. Profile completeness is deliberately not checked here, so existing users with no name or phone keep managing their fundraisers. The function's return type and every caller stay the same; callers already handle null as signed out.
 
-**Amended Oct 10: new Daali accounts never get a Host.** A second check sits beside the anonymous one: if no Host row exists and the user's organizer\_profiles row has created\_via = SIGNUP, return null and never upsert. A new Daali account therefore never receives a Host row or Board credits, and a legacy /host page it reaches by address redirects it to /home instead of opening the legacy Board experience. Existing users, who have a Host row or a BACKFILL profile, behave exactly as today. Board-manager invites accepted by a new account are the one path to check: if acceptance needs a Host row, stop and report rather than creating one. The Game Day check (L2) stays a launch blocker in its own right.
+**Corrected Oct 11 — the Oct 10 Host creation guard is withdrawn.** New Daali accounts are not blocked from having a Host. Board Credits were removed from the product on Sep 16 (commit `f7b472c`); the `board_credits` column is an inert leftover nobody reads, so credits are not a reason to restrict Host creation. What keeps new accounts out of the legacy Board experience is routing: no sign-in, setup or navigation path sends anyone to a legacy page (T16), and `/host` redirects to `/home`. A new account reaches a legacy page only through a direct link — a Board-manager invite, a management link, or a typed address — and a Host is created then if the page needs one. Board-manager invites work for new and existing accounts exactly as today; ownership, permissions and invitation behavior are unchanged. Game Day creation by typed address is the remaining exposure, closed by the Game Day check (L2), a launch blocker.
 
 The upsert in `auth/callback/route.ts:19` is removed. The callback resolves identity, runs finalize when it applies, and redirects. It creates nothing in `hosts`.
 
@@ -369,7 +369,7 @@ The upsert in `auth/callback/route.ts:19` is removed. The callback resolves iden
 
 - `boardCreationGate`, `/host/payment-setup`, `/host/stripe`, `/host/stripe/return`, and the Connect Stripe banner
 - `POST /api/boards` and every Board, square, contribution, tender, payout and credit write
-- The `boardCredits` column default and `CreditTransaction` handling; credit removal is its own in-flight work
+- Board Credits: removed from the product on Sep 16 (`f7b472c`). The inert `board_credits` column, the dead `credit_purchase` webhook branch and the historical `credit_transactions` table are left as they are; finishing that cleanup is a separate legacy change.
 - Board-manager invites (`/invite/[token]`, `acceptInvite`)
 - Public board pages, `organizerAttribution`, and cron jobs
 
@@ -481,11 +481,13 @@ The work is done when every test below passes on dev, and the gate and isolation
 - [ ] T15. `next` outside the allowlist falls back to `/home`; a `next` of `/home` requires a complete profile, and a `next` under `/host` works for any non-anonymous signed-in user.
 - [ ] T16. No auth path redirects to `/host/boards`, `/host/payment-setup` or `/host/stripe`.
 
-  **Release blocker (Oct 10):** a new Daali account must never receive a Host row or Board credits, or land in the legacy Board experience. Local development may show this until S1.5 and S1.6 replace today's fallback; T16 and the Game Day check (L2) must pass before any production release.
+  **Release blocker (corrected Oct 11):** no sign-in, setup or navigation path may send a new Daali account into the legacy Board experience (T16), and the Game Day check (L2) must ship before release. A Host row created when a new account accepts a Board-manager invite or opens a management link is expected and acceptable.
 
 ### Legacy isolation
 
-- [ ] T17. An anonymous user requesting `/host/*` or any API that calls `getHostOrNull` gets no Host row and no credits.
+- [ ] T17. An anonymous user requesting `/host/*` or any API that calls `getHostOrNull` gets no Host row.
+
+  T17b. A brand-new Daali account opens a Board-manager invite, signs in, accepts it, receives the grant, and opens the fundraiser's management page (200); ownership and other collaborators are unchanged; there is no redirect loop. An existing account's invite flow is unchanged.
 - [ ] T18. A non-anonymous user with an incomplete profile reaches `/host/*` exactly as today, with no redirect to `/setup`.
 - [ ] T19. An existing complete Host user's boards, gates, payments and management pages behave identically before and after; compare a Game Day board and a fundraiser board.
 - [ ] T19b. An existing authenticated Host user with a null display name and/or no confirmed phone can still reach and manage their existing fundraiser through its current legacy URL after deployment. No payment, contribution, Stripe or management behavior changes.
@@ -542,7 +544,7 @@ daali.app is not advertised until every item here is done. Signup works from the
 | L3 | Domain move done and verified (M1 to M4) | Advertising should point at the final address |
 | L4 | Every organizer type shown on `/home` leads to a live creation flow; types not yet buildable are hidden, never Coming soon (O3) | A new organizer's first tap can't be a dead end |
 | L5 | The landing page only shows what works | It currently shows events, volunteers and raffles; each must exist at launch or come off the page |
-| L6 | New organizers never see credits | Credit removal is in flight; it must be finished, or credits confirmed invisible to new accounts |
+| L6 | New organizers never see credits | Done: Board Credits were removed on Sep 16 (`f7b472c`); nothing shows or reads a balance. Confirm no credit wording remains on new screens (T24) |
 | L7 | Privacy policy and terms pages on daali.app | Open signup and the Google consent screen both need them |
 
 ## Build sequence and open items
