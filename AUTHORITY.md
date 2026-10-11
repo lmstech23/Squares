@@ -5,6 +5,8 @@
 | Visual presentation and canonical copy | Approved Figma frames |
 | Authentication/onboarding through /home | Daali Auth + Onboarding Spec |
 | Product behavior after /home | Daali Product Flow Spec |
+| Daali Auth + Onboarding Spec, authoritative copy (amended Oct 10, 2026) | `docs/daali-auth-onboarding-spec.md` |
+| Daali Product Flow Spec, authoritative copy (Oct 10, 2026) | `docs/daali-product-flow-spec.md` |
 | New Event domain invariants | Phase 0A–0D Technical Plan; Event Path Gate Independence Spec; phase-specific approved Event specs |
 | Legacy Board / Game Day | SYSTEM-FLOW and its existing companion specs |
 | Standalone Fundraiser | Its dedicated architecture spec, once approved |
