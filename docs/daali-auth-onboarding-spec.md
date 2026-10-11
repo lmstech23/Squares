@@ -1,8 +1,9 @@
 <!--
-IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (amended Oct 10, 2026)
-Source: Claude Docs export, received as "daali-auth-onboarding-spec.md"
+IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (amended Oct 10, 2026, after the S1.5 review)
+Source: Claude Docs export, received as "daali-auth-onboarding-spec (1).md"
 Export date: Oct 10, 2026
-sha256 of the received file: 0de06252ed300f9856329c3408e2607ba2e7144d004f8eeabd3b289b6ce9f83a
+sha256 of the received file: 591ae5cd06c3245452eafa76b8d8a69d8e20d4f078fa32d79ff4a53cd50b86af
+Supersedes the copy imported in 0431e33 (sha256 0de06252ed300f9856329c3408e2607ba2e7144d004f8eeabd3b289b6ce9f83a).
 Everything below this comment is that file, byte for byte; it has not been edited.
 Per CLAUDE.md ("If a spec is not in this repository, it is not authoritative"),
 this repository copy is now the authoritative version.
@@ -145,6 +146,10 @@ Accounts created before this release by phone sign-in may have no email; product
 - **What stays the same:** the user id, the Host row, Board ownership, collaborator permissions and every management page. Nothing is migrated or rewritten.
 - **Email already on another account:** stop. Show "That email is already on another Daali account." Nothing is merged, reassigned or overwritten on either account.
 - **Interrupted setup:** if the person leaves after the code is sent, /setup shows the pending address on return with Resend and Change email. Legacy access is unaffected throughout.
+
+  **Resend and Change on /setup (found in S1.5):** Supabase's resend for phone\_change and email\_change sends nothing when the account has no current number or address, so Resend on /setup repeats `updateUser` with the pending value. Supabase refuses a change within 60 seconds of the last send; the screen shows the same countdown pattern as Resend ("You can change it again in {n}s."), interim pending design review.
+
+  **Phone-only account with no profile row:** it is asked for the email first, because finalize can create the row only once an email is confirmed. After the production backfill gives every existing user a row, this case should not arise.
 - The before-user-created hook does not fire for `updateUser`, so this cannot create a user.
 
 ## Returning sign-in
@@ -233,6 +238,8 @@ The resolver reads only the Supabase user and `organizer_profiles`. It never rea
 ### `/setup` shows only what's missing
 
 An existing user with a confirmed phone but no name sees only the name field. One with a name but no phone sees only the phone fields. This matters for current users: almost all have a null name today, and phone-OTP users already have a confirmed phone.
+
+/setup carries a Sign out link (amended Oct 10), so a person who stops partway is never stuck in a signed-in session they cannot leave. No frame exists; interim pending design review.
 
 An existing account with no confirmed email also sees the email step (Existing accounts without an email), and is not COMPLETE until it is verified. Legacy /host pages stay reachable while it is missing.
 
@@ -352,9 +359,9 @@ The legacy Board product keeps working exactly as it does today; this work only 
 
 - If `user.is_anonymous` is true, return null. Never upsert.
 
-Every non-anonymous user behaves as today: an existing Host is returned, and a missing one is created as before, with the 2-credit default. Profile completeness is deliberately not checked here, so existing users with no name or phone keep managing their fundraisers. The function's return type and every caller stay the same; callers already handle null as signed out.
+Every existing non-anonymous user behaves as today: an existing Host is returned, and a missing one is created as before, with the 2-credit default. The one exception is a new Daali account (created\_via = SIGNUP), which never gets a Host (amended Oct 10, below). Profile completeness is deliberately not checked here, so existing users with no name or phone keep managing their fundraisers. The function's return type and every caller stay the same; callers already handle null as signed out.
 
-With open signup, a brand-new account also gets a Host the first time it reaches a legacy page. Nothing in the new flow links to a legacy page, and Start a fundraiser never falls back to legacy Board creation, but legacy URLs stay reachable by address. From there a new account could reach Game Day creation by URL. That is why the Game Day check is a launch blocker (L2), not a follow-up.
+**Amended Oct 10: new Daali accounts never get a Host.** A second check sits beside the anonymous one: if no Host row exists and the user's organizer\_profiles row has created\_via = SIGNUP, return null and never upsert. A new Daali account therefore never receives a Host row or Board credits, and a legacy /host page it reaches by address redirects it to /home instead of opening the legacy Board experience. Existing users, who have a Host row or a BACKFILL profile, behave exactly as today. Board-manager invites accepted by a new account are the one path to check: if acceptance needs a Host row, stop and report rather than creating one. The Game Day check (L2) stays a launch blocker in its own right.
 
 The upsert in `auth/callback/route.ts:19` is removed. The callback resolves identity, runs finalize when it applies, and redirects. It creates nothing in `hosts`.
 
@@ -387,6 +394,7 @@ Supabase and Twilio settings change in a fixed order, dev first and then product
 | 5 | Redirect URL allowlist | Unverified | `/auth/callback` and `/auth/confirm` on daali.app, beta.daali.app (until the redirect is verified), dev and localhost | Callbacks fail without it. |
 | 6 | Automatic identity linking | Unverified | on | Lets an existing user sign in with Google without a duplicate account. |
 | 7 | Anonymous sign-ins | off | off | Stays off; the hook also rejects anonymous creation. |
+| 7a | Phone confirmations (enable\_confirmations) | Unverified | on | Found in S1.5 (Oct 10): with it off, updateUser({ phone }) attaches and confirms a number with no code, so anyone could claim any number. Must be on in every hosted project before /setup ships, alongside step 1. |
 | 8 | Twilio Verify Fraud Guard and geo permissions | Unverified | Fraud Guard on, US only | Required before open signup can trigger texts. |
 | 9 | CAPTCHA (Turnstile) | Unverified | on | Applies to every Supabase auth endpoint. Turn on only after `/sign-in`, `/start` and `/setup` send captcha tokens, or the old `/login` stops working. |
 | 10 | `before-user-created` hook | Unverified | on | Rejects users with no email and anonymous users. Turn on with or after the new UI. |
