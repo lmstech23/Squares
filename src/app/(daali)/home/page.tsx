@@ -15,7 +15,7 @@ import { postAuthDestination } from "@/lib/post-auth-destination";
 // Product Flow Spec, "Your Daali (/home)", as narrowed by D-S1-4: the greeting
 // and Your organizing only. No AI card and no type cards, because no organizer
 // type has a live creation flow yet. Avatar menu per D-S1-5: Legacy Boards
-// (only with legacy_boards_visible) and Sign out.
+// (only with legacy_boards_enabled, the Game Day entitlement) and Sign out.
 //
 // RENDERING WRITES NOTHING. It reads the Supabase user, the organizer's own
 // organizer_profiles row and the read model (listOrganizerItems), all selects.
@@ -39,7 +39,7 @@ export default async function HomePage() {
 
   const profile = await prisma.organizerProfile.findUnique({
     where: { userId: user.id },
-    select: { displayName: true, avatarUrl: true, legacyBoardsVisible: true },
+    select: { displayName: true, avatarUrl: true, legacyBoardsEnabled: true },
   });
 
   // /home requires COMPLETE. Anyone else goes where the gate sends them (/setup).
@@ -53,7 +53,7 @@ export default async function HomePage() {
     <AppShell
       displayName={displayName}
       avatarUrl={profile.avatarUrl}
-      legacyBoardsHref={profile.legacyBoardsVisible ? "/host/boards" : null}
+      legacyBoardsHref={profile.legacyBoardsEnabled ? "/host/boards" : null}
       signedOutHref="/sign-in"
       homeHref="/home"
     >

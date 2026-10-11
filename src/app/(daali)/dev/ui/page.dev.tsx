@@ -132,7 +132,7 @@ export default function DevGallery() {
 
         <Card title="Avatar menu" subtitle="D-S1-5: only items with a working destination. Open each to compare.">
           <div className={g.stack} style={{ gap: 12 }}>
-            <p className={g.note}>Entitled (legacy_boards_visible): Legacy Boards and Sign out.</p>
+            <p className={g.note}>Entitled (legacy_boards_enabled): Legacy Boards and Sign out.</p>
             <div className={g.menuDemo}>
               <AvatarMenu displayName="Daaliyah Tate" legacyBoardsHref="/host/boards" />
             </div>

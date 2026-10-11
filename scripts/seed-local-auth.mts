@@ -18,7 +18,14 @@
 //   owner-1   owns fundraisers in every status (open, closing, closed,
 //             pending_payment, expired) plus a Game Day board
 //   collab-1  owns nothing; MANAGER on owner-1's open fundraiser
-//   flag-1    legacy_boards_visible; owns a Game Day board and a fundraiser
+//   flag-1    legacy_boards_enabled; owns a Game Day board and a fundraiser
+//   S1.7 — Game Day access. Flags match what the backfill sets in production:
+//   every Game Day owner with a profile row has legacy_boards_enabled.
+//   admin-1   Daali's administrator (put its id in DAALI_ADMIN_USER_IDS);
+//             complete, no Host, no Game Day
+//   owner-1's Game Day board has 100 squares, 3 of them paid in cash — an
+//   existing board with payments, to show removing access leaves it working.
+//   phone-1   (above) is a Game Day owner with NO profile row: the backfill's case.
 //
 // Collaborator grants across fixtures: phone-2 is MANAGER on email-1's
 // fundraiser, phone-3 on phone-2's, collab-1 on owner-1's open fundraiser.
@@ -67,7 +74,7 @@ type Fixture = {
   email?: string;
   phone?: string;
   host?: { name: string | null; boards: FixtureBoard[] };
-  profile?: { displayName: string | null; createdVia?: "BACKFILL" | "SIGNUP"; legacyBoardsVisible?: boolean };
+  profile?: { displayName: string | null; createdVia?: "BACKFILL" | "SIGNUP"; legacyBoardsEnabled?: boolean };
 };
 
 export const FIXTURES: Fixture[] = [
@@ -98,7 +105,13 @@ export const FIXTURES: Fixture[] = [
         { slug: "game", type: "game", title: "Morgan's Super Bowl Squares", status: "open" },
       ],
     },
-    profile: { displayName: "Morgan Avery" },
+    profile: { displayName: "Morgan Avery", legacyBoardsEnabled: true },
+  },
+  {
+    key: "admin-1",
+    email: "daali.admin@example.com",
+    phone: "+15555550112",
+    profile: { displayName: "Avery Admin" },
   },
   { key: "collab-1", email: "helper.one@example.com", phone: "+15555550110", host: { name: "Riley Helper", boards: [] }, profile: { displayName: "Riley Helper" } },
   {
@@ -112,7 +125,7 @@ export const FIXTURES: Fixture[] = [
         { slug: "game", type: "game", title: "Taylor's Homecoming Squares", status: "open" },
       ],
     },
-    profile: { displayName: "Taylor Quinn", legacyBoardsVisible: true },
+    profile: { displayName: "Taylor Quinn", legacyBoardsEnabled: true },
   },
 ];
 
@@ -154,6 +167,7 @@ async function remove(userId: string) {
       where: { OR: [{ boardId: { in: ids } }, { createdByHostId: h.id }, { acceptedByHostId: h.id }, { revokedByHostId: h.id }] },
     });
     await db.boardCollaborator.deleteMany({ where: { OR: [{ hostId: h.id }, { boardId: { in: ids } }] } });
+    await db.square.deleteMany({ where: { boardId: { in: ids } } });
     await db.board.deleteMany({ where: { boardId: { in: ids } } });
     await db.host.delete({ where: { id: h.id } });
   }
@@ -198,6 +212,25 @@ try {
         await db.boardCollaborator.create({
           data: { boardId: board.boardId, hostId: host.id, role: "OWNER", status: "active", acceptedAt: new Date() },
         });
+        if (b.type === "game" && f.key === "owner-1") {
+          // An existing Game Day board with payments: a full grid, three squares paid in cash.
+          await db.square.createMany({
+            data: Array.from({ length: 100 }, (_, position) =>
+              position < 3
+                ? {
+                    boardId: board.boardId,
+                    position,
+                    playerName: `Fixture Player ${position + 1}`,
+                    playerEmail: `player${position + 1}@example.com`,
+                    paymentStatus: "paid" as const,
+                    paymentMethod: "cash" as const,
+                    claimedAt: new Date(),
+                    pricePaidCents: 2000,
+                  }
+                : { boardId: board.boardId, position }
+            ),
+          });
+        }
       }
     }
     if (f.profile) {
@@ -206,7 +239,7 @@ try {
           userId,
           displayName: f.profile.displayName,
           createdVia: f.profile.createdVia ?? "BACKFILL",
-          legacyBoardsVisible: f.profile.legacyBoardsVisible ?? false,
+          legacyBoardsEnabled: f.profile.legacyBoardsEnabled ?? false,
         },
       });
     }

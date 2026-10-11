@@ -7,65 +7,78 @@ import {
   type HostNameRow,
 } from "./organizer-profile-backfill.ts";
 
-// The organizer_profiles backfill, Daali Slice 1 S1.1. Pure planning only; the
-// script that reads auth.users and hosts and writes the rows is separate.
+// The organizer_profiles backfill — Daali Slice 1 S1.1, with Game Day access
+// from S1.7 (Auth spec, "Backfill for existing users", amended Oct 11). Pure
+// planning only; the reads and the one insert-only write are in
+// organizer-profile-backfill-db.ts, exercised against a real database by
+// backfill.local.test.ts.
 
 const user = (id: string, email: string | null, isAnonymous = false): AuthUserRow => ({ id, email, isAnonymous });
 const host = (supabaseUserId: string | null, name: string | null): HostNameRow => ({ supabaseUserId, name });
+const plan = (users: AuthUserRow[], hosts: HostNameRow[] = [], owners: string[] = [], existing: { userId: string; legacyBoardsEnabled: boolean }[] = []) =>
+  planOrganizerProfiles({ users, hosts, gameDayOwnerUserIds: owners, existingProfiles: existing });
 
 describe("planOrganizerProfiles", () => {
   test("anonymous users are excluded", () => {
-    const plan = planOrganizerProfiles(
-      [user("u-anon", null, true), user("u-anon-email", "anon@example.com", true), user("u-real", "real@example.com")],
-      []
-    );
-    assert.deepEqual(plan.map((p) => p.userId), ["u-real"]);
+    const p = plan([user("u-anon", null, true), user("u-anon-email", "anon@example.com", true), user("u-real", "real@example.com")]);
+    assert.deepEqual(p.create.map((r) => r.userId), ["u-real"]);
   });
 
   test("Host.name is copied into display_name, trimmed", () => {
-    const plan = planOrganizerProfiles([user("u1", "a@example.com")], [host("u1", "  Daaliyah Tate  ")]);
-    assert.equal(plan.length, 1);
-    assert.equal(plan[0].displayName, "Daaliyah Tate");
+    const p = plan([user("u1", "a@example.com")], [host("u1", "  Daaliyah Tate  ")]);
+    assert.equal(p.create[0].displayName, "Daaliyah Tate");
   });
 
-  test("a user with no Host still gets a profile, with a null display_name", () => {
-    const plan = planOrganizerProfiles([user("u1", "a@example.com")], [host("someone-else", "Other Person")]);
-    assert.deepEqual(plan, [
-      { userId: "u1", displayName: null, legacyBoardsVisible: false, createdVia: "BACKFILL" },
+  test("a user with no Host still gets a profile, with a null display_name and no Game Day", () => {
+    assert.deepEqual(plan([user("u1", "a@example.com")], [host("someone-else", "Other Person")]).create, [
+      { userId: "u1", displayName: null, legacyBoardsEnabled: false, createdVia: "BACKFILL" },
     ]);
   });
 
   test("a Host with an empty or blank name gives a null display_name", () => {
-    const plan = planOrganizerProfiles(
+    const p = plan(
       [user("u-empty", "e@example.com"), user("u-blank", "b@example.com"), user("u-null", "n@example.com")],
       [host("u-empty", ""), host("u-blank", "   "), host("u-null", null)]
     );
-    assert.deepEqual(plan.map((p) => p.displayName), [null, null, null]);
+    assert.deepEqual(p.create.map((r) => r.displayName), [null, null, null]);
   });
 
-  test("--legacy-tester makes legacy Boards visible for that email only", () => {
-    const users = [user("u1", "Tester@Example.com"), user("u2", "other@example.com"), user("u3", null)];
-    const plan = planOrganizerProfiles(users, [], { legacyTesterEmail: "  tester@example.COM " });
+  test("T33: legacy_boards_enabled is true for exactly the Game Day owners", () => {
+    const users = [user("owner-a", "a@example.com"), user("owner-b", null), user("fundraiser-only", "f@example.com"), user("none", "n@example.com")];
+    const p = plan(users, [], ["owner-a", "owner-b"]);
     assert.deepEqual(
-      plan.map((p) => [p.userId, p.legacyBoardsVisible]),
-      [["u1", true], ["u2", false], ["u3", false]]
+      p.create.map((r) => [r.userId, r.legacyBoardsEnabled]),
+      [["owner-a", true], ["owner-b", true], ["fundraiser-only", false], ["none", false]]
     );
   });
 
-  test("without --legacy-tester nobody's legacy Boards are visible", () => {
-    const plan = planOrganizerProfiles([user("u1", "tester@example.com"), user("u2", "o@example.com")], []);
-    assert.ok(plan.every((p) => p.legacyBoardsVisible === false));
-  });
-
   test("every planned row is created_via BACKFILL", () => {
-    const plan = planOrganizerProfiles([user("u1", "a@example.com"), user("u2", null)], []);
-    assert.ok(plan.length === 2 && plan.every((p) => p.createdVia === "BACKFILL"));
+    const p = plan([user("u1", "a@example.com"), user("u2", null)]);
+    assert.ok(p.create.length === 2 && p.create.every((r) => r.createdVia === "BACKFILL"));
   });
 
-  test("users who already have a profile are skipped, so a re-run plans nothing new", () => {
+  test("INSERT-ONLY: a user who already has a row is never planned, whatever their flag", () => {
     const users = [user("u1", "a@example.com"), user("u2", "b@example.com")];
-    assert.deepEqual(planOrganizerProfiles(users, [], { existingUserIds: ["u1"] }).map((p) => p.userId), ["u2"]);
-    assert.deepEqual(planOrganizerProfiles(users, [], { existingUserIds: ["u1", "u2"] }), []);
+    const p = plan(users, [], ["u1", "u2"], [
+      { userId: "u1", legacyBoardsEnabled: false }, // access removed by an administrator
+      { userId: "u2", legacyBoardsEnabled: true },
+    ]);
+    assert.deepEqual(p.create, []);
+  });
+
+  test("a rerun cannot clear access a link granted (non-owner with the flag is left alone)", () => {
+    const p = plan([user("granted", "g@example.com")], [], [], [{ userId: "granted", legacyBoardsEnabled: true }]);
+    assert.deepEqual(p.create, []);
+    assert.deepEqual(p.ownersWithRowWithoutFlag, []);
+  });
+
+  test("a Game Day owner with a row but no flag is only counted, never changed", () => {
+    const p = plan([user("owner", "o@example.com"), user("other", "x@example.com")], [], ["owner"], [
+      { userId: "owner", legacyBoardsEnabled: false },
+      { userId: "other", legacyBoardsEnabled: false },
+    ]);
+    assert.deepEqual(p.ownersWithRowWithoutFlag, ["owner"]);
+    assert.deepEqual(p.create, []);
   });
 });
 

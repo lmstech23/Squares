@@ -80,10 +80,14 @@ describe("Your Daali read model (local database)", { skip: !enabled && "DAALI_LO
     }
   });
 
-  test("T21: owning is enough — the owner has no legacy_boards_visible", async () => {
-    const p = await prisma!.organizerProfile.findUniqueOrThrow({ where: { userId: owner } });
-    assert.equal(p.legacyBoardsVisible, false);
-    assert.ok((await listOrganizerItems(owner)).length > 0);
+  // S1.7: every Game Day owner has the flag after the backfill, so the
+  // fundraiser-only owner (email-1) is the one without it.
+  test("T21: owning is enough — a fundraiser owner without legacy_boards_enabled sees it", async () => {
+    const fundraiserOnly = await userId("organizer.one@example.com");
+    const p = await prisma!.organizerProfile.findUniqueOrThrow({ where: { userId: fundraiserOnly } });
+    assert.equal(p.legacyBoardsEnabled, false);
+    const items = await listOrganizerItems(fundraiserOnly);
+    assert.deepEqual(items.map((i) => [i.type, i.role]), [["FUNDRAISER", "OWNER"]]);
   });
 
   test("a collaborator sees the fundraiser they help run, as COLLABORATOR", async () => {
