@@ -30,6 +30,9 @@ const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const DB_URL = process.env.DATABASE_URL ?? "";
 const MAILPIT = "http://127.0.0.1:54324";
+// S1.8a: CAPTCHA is on in the local stack. Cloudflare's dummy token, produced
+// by its Turnstile TEST site keys, which the local stack's TEST secret accepts.
+const CAPTCHA = "XXXX.DUMMY.TOKEN.XXXX";
 
 const loopback = (u: string) => {
   try {
@@ -119,14 +122,14 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
   // ── T4 ────────────────────────────────────────────────────────────────────
   test("T4: sign-in with an unknown email creates nothing and is refused as unknown", async () => {
     const before = await userCount();
-    const { error } = await browser().auth.signInWithOtp({ email: unique("unknown"), options: { shouldCreateUser: false } });
+    const { error } = await browser().auth.signInWithOtp({ email: unique("unknown"), options: { shouldCreateUser: false, captchaToken: CAPTCHA } });
     assert.equal(error?.code, "otp_disabled");
     assert.equal(await userCount(), before);
   });
 
   test("T4: sign-in with an unknown phone creates nothing and is refused as unknown", async () => {
     const before = await userCount();
-    const { error } = await browser().auth.signInWithOtp({ phone: "+15555550199", options: { shouldCreateUser: false } });
+    const { error } = await browser().auth.signInWithOtp({ phone: "+15555550199", options: { shouldCreateUser: false, captchaToken: CAPTCHA } });
     assert.equal(error?.code, "otp_disabled");
     assert.equal(await userCount(), before);
   });
@@ -138,7 +141,7 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
     const boardsBefore = await prisma!.board.findMany({ where: { hostId: hostBefore.id }, orderBy: { boardId: "asc" } });
 
     const c = browser();
-    const sent = await c.auth.signInWithOtp({ phone: "+15555550101", options: { shouldCreateUser: false } });
+    const sent = await c.auth.signInWithOtp({ phone: "+15555550101", options: { shouldCreateUser: false, captchaToken: CAPTCHA } });
     assert.equal(sent.error, null);
     const { data, error } = await c.auth.verifyOtp({ phone: "+15555550101", token: "101101", type: "sms" });
     assert.equal(error, null);
@@ -163,12 +166,12 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
     const theirEmail = unique("phone-only-person");
     const before = await userCount();
 
-    const signIn = await browser().auth.signInWithOtp({ email: theirEmail, options: { shouldCreateUser: false } });
+    const signIn = await browser().auth.signInWithOtp({ email: theirEmail, options: { shouldCreateUser: false, captchaToken: CAPTCHA } });
     assert.equal(signIn.error?.code, "otp_disabled", "sign-in refuses: unknown email");
     assert.equal(await userCount(), before, "sign-in creates nothing");
 
     const seen = await mailIds(theirEmail);
-    const createPath = await browser().auth.signInWithOtp({ email: theirEmail, options: { shouldCreateUser: true } });
+    const createPath = await browser().auth.signInWithOtp({ email: theirEmail, options: { shouldCreateUser: true, captchaToken: CAPTCHA } });
     assert.equal(createPath.error, null);
     const { code } = await latestEmail(theirEmail, seen);
     const { data } = await browser().auth.verifyOtp({ email: theirEmail, token: code, type: "email" });
@@ -183,7 +186,7 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
     const email = unique("t1-code");
     const before = await userCount();
     const seen = await mailIds(email);
-    const sent = await browser().auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+    const sent = await browser().auth.signInWithOtp({ email, options: { shouldCreateUser: true, captchaToken: CAPTCHA } });
     assert.equal(sent.error, null);
 
     // What exists BEFORE confirmation: Supabase writes an UNCONFIRMED auth user
@@ -214,7 +217,7 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
     const laptop = browser();
     const phone = browser();
     const seen = await mailIds(email);
-    assert.equal((await laptop.auth.signInWithOtp({ email, options: { shouldCreateUser: true } })).error, null);
+    assert.equal((await laptop.auth.signInWithOtp({ email, options: { shouldCreateUser: true, captchaToken: CAPTCHA } })).error, null);
     const { tokenHash, html } = await latestEmail(email, seen);
     assert.match(html, /\/auth\/confirm\?token_hash=/, "the link goes to /auth/confirm with a token_hash");
 
@@ -240,7 +243,7 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
     const email = "no.name@example.com";
     const before = await userCount();
     const seen = await mailIds(email);
-    assert.equal((await browser().auth.signInWithOtp({ email, options: { shouldCreateUser: true } })).error, null);
+    assert.equal((await browser().auth.signInWithOtp({ email, options: { shouldCreateUser: true, captchaToken: CAPTCHA } })).error, null);
     assert.equal(await userCount(), before);
     const { code } = await latestEmail(email, seen);
     const { data } = await browser().auth.verifyOtp({ email, token: code, type: "email" });
@@ -270,12 +273,12 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
   test("T11 (email and phone): one person signing in by phone and by email resolves to one user id", async () => {
     const before = await userCount();
     const byPhone = browser();
-    assert.equal((await byPhone.auth.signInWithOtp({ phone: "+15555550104", options: { shouldCreateUser: false } })).error, null);
+    assert.equal((await byPhone.auth.signInWithOtp({ phone: "+15555550104", options: { shouldCreateUser: false, captchaToken: CAPTCHA } })).error, null);
     const p = await byPhone.auth.verifyOtp({ phone: "+15555550104", token: "104104", type: "sms" });
 
     const email = "both.methods@example.com";
     const seen = await mailIds(email);
-    assert.equal((await browser().auth.signInWithOtp({ email, options: { shouldCreateUser: false } })).error, null);
+    assert.equal((await browser().auth.signInWithOtp({ email, options: { shouldCreateUser: false, captchaToken: CAPTCHA } })).error, null);
     const { code } = await latestEmail(email, seen);
     const e = await browser().auth.verifyOtp({ email, token: code, type: "email" });
 
@@ -288,7 +291,7 @@ describe("S1.4 account flows (local Supabase)", { skip: !enabled && "DAALI_LOCAL
   test("a wrong code is refused and creates nothing", async () => {
     const before = await userCount();
     const c = browser();
-    assert.equal((await c.auth.signInWithOtp({ phone: "+15555550103", options: { shouldCreateUser: false } })).error, null);
+    assert.equal((await c.auth.signInWithOtp({ phone: "+15555550103", options: { shouldCreateUser: false, captchaToken: CAPTCHA } })).error, null);
     const { error } = await c.auth.verifyOtp({ phone: "+15555550103", token: "000000", type: "sms" });
     assert.ok(error);
     assert.equal(await userCount(), before);

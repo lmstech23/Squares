@@ -23,6 +23,9 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const DB_URL = process.env.DATABASE_URL ?? "";
 const MAILPIT = "http://127.0.0.1:54324";
+// S1.8a: CAPTCHA is on in the local stack. Cloudflare's dummy token, produced
+// by its Turnstile TEST site keys, which the local stack's TEST secret accepts.
+const CAPTCHA = "XXXX.DUMMY.TOKEN.XXXX";
 
 const loopback = (u: string) => {
   try {
@@ -61,7 +64,7 @@ async function newMail(address: string, seen: string[]): Promise<{ code: string;
 
 async function phoneSession(phone: string, code: string): Promise<{ c: SupabaseClient; id: string }> {
   const c = browser();
-  const sent = await c.auth.signInWithOtp({ phone, options: { shouldCreateUser: false } });
+  const sent = await c.auth.signInWithOtp({ phone, options: { shouldCreateUser: false, captchaToken: CAPTCHA } });
   if (sent.error) throw sent.error;
   const v = await c.auth.verifyOtp({ phone, token: code, type: "sms" });
   if (v.error || !v.data.user) throw v.error ?? new Error("no user");
@@ -71,7 +74,7 @@ async function phoneSession(phone: string, code: string): Promise<{ c: SupabaseC
 async function emailSession(email: string): Promise<{ c: SupabaseClient; id: string }> {
   const c = browser();
   const seen = await mailIds(email);
-  const sent = await c.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+  const sent = await c.auth.signInWithOtp({ email, options: { shouldCreateUser: false, captchaToken: CAPTCHA } });
   if (sent.error) throw sent.error;
   const { code } = await newMail(email, seen);
   const v = await c.auth.verifyOtp({ email, token: code, type: "email" });

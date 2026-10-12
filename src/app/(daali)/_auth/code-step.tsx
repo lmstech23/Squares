@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/daali/Button";
 import { Stack, Text } from "@/components/daali/Layout";
 import { TextField } from "@/components/daali/TextField";
@@ -53,6 +53,11 @@ export type CodeStepProps = {
   secondary?: { label: string; onClick: () => void };
   /** Where to go once the code is verified. Defaults to the post-auth gate. */
   onVerified?: () => void | Promise<void>;
+  /**
+   * The CAPTCHA widget, when this step's Resend sends a checked call (sign-in
+   * and Get started). Rendered above Resend. /setup passes none (S1.8a).
+   */
+  captcha?: ReactNode;
 };
 
 export function displayPhone(e164: string): string {
@@ -75,6 +80,7 @@ export function CodeStep({
   cooldownLeft,
   secondary,
   onVerified,
+  captcha,
 }: CodeStepProps) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -145,6 +151,7 @@ export function CodeStep({
         <Button type="submit" fullWidth disabled={busy || code.length !== 6}>
           Continue
         </Button>
+        {captcha}
         <Button variant="text" onClick={onResend} disabled={cooldown.left > 0}>
           {cooldown.left > 0 ? `Resend in ${cooldown.left}s` : "Resend"}
         </Button>

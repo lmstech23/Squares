@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CodeStep, TRY_AGAIN } from "../_auth/code-step";
 import { GoogleButton } from "../_auth/google-button";
 import { confirmRedirect, withNext } from "../_auth/links";
+import { useCaptcha } from "../_auth/captcha";
 
 // Screen 1: Create your Daali account (/start) — Auth spec, "New-account flow".
 // Copy is the spec's, verbatim.
@@ -21,10 +22,10 @@ import { confirmRedirect, withNext } from "../_auth/links";
 
 type Step = { at: "choose" } | { at: "email" } | { at: "check"; email: string };
 
-export function sendStartLink(email: string, next: string | null) {
+export function sendStartLink(email: string, next: string | null, captchaToken?: string) {
   return createClient().auth.signInWithOtp({
     email,
-    options: { shouldCreateUser: true, emailRedirectTo: confirmRedirect(next) },
+    options: { shouldCreateUser: true, emailRedirectTo: confirmRedirect(next), captchaToken },
   });
 }
 
@@ -33,6 +34,7 @@ export function StartFlow({ next }: { next: string | null }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const captcha = useCaptcha();
 
   const footer = (
     <>
@@ -43,8 +45,11 @@ export function StartFlow({ next }: { next: string | null }) {
   async function send(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // CAPTCHA: no token yet (or the widget failed) means the request is not sent.
+    const c = await captcha.take();
+    if (!c.ok) return setError(TRY_AGAIN);
     setBusy(true);
-    const { error: err } = await sendStartLink(email.trim(), next);
+    const { error: err } = await sendStartLink(email.trim(), next, c.token);
     setBusy(false);
     if (err) {
       setError(TRY_AGAIN);
@@ -61,7 +66,12 @@ export function StartFlow({ next }: { next: string | null }) {
           target={step.email}
           next={next}
           autoContinue
-          resend={async () => ((await sendStartLink(step.email, next)).error ? TRY_AGAIN : null)}
+          captcha={captcha.widget}
+          resend={async () => {
+            const c = await captcha.take();
+            if (!c.ok) return TRY_AGAIN;
+            return (await sendStartLink(step.email, next, c.token)).error ? TRY_AGAIN : null;
+          }}
         />
       </AuthFrame>
     );
@@ -82,6 +92,7 @@ export function StartFlow({ next }: { next: string | null }) {
               onChange={(e) => setEmail(e.target.value)}
               error={error}
             />
+            {captcha.widget}
             <Button type="submit" fullWidth disabled={busy}>
               Send link
             </Button>

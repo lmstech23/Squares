@@ -13,6 +13,7 @@ import { CodeStep, displayPhone, TRY_AGAIN } from "../_auth/code-step";
 import { GoogleButton } from "../_auth/google-button";
 import { confirmRedirect, withNext } from "../_auth/links";
 import { sendStartLink } from "../start/start-flow";
+import { useCaptcha } from "../_auth/captcha";
 
 // Screen: Welcome back (/sign-in) — Auth spec, "Returning sign-in". Copy is the
 // spec's, verbatim.
@@ -34,15 +35,16 @@ type Step =
 const INVALID = "Enter an email address or a mobile number.";
 const SMS_FAILED = "We couldn't send a code to that number. Check it and try again.";
 
-function sendSignInEmail(email: string, next: string | null) {
+// Both carry captchaToken (Auth spec, "What can create a user", Oct 12).
+function sendSignInEmail(email: string, next: string | null, captchaToken?: string) {
   return createClient().auth.signInWithOtp({
     email,
-    options: { shouldCreateUser: false, emailRedirectTo: confirmRedirect(next) },
+    options: { shouldCreateUser: false, emailRedirectTo: confirmRedirect(next), captchaToken },
   });
 }
 
-function sendSignInSms(phone: string) {
-  return createClient().auth.signInWithOtp({ phone, options: { shouldCreateUser: false } });
+function sendSignInSms(phone: string, captchaToken?: string) {
+  return createClient().auth.signInWithOtp({ phone, options: { shouldCreateUser: false, captchaToken } });
 }
 
 export function SignInFlow({ next }: { next: string | null }) {
@@ -50,6 +52,7 @@ export function SignInFlow({ next }: { next: string | null }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const captcha = useCaptcha();
 
   const footer = (
     <>
@@ -65,25 +68,30 @@ export function SignInFlow({ next }: { next: string | null }) {
       setError(INVALID);
       return;
     }
+    // CAPTCHA: no token yet (or the widget failed) means the request is not sent.
+    const c = await captcha.take();
+    if (!c.ok) return setError(TRY_AGAIN);
     setBusy(true);
     if (id.kind === "email") {
-      const { error: err } = await sendSignInEmail(id.email, next);
+      const { error: err } = await sendSignInEmail(id.email, next, c.token);
       setBusy(false);
       if (isUnknownIdentifier(err)) return setStep({ at: "unknown-email", email: id.email });
       if (err) return setError(TRY_AGAIN);
       return setStep({ at: "email-code", email: id.email, created: false });
     }
-    const { error: err } = await sendSignInSms(id.phone);
+    const { error: err } = await sendSignInSms(id.phone, c.token);
     setBusy(false);
     if (isUnknownIdentifier(err)) return setStep({ at: "unknown-phone" });
-    if (err) return setError(SMS_FAILED);
+    if (err) return setError(err.code === "captcha_failed" ? TRY_AGAIN : SMS_FAILED);
     setStep({ at: "phone-code", phone: id.phone });
   }
 
   async function createForEmail(email: string) {
     setError(null);
+    const c = await captcha.take();
+    if (!c.ok) return setError(TRY_AGAIN);
     setBusy(true);
-    const { error: err } = await sendStartLink(email, next);
+    const { error: err } = await sendStartLink(email, next, c.token);
     setBusy(false);
     if (err) return setError(TRY_AGAIN);
     setStep({ at: "email-code", email, created: true });
@@ -98,9 +106,13 @@ export function SignInFlow({ next }: { next: string | null }) {
           target={email}
           next={next}
           autoContinue={created}
-          resend={async () =>
-            ((created ? await sendStartLink(email, next) : await sendSignInEmail(email, next)).error ? TRY_AGAIN : null)
-          }
+          captcha={captcha.widget}
+          resend={async () => {
+            const c = await captcha.take();
+            if (!c.ok) return TRY_AGAIN;
+            const r = created ? await sendStartLink(email, next, c.token) : await sendSignInEmail(email, next, c.token);
+            return r.error ? TRY_AGAIN : null;
+          }}
         />
       </AuthFrame>
     );
@@ -114,7 +126,13 @@ export function SignInFlow({ next }: { next: string | null }) {
           channel="phone"
           target={phone}
           next={next}
-          resend={async () => ((await sendSignInSms(phone)).error ? SMS_FAILED : null)}
+          captcha={captcha.widget}
+          resend={async () => {
+            const c = await captcha.take();
+            if (!c.ok) return TRY_AGAIN;
+            const r = await sendSignInSms(phone, c.token);
+            return r.error ? (r.error.code === "captcha_failed" ? TRY_AGAIN : SMS_FAILED) : null;
+          }}
         />
       </AuthFrame>
     );
@@ -127,6 +145,7 @@ export function SignInFlow({ next }: { next: string | null }) {
         <Stack gap={16}>
           <Text>We don&apos;t have a Daali account for {email} yet.</Text>
           {error ? <Text size="small">{error}</Text> : null}
+          {captcha.widget}
           <Button fullWidth disabled={busy} onClick={() => createForEmail(email)}>
             Create an account
           </Button>
@@ -187,6 +206,7 @@ export function SignInFlow({ next }: { next: string | null }) {
               onChange={(e) => setValue(e.target.value)}
               error={error}
             />
+            {captcha.widget}
             <Button type="submit" fullWidth disabled={busy}>
               Continue
             </Button>
