@@ -12,9 +12,11 @@ type GridType = "standard" | "double";
 
 interface Props {
   isCashHost: boolean;
+  /** L2: without the Game Day entitlement the picker offers Fundraiser only. */
+  gameDayEnabled: boolean;
 }
 
-export default function NewBoardFlow({ isCashHost }: Props) {
+export default function NewBoardFlow({ isCashHost, gameDayEnabled }: Props) {
   const router = useRouter();
   const [boardType, setBoardType] = useState<BoardType | null>(null);
   const [gridType, setGridType] = useState<GridType | null>(null);
@@ -23,6 +25,7 @@ export default function NewBoardFlow({ isCashHost }: Props) {
   if (!boardType) {
     return (
       <BoardTypePicker
+        gameDayEnabled={gameDayEnabled}
         onContinue={(type) => setBoardType(type)}
         onCancel={() => router.push("/host/boards")}
       />

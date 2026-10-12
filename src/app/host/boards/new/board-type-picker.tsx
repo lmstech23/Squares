@@ -5,11 +5,13 @@ import { useState } from "react";
 type BoardType = "game" | "fundraiser";
 
 interface Props {
+  /** L2: false hides the Game Day option entirely (Auth spec, "Game Day access"). */
+  gameDayEnabled: boolean;
   onContinue: (boardType: BoardType) => void;
   onCancel: () => void;
 }
 
-export default function BoardTypePicker({ onContinue, onCancel }: Props) {
+export default function BoardTypePicker({ gameDayEnabled, onContinue, onCancel }: Props) {
   const [selected, setSelected] = useState<BoardType | null>(null);
 
   return (
@@ -20,8 +22,9 @@ export default function BoardTypePicker({ onContinue, onCancel }: Props) {
           You can&apos;t switch after the first square is claimed.
         </p>
 
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          {/* Game Day */}
+        <div className={`grid ${gameDayEnabled ? "grid-cols-2" : "grid-cols-1"} gap-3 mb-5`}>
+          {/* Game Day — only with the entitlement */}
+          {gameDayEnabled && (
           <button
             type="button"
             onClick={() => setSelected("game")}
@@ -43,6 +46,7 @@ export default function BoardTypePicker({ onContinue, onCancel }: Props) {
               team&apos;s score.
             </p>
           </button>
+          )}
 
           {/* Fundraiser */}
           <button
