@@ -1,9 +1,9 @@
 <!--
-IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (amended Oct 11, 2026: Game Day access by link)
-Source: Claude Docs export, received as "daali-auth-onboarding-spec (3).md"
-Export date: Oct 11, 2026
-sha256 of the received file: f3b700d66de4833cb268b5e9f13df7c4848c24b8666320670ded0059b9578cb8
-Supersedes the copy imported in 2439fe2 (sha256 1eb791d69c5e0e6189af090bd655b285908668a05b5ee8cf9d104e05117153cc).
+IMPORTED DOCUMENT: Daali Auth + Onboarding Spec (amended Oct 12, 2026: captcha on sign-in calls, Game Day return path)
+Source: Claude Docs export, received as "daali-auth-onboarding-spec-oct12.md"
+Export date: Oct 12, 2026
+sha256 of the received file: 020f340d96b78c48519dbc797915b08a2404fa025eae17ae5947e40c7d5ec032
+Supersedes the copy imported in d4e6996 (sha256 f3b700d66de4833cb268b5e9f13df7c4848c24b8666320670ded0059b9578cb8).
 Everything below this comment is that file, byte for byte; it has not been edited.
 Per CLAUDE.md ("If a spec is not in this repository, it is not authoritative"),
 this repository copy is now the authoritative version.
@@ -60,8 +60,8 @@ Signup is open, and a Supabase user is created in exactly two ways, both startin
 | --- | --- | --- |
 | Google, on Get started or Sign in | `signInWithOAuth({ provider: 'google' })` | Yes, when no user has that verified email. An existing user with that email is linked, not duplicated. |
 | Email, on Get started | `signInWithOtp({ email, options: { shouldCreateUser: true, captchaToken } })` | Yes, when the link or code is confirmed |
-| Email, on Sign in | `signInWithOtp({ email, options: { shouldCreateUser: false } })` | Never |
-| Phone, on Sign in | `signInWithOtp({ phone, options: { shouldCreateUser: false } })` | Never |
+| Email, on Sign in | `signInWithOtp({ email, options: { shouldCreateUser: false, captchaToken } })` | Never |
+| Phone, on Sign in | `signInWithOtp({ phone, options: { shouldCreateUser: false, captchaToken } })` | Never |
 
 ### The hook
 
@@ -389,7 +389,7 @@ Game Day is part of Daali but is never advertised: it does not appear on the lan
 
 - **Created by the administrator only,** from a private page at `/admin/game-day`. Administrators are listed by Supabase user id in server configuration; the page is 404 to everyone else and never reads `hosts`.
 - **One person, one use.** Each link is a random token; only its hash is stored. It works once and expires after 14 days if unused. The full link is shown once, when created, for the administrator to copy and send by any channel.
-- **Redeeming.** The link opens `/gameday/[token]`. A signed-out visitor goes to `/sign-in?next=/gameday/[token]` and can create an account from there. A signed-in, non-anonymous account sees "Add Game Day to your Daali account" with one button; nothing happens on page load, because link scanners open links. Pressing it sets `legacy_boards_enabled = true` and marks the link used, in one transaction that succeeds only if the link is unused, unrevoked and unexpired. It then opens `/host/boards/new`. A used, expired or revoked link shows "This Game Day link can't be used. Ask the person who sent it for a new one." An account that already has access is sent straight to `/host/boards/new` and the link stays unused.
+- **Redeeming.** The link opens `/gameday/[token]`. A signed-out visitor goes to `/sign-in?next=/gameday/[token]` and can create an account from there. A new or incomplete account goes through /setup carrying the link and returns to this page after the last setup step; the page itself still works for any signed-in account, whatever its setup state, when opened directly (decided Oct 12). A signed-in, non-anonymous account sees "Add Game Day to your Daali account" with one button; nothing happens on page load, because link scanners open links. Pressing it sets `legacy_boards_enabled = true` and marks the link used, in one transaction that succeeds only if the link is unused, unrevoked and unexpired. It then opens `/host/boards/new`. A used, expired or revoked link shows "This Game Day link can't be used. Ask the person who sent it for a new one." An account that already has access is sent straight to `/host/boards/new` and the link stays unused.
 - **Administrator view.** Lists links with status (unused, used by whom and when, expired, revoked), revokes unused links, and removes Game Day access from an account. Removing access stops new Game Day boards; that account's existing boards are untouched.
 - `/gameday/[token]` joins the allowlisted `next` paths and works whether or not setup is complete, like invites. `gameday` joins the vanity-path reserved words.
 
