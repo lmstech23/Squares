@@ -100,7 +100,7 @@ describe("POST /api/boards — Game Day entitlement (L2, T29)", () => {
   test("flag false: 'game' refused, and so is a MISSING boardType, and an UNRECOGNISED one", async () => {
     profile = { legacyBoardsEnabled: false };
     for (const body of [gameBody({ boardType: "game" }), gameBody(), gameBody({ boardType: "chess" }), gameBody({ boardType: "" })]) {
-      assert.deepEqual(await refused(body), { status: 403, reason: "game_day_not_enabled" }, JSON.stringify(body.boardType));
+      assert.deepEqual(await refused(body), { status: 403, reason: "game_day_not_enabled" }, JSON.stringify((body as { boardType?: unknown }).boardType));
     }
     assert.deepEqual(writes, []);
   });

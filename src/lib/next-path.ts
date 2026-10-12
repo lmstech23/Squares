@@ -21,6 +21,7 @@
 //   - /invite/<token> — the existing board-manager invite, base64url tokens.
 //   - /home — Your Daali (S1.6). Its rule that /home requires a COMPLETE
 //     organizer state is the caller's (post-auth-destination.ts).
+//   - /gameday/<token> — a Game Day access link (S1.7), base64url tokens.
 //
 // No query string and no fragment: none of the allowed destinations takes one.
 //
@@ -31,6 +32,7 @@ const ALLOWED: readonly RegExp[] = [
   /^\/host\/boards\/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}(?:\/[A-Za-z0-9_-]+)*$/,
   /^\/invite\/[A-Za-z0-9_-]{16,128}$/,
   /^\/home$/,
+  /^\/gameday\/[A-Za-z0-9_-]{16,128}$/,
 ];
 
 /**

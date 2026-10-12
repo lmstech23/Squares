@@ -23,8 +23,10 @@
 //   every Game Day owner with a profile row has legacy_boards_enabled.
 //   admin-1   Daali's administrator (put its id in DAALI_ADMIN_USER_IDS);
 //             complete, no Host, no Game Day
-//   owner-1's Game Day board has 100 squares, 3 of them paid in cash — an
-//   existing board with payments, to show removing access leaves it working.
+//   owner-1's Game Day board has 100 squares, 3 of them paid in cash, and cash
+//   mode with PIN 4321 — an existing board with payments, to show removing
+//   access leaves it working. owner-1 and email-1 have a cash payment
+//   preference, so /host/boards/new opens the picker rather than payment setup.
 //   phone-1   (above) is a Game Day owner with NO profile row: the backfill's case.
 //
 // Collaborator grants across fixtures: phone-2 is MANAGER on email-1's
@@ -67,21 +69,33 @@ type FixtureBoard = {
   type: "game" | "fundraiser";
   title?: string;
   status?: BoardStatus;
+  /** Cash mode with this PIN (S1.7: an existing Game Day board players can still pay on). */
+  cashPin?: string;
 };
 
 type Fixture = {
   key: string;
+  /** A fixed user id, for fixtures named in configuration (DAALI_ADMIN_USER_IDS). */
+  id?: string;
   email?: string;
   phone?: string;
-  host?: { name: string | null; boards: FixtureBoard[] };
+  host?: { name: string | null; boards: FixtureBoard[]; paymentPreference?: "cash" };
   profile?: { displayName: string | null; createdVia?: "BACKFILL" | "SIGNUP"; legacyBoardsEnabled?: boolean };
 };
+
+/** admin-1's fixed, fictional id. Local .env.local sets DAALI_ADMIN_USER_IDS to it. */
+export const ADMIN_FIXTURE_ID = "00000000-0000-4000-8000-00000000ad01";
 
 export const FIXTURES: Fixture[] = [
   { key: "phone-1", phone: "+15555550101", host: { name: null, boards: [{ type: "game" }] } },
   { key: "phone-2", phone: "+15555550102", host: { name: null, boards: [{ type: "fundraiser" }] }, profile: { displayName: null } },
   { key: "phone-3", phone: "+15555550103", host: { name: "Pat Morgan", boards: [{ type: "fundraiser" }] }, profile: { displayName: "Pat Morgan" } },
-  { key: "email-1", email: "organizer.one@example.com", host: { name: "Erin Lee", boards: [{ type: "fundraiser" }] }, profile: { displayName: "Erin Lee" } },
+  {
+    key: "email-1",
+    email: "organizer.one@example.com",
+    host: { name: "Erin Lee", boards: [{ type: "fundraiser" }], paymentPreference: "cash" },
+    profile: { displayName: "Erin Lee" },
+  },
   { key: "email-2", email: "no.name@example.com" },
   { key: "both-1", email: "both.methods@example.com", phone: "+15555550104" },
   {
@@ -102,13 +116,15 @@ export const FIXTURES: Fixture[] = [
         { slug: "closed", type: "fundraiser", title: "Fall Garden Fund", status: "closed" },
         { slug: "draft", type: "fundraiser", title: "Summer Camp Scholarships", status: "pending_payment" },
         { slug: "expired", type: "fundraiser", title: "Expired Drive", status: "expired" },
-        { slug: "game", type: "game", title: "Morgan's Super Bowl Squares", status: "open" },
+        { slug: "game", type: "game", title: "Morgan's Super Bowl Squares", status: "open", cashPin: "4321" },
       ],
+      paymentPreference: "cash",
     },
     profile: { displayName: "Morgan Avery", legacyBoardsEnabled: true },
   },
   {
     key: "admin-1",
+    id: ADMIN_FIXTURE_ID,
     email: "daali.admin@example.com",
     phone: "+15555550112",
     profile: { displayName: "Avery Admin" },
@@ -167,7 +183,22 @@ async function remove(userId: string) {
       where: { OR: [{ boardId: { in: ids } }, { createdByHostId: h.id }, { acceptedByHostId: h.id }, { revokedByHostId: h.id }] },
     });
     await db.boardCollaborator.deleteMany({ where: { OR: [{ hostId: h.id }, { boardId: { in: ids } }] } });
-    await db.square.deleteMany({ where: { boardId: { in: ids } } });
+    // A fixture board may have taken payments in a local test run (squares,
+    // payment references, contributions and their children). Clear them in
+    // foreign-key order. Fixture boards only, on the local stack only.
+    if (ids.length) {
+      await db.$executeRaw`DELETE FROM payment_references WHERE square_id IN (SELECT square_id FROM squares WHERE board_id = ANY(${ids}::uuid[]))`;
+      await db.$executeRaw`DELETE FROM squares WHERE board_id = ANY(${ids}::uuid[])`;
+      for (const child of ["admission_grants", "tender_correction_log", "entry_reservation_lines"]) {
+        await db.$executeRawUnsafe(
+          `DELETE FROM ${child} WHERE contribution_id IN (SELECT id FROM contributions WHERE board_id = ANY($1::uuid[]))`,
+          ids
+        );
+      }
+      await db.$executeRaw`DELETE FROM entry_reservation_lines WHERE reservation_id IN (SELECT id FROM entry_reservations WHERE board_id = ANY(${ids}::uuid[]))`;
+      await db.$executeRaw`DELETE FROM entry_reservations WHERE board_id = ANY(${ids}::uuid[])`;
+      await db.$executeRaw`DELETE FROM contributions WHERE board_id = ANY(${ids}::uuid[])`;
+    }
     await db.board.deleteMany({ where: { boardId: { in: ids } } });
     await db.host.delete({ where: { id: h.id } });
   }
@@ -182,6 +213,7 @@ try {
     if (existing) await remove(existing);
 
     const { data, error } = await admin.auth.admin.createUser({
+      ...(f.id ? { id: f.id } : {}),
       email: f.email,
       email_confirm: f.email ? true : undefined,
       phone: f.phone,
@@ -192,7 +224,12 @@ try {
 
     if (f.host) {
       const host = await db.host.create({
-        data: { supabaseUserId: userId, email: f.email ?? f.phone!.replace(/^\+/, ""), name: f.host.name },
+        data: {
+          supabaseUserId: userId,
+          email: f.email ?? f.phone!.replace(/^\+/, ""),
+          name: f.host.name,
+          paymentPreference: f.host.paymentPreference ?? null,
+        },
       });
       for (const b of f.host.boards) {
         const board = await db.board.create({
@@ -207,6 +244,7 @@ try {
             timezone: "America/New_York",
             acceptedPaymentMethods: ["zelle"],
             hostZelle: "fixture@example.com",
+            ...(b.cashPin ? { cashModeEnabled: true, cashPin: b.cashPin } : {}),
           },
         });
         await db.boardCollaborator.create({

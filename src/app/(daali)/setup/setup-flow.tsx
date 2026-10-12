@@ -50,7 +50,11 @@ function waitSeconds(err: { code?: string; message?: string }): number | null {
   return err.code === "over_email_send_rate_limit" ? 60 : null;
 }
 
-const reloadSetup = () => window.location.assign("/setup");
+// S1.7: a `next` this page was opened with (a Game Day link, ruled Oct 11)
+// rides along every reload, and the email-change link, so the person comes
+// back to it after the last step. The loader validates it before using it.
+const currentNext = () => new URLSearchParams(window.location.search).get("next");
+const reloadSetup = () => window.location.assign(`/setup${window.location.search}`);
 
 // Screen 4's 30-second Resend cooldown has to survive the reload that follows
 // sending the code, and Supabase's user object carries no time for a pending
@@ -216,7 +220,7 @@ function EmailStep({ pending, cooldownLeft }: { pending: string | null; cooldown
     setBusy(true);
     const { error: err } = await createClient().auth.updateUser(
       { email: email.trim() },
-      { emailRedirectTo: confirmRedirect(null) }
+      { emailRedirectTo: confirmRedirect(currentNext()) }
     );
     if (err) {
       setBusy(false);
@@ -244,7 +248,7 @@ function EmailStep({ pending, cooldownLeft }: { pending: string | null; cooldown
           resend={async () => {
             const { error: err } = await createClient().auth.updateUser(
               { email: pending },
-              { emailRedirectTo: confirmRedirect(null) }
+              { emailRedirectTo: confirmRedirect(currentNext()) }
             );
             return err ? (err.code === "email_exists" ? EMAIL_TAKEN : TRY_AGAIN) : null;
           }}
