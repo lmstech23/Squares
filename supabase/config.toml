@@ -213,10 +213,17 @@ token_verifications = 30
 web3 = 30
 
 # Configure one of the supported captcha providers: `hcaptcha`, `turnstile`.
-# [auth.captcha]
-# enabled = true
-# provider = "hcaptcha"
-# secret = ""
+# Daali: CAPTCHA on, with Turnstile (Auth spec, configuration step 9). LOCAL
+# ONLY: start the stack with SUPABASE_AUTH_CAPTCHA_SECRET set to one of
+# Cloudflare's published Turnstile TEST secret keys (public dummies, see
+# https://developers.cloudflare.com/turnstile/troubleshooting/testing/):
+#   1x0000000000000000000000000000000AA  always passes
+#   2x0000000000000000000000000000000AA  always fails
+# No real secret is ever placed here or committed.
+[auth.captcha]
+enabled = true
+provider = "turnstile"
+secret = "env(SUPABASE_AUTH_CAPTCHA_SECRET)"
 
 [auth.email]
 # Allow/disallow new user signups via email to your project.
@@ -314,9 +321,12 @@ max_frequency = "5s"
 # inactivity_timeout = "8h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
-# [auth.hook.before_user_created]
-# enabled = true
-# uri = "pg-functions://postgres/auth/before-user-created-hook"
+# Daali: the before-user-created hook (Auth spec, configuration step 10),
+# created by prisma/migrations/20261012000000_before_user_created_hook. Rejects
+# users with no email and anonymous users with 403.
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/hook_before_user_created"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
 # [auth.hook.custom_access_token]
