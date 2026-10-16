@@ -174,6 +174,8 @@ It is catalog-driven and fails closed, so a new table is checked without anyone 
 | `system-flow-port.md` | The three admission edits for SYSTEM-FLOW. **Already applied** |
 | `SYSTEM-FLOW.md` | Game Day only. Fundraiser backfill is deferred and blocks nothing |
 | `CLOSE-PROCEDURE.md` | **Operator runbook, not a spec.** How a board selling direct-payment entry tickets is closed by hand, and why scheduled close is not relied on. Carries no dates and no board id, deliberately |
+| `daali-merchandise-architecture.md` | **Merchandise (standalone merch sales). Revision 3.2.** Separate domain: `daali_merch_*` tables, `src/domain/merch`, its own webhook. Touches no Board money path and owns no invariant number |
+| `daali-merchandise-migration-impact.md` | The merch migration's tables, privileges, configuration and forward-only rollback. Companion to the above |
 
 ### The frozen package, and what supersedes it
 

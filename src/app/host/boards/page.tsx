@@ -8,10 +8,21 @@ import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { merchEnabled } from "@/domain/merch/runtime";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
+
+  // Merch sales (standalone, decision D8). Read-only list; nothing here touches boards.
+  const merchSales =
+    merchEnabled() && host.supabaseUserId
+      ? await prisma.daaliMerchListing.findMany({
+          where: { ownerUserId: host.supabaseUserId },
+          select: { id: true, title: true, status: true },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
 
   // THE PAYMENT-PREFERENCE GATE IS GONE FROM HERE, and its removal is the
   // point rather than a side effect.
@@ -94,13 +105,37 @@ export default async function HostBoardsPage() {
 
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-bold">Your Boards</h1>
-        <Link
-          href="/host/boards/new"
-          className="rounded-lg bg-white text-gray-950 px-4 py-2 text-sm font-medium hover:bg-gray-200 transition-colors"
-        >
-          New Board
-        </Link>
+        <div className="flex gap-2">
+          {merchEnabled() ? (
+            <Link
+              href="/host/merch/new"
+              className="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-900 transition-colors"
+            >
+              New merch sale
+            </Link>
+          ) : null}
+          <Link
+            href="/host/boards/new"
+            className="rounded-lg bg-white text-gray-950 px-4 py-2 text-sm font-medium hover:bg-gray-200 transition-colors"
+          >
+            New Board
+          </Link>
+        </div>
       </div>
+
+      {merchSales.length > 0 ? (
+        <section className="mb-8">
+          <h2 className="text-sm font-semibold text-gray-400 mb-3">Merch sales</h2>
+          <div className="flex flex-col gap-2">
+            {merchSales.map((m) => (
+              <Link key={m.id} href={`/host/merch/${m.id}`} className="flex justify-between items-center rounded-xl border border-gray-800 bg-gray-900 px-4 py-3 hover:border-gray-700">
+                <span className="font-medium">{m.title || "Untitled sale"}</span>
+                <span className="text-xs text-gray-400">{m.status === "OPEN" ? "Open" : m.status === "CLOSED" ? "Closed" : "Draft"}</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* Active boards (open + closed) */}
       {activeBoards.length === 0 && expiredBoards.length === 0 ? (

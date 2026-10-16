@@ -1532,3 +1532,245 @@ model PublicTheme {
 
   @@map("public_themes")
 }
+
+// ---------------------------------------------------------------------------
+// Daali Merchandise — daali-merchandise-architecture.md Revision 3.1.
+// Standalone merch sales. Isolated from every Board model: no relation here
+// points at Host, Board, Square or Contribution, and none of those point here.
+// CHECK constraints and partial indexes live in
+// prisma/migrations/20261017000000_daali_merch/migration.sql only.
+// ---------------------------------------------------------------------------
+
+enum DaaliMerchContext {
+  STANDALONE
+
+  @@map("daali_merch_context")
+}
+
+enum DaaliMerchListingStatus {
+  DRAFT
+  OPEN
+  CLOSED
+
+  @@map("daali_merch_listing_status")
+}
+
+enum DaaliMerchPriceMode {
+  FREE
+  PAID
+
+  @@map("daali_merch_price_mode")
+}
+
+enum DaaliMerchFulfillmentKind {
+  PICKUP
+  SHIP
+
+  @@map("daali_merch_fulfillment_kind")
+}
+
+enum DaaliMerchOrderStatus {
+  PENDING_PAYMENT
+  PAID
+  CONFIRMED_FREE
+  EXPIRED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@map("daali_merch_order_status")
+}
+
+enum DaaliMerchFulfillmentStatus {
+  UNFULFILLED
+  HANDED_OUT
+  SHIPPED
+
+  @@map("daali_merch_fulfillment_status")
+}
+
+enum DaaliMerchTaxHandling {
+  INCLUDED_ORGANIZER_REMITS
+  EXEMPT_CONFIRMED
+  NOT_DUE_CONFIRMED
+
+  @@map("daali_merch_tax_handling")
+}
+
+enum DaaliMerchNotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+
+  @@map("daali_merch_notification_status")
+}
+
+/// text, = hosts.supabase_user_id — deliberately not a Host FK.
+model DaaliMerchListing {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerUserId        String                  @map("owner_user_id")
+  context            DaaliMerchContext       @default(STANDALONE)
+  slug               String?                 @unique(map: "daali_merch_listings_slug_key")
+  title              String
+  description        String?
+  status             DaaliMerchListingStatus @default(DRAFT)
+  closesAt           DateTime?               @map("closes_at") @db.Timestamptz(6)
+  redirectUrl        String?                 @map("redirect_url")
+  redirectVerifiedAt DateTime?               @map("redirect_verified_at") @db.Timestamptz(6)
+  redirectVerifiedBy String?                 @map("redirect_verified_by")
+  questions          Json                    @default("[]")
+  taxHandling        DaaliMerchTaxHandling?  @map("tax_handling")
+  taxConfirmedAt     DateTime?               @map("tax_confirmed_at") @db.Timestamptz(6)
+  taxConfirmedBy     String?                 @map("tax_confirmed_by")
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  items              DaaliMerchItem[]
+  fulfillmentOptions DaaliMerchFulfillmentOption[]
+  orders             DaaliMerchOrder[]
+
+  @@index([ownerUserId], map: "idx_daali_merch_listings_owner")
+  @@map("daali_merch_listings")
+}
+
+model DaaliMerchItem {
+  id            String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId     String              @map("listing_id") @db.Uuid
+  name          String
+  description   String?
+  imageUrl      String?             @map("image_url")
+  sort          Int                 @default(0)
+  priceMode     DaaliMerchPriceMode @map("price_mode")
+  netCents      Int?                @map("net_cents")
+  perOrderLimit Int                 @default(10) @map("per_order_limit")
+  active        Boolean             @default(true)
+
+  listing    DaaliMerchListing      @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "daali_merch_items_listing_fkey")
+  variants   DaaliMerchVariant[]
+  orderLines DaaliMerchOrderLine[]
+
+  @@index([listingId], map: "idx_daali_merch_items_listing")
+  @@map("daali_merch_items")
+}
+
+model DaaliMerchVariant {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId     String  @map("item_id") @db.Uuid
+  label      String
+  sort       Int     @default(0)
+  stockLimit Int?    @map("stock_limit")
+  active     Boolean @default(true)
+
+  item       DaaliMerchItem        @relation(fields: [itemId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "daali_merch_variants_item_fkey")
+  orderLines DaaliMerchOrderLine[]
+
+  @@unique([itemId, label], map: "daali_merch_variants_item_label_key")
+  @@map("daali_merch_variants")
+}
+
+model DaaliMerchFulfillmentOption {
+  id        String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId String                    @map("listing_id") @db.Uuid
+  label     String
+  kind      DaaliMerchFulfillmentKind @default(PICKUP)
+  sort      Int                       @default(0)
+  active    Boolean                   @default(true)
+
+  listing DaaliMerchListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "daali_merch_fulfillment_options_listing_fkey")
+  orders  DaaliMerchOrder[]
+
+  @@index([listingId], map: "idx_daali_merch_fulfillment_options_listing")
+  @@map("daali_merch_fulfillment_options")
+}
+
+model DaaliMerchOrder {
+  id                    String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId             String                      @map("listing_id") @db.Uuid
+  publicToken           String                      @unique(map: "daali_merch_orders_public_token_key") @map("public_token")
+  idempotencyKey        String                      @unique(map: "daali_merch_orders_idempotency_key_key") @map("idempotency_key")
+  buyerName             String                      @map("buyer_name")
+  buyerEmail            String                      @map("buyer_email")
+  buyerPhone            String?                     @map("buyer_phone")
+  fulfillmentOptionId   String?                     @map("fulfillment_option_id") @db.Uuid
+  answers               Json                        @default("{}")
+  status                DaaliMerchOrderStatus
+  totalCents            Int                         @map("total_cents")
+  organizerNetCents     Int                         @map("organizer_net_cents")
+  pricingVersion        String                      @map("pricing_version")
+  stripeAccountId       String?                     @map("stripe_account_id")
+  stripeSessionId       String?                     @unique(map: "daali_merch_orders_session_key") @map("stripe_session_id")
+  stripePaymentIntentId String?                     @unique(map: "daali_merch_orders_payment_intent_key") @map("stripe_payment_intent_id")
+  checkoutParams        Json?                       @map("checkout_params")
+  checkoutUrl           String?                     @map("checkout_url")
+  checkoutAttempts      Int                         @default(0) @map("checkout_attempts")
+  checkoutError         String?                     @map("checkout_error")
+  stripeFeeCents        Int?                        @map("stripe_fee_cents")
+  refundedCents         Int                         @default(0) @map("refunded_cents")
+  redirectSnapshotUrl   String?                     @map("redirect_snapshot_url")
+  holdExpiresAt         DateTime?                   @map("hold_expires_at") @db.Timestamptz(6)
+  paidAt                DateTime?                   @map("paid_at") @db.Timestamptz(6)
+  confirmedAt           DateTime?                   @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt           DateTime?                   @map("cancelled_at") @db.Timestamptz(6)
+  ipHash                String?                     @map("ip_hash")
+  oversellFlag          Boolean                     @default(false) @map("oversell_flag")
+  fulfillmentStatus     DaaliMerchFulfillmentStatus @default(UNFULFILLED) @map("fulfillment_status")
+  handedOutAt           DateTime?                   @map("handed_out_at") @db.Timestamptz(6)
+  handedOutBy           String?                     @map("handed_out_by")
+  createdAt             DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  listing           DaaliMerchListing            @relation(fields: [listingId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "daali_merch_orders_listing_fkey")
+  fulfillmentOption DaaliMerchFulfillmentOption? @relation(fields: [fulfillmentOptionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "daali_merch_orders_fulfillment_fkey")
+  lines             DaaliMerchOrderLine[]
+  notifications     DaaliMerchNotification[]
+
+  @@index([listingId, status], map: "idx_daali_merch_orders_listing_status")
+  @@index([listingId, buyerEmail, createdAt], map: "idx_daali_merch_orders_email_rate")
+  @@index([listingId, ipHash, createdAt], map: "idx_daali_merch_orders_ip_rate")
+  @@map("daali_merch_orders")
+}
+
+model DaaliMerchOrderLine {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId        String @map("order_id") @db.Uuid
+  itemId         String @map("item_id") @db.Uuid
+  variantId      String @map("variant_id") @db.Uuid
+  quantity       Int
+  unitPriceCents Int    @map("unit_price_cents")
+  unitNetCents   Int    @map("unit_net_cents")
+  itemName       String @map("item_name")
+  variantLabel   String @map("variant_label")
+
+  order   DaaliMerchOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "daali_merch_order_lines_order_fkey")
+  item    DaaliMerchItem    @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "daali_merch_order_lines_item_fkey")
+  variant DaaliMerchVariant @relation(fields: [variantId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "daali_merch_order_lines_variant_fkey")
+
+  @@index([orderId], map: "idx_daali_merch_order_lines_order")
+  @@index([variantId], map: "idx_daali_merch_order_lines_variant")
+  @@map("daali_merch_order_lines")
+}
+
+/// Receipt outbox — spec §5.8. Same lease + fencing-token shape as
+/// NotificationDelivery, kept separate for isolation.
+model DaaliMerchNotification {
+  id                String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId           String                       @map("order_id") @db.Uuid
+  kind              String
+  status            DaaliMerchNotificationStatus @default(PENDING)
+  attempts          Int                          @default(0)
+  firstAttemptAt    DateTime?                    @map("first_attempt_at") @db.Timestamptz(6)
+  nextAttemptAt     DateTime                     @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  lockedAt          DateTime?                    @map("locked_at") @db.Timestamptz(6)
+  lockToken         String?                      @map("lock_token")
+  idempotencySuffix Int                          @default(0) @map("idempotency_suffix")
+  providerMessageId String?                      @map("provider_message_id")
+  lastError         String?                      @map("last_error")
+  sentAt            DateTime?                    @map("sent_at") @db.Timestamptz(6)
+  createdAt         DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order DaaliMerchOrder @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "daali_merch_notifications_order_fkey")
+
+  @@unique([orderId, kind], map: "daali_merch_notifications_order_kind_key")
+  @@index([status, nextAttemptAt], map: "idx_daali_merch_notifications_claim")
+  @@map("daali_merch_notifications")
+}
