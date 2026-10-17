@@ -158,6 +158,6 @@ describe("build-time script and Ignored Build Step", () => {
     assert.equal(pkg.scripts.build, "node scripts/check-deploy-env.mjs && next build");
     const vj = JSON.parse(execFileSync("cat", [join(root, "vercel.json")], { encoding: "utf8" }));
     assert.equal(vj.ignoreCommand, "sh scripts/vercel-ignore-build.sh");
-    assert.equal(vj.crons.length, 4); // Board crons unchanged
+    assert.equal(vj.crons.length, 5); // 4 Board crons unchanged + merch-reconcile
   });
 });
