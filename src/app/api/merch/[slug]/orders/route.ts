@@ -5,13 +5,13 @@
 import { NextResponse, after } from "next/server";
 import { createOrder, startCheckout } from "@/domain/merch/orders";
 import { processOutbox } from "@/domain/merch/notifications";
-import { merchDeps, merchEnabled, outboxDeps } from "@/domain/merch/runtime";
-import { clientIp, errorResponse, notFound } from "@/domain/merch/http";
+import { merchDeps, outboxDeps } from "@/domain/merch/runtime";
+import { clientIp, errorResponse } from "@/domain/merch/http";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request, ctx: { params: Promise<{ slug: string }> }) {
-  if (!merchEnabled()) return notFound();
+  // New-sale availability is enforced inside createOrder/startCheckout (deps.salesOpen).
   const { slug } = await ctx.params;
   let body: Record<string, unknown>;
   try {
@@ -56,6 +56,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
         return NextResponse.json({ kind: "failed", error: result.message }, { status: 502 });
       case "expired":
         return NextResponse.json({ kind: "failed", error: "Your checkout timed out. Please start again." }, { status: 409 });
+      case "sales_closed":
+        return NextResponse.json({ kind: "failed", error: "This sale isn't taking orders right now. Nothing was charged." }, { status: 409 });
       case "not_pending":
         return NextResponse.json({ kind: "done", next: `/merch/order/${outcome.publicToken}` });
     }

@@ -11,6 +11,7 @@ import { hashIp, normalizeEmail, slugify, validateAfterOrderUrl } from "./valida
 import { idempotencyKeyFor, BACKOFF_MINUTES, MAX_ATTEMPTS, AUTO_SEND_WINDOW_MS } from "./notifications.ts";
 import { checkoutIdempotencyKey, HOLD_MINUTES } from "./orders.ts";
 import { isMerchError, MerchError } from "./errors.ts";
+import { merchBaseUrl, merchPublicPrefix } from "./origin.ts";
 
 describe("classifyStripeError (§5.7)", () => {
   test("connection errors, 409, 429 and 5xx may have executed → ambiguous", () => {
@@ -119,5 +120,47 @@ describe("import guard (spec §10)", () => {
   test("the legacy Board webhook and checkout code is unmodified by this change", () => {
     const legacy = readFileSync(join(SRC, "app/api/webhooks/stripe/route.ts"), "utf8");
     assert.ok(!/merch/i.test(legacy));
+  });
+});
+
+// ------------------------------------------------------- one public origin --
+
+describe("one public origin for return URLs, receipt links and sale links", () => {
+  function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
+    const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, env);
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k];
+    try {
+      return fn();
+    } finally {
+      for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+
+  test("origin and editor prefix come from NEXT_PUBLIC_URL, normalized", () => {
+    withEnv({ NEXT_PUBLIC_URL: "https://beta.daali.app/", VERCEL_ENV: "production" }, () => {
+      assert.equal(merchBaseUrl(), "https://beta.daali.app");
+      assert.equal(merchPublicPrefix(), "beta.daali.app/merch/");
+    });
+  });
+
+  test("production refuses localhost, http, a path, or no value", () => {
+    for (const bad of ["http://beta.daali.app", "https://localhost:3000", "https://beta.daali.app/app", ""]) {
+      withEnv({ NEXT_PUBLIC_URL: bad, VERCEL_ENV: "production" }, () => assert.throws(() => merchBaseUrl(), Error, bad));
+    }
+    withEnv({ NEXT_PUBLIC_URL: "http://localhost:3000", VERCEL_ENV: undefined }, () => assert.equal(merchBaseUrl(), "http://localhost:3000"));
+  });
+
+  test("no merch source hardcodes a site host (only the email From address)", () => {
+    const offenders: string[] = [];
+    for (const f of walk(SRC)) {
+      const rel = relative(SRC, f).replaceAll("\\", "/");
+      if (!isMerch(rel) || /\.test\.ts$|test-support\.ts$/.test(rel)) continue;
+      readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        if (/^(\/\/|\/\*|\*)/.test(line.trim())) return; // comments
+        if (/(beta\.)?daali\.app|vercel\.app/.test(line) && !/notifications@daali\.app/.test(line)) offenders.push(`${rel}:${i + 1}`);
+      });
+    }
+    assert.deepEqual(offenders, []);
   });
 });

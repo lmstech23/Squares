@@ -30,6 +30,8 @@ export type MerchDeps = {
   stripe: MerchStripeGateway;
   now: () => Date;
   resolvePayee: (ownerUserId: string) => Promise<Payee | null>;
+  /** New-sale availability (MERCH_SALES_ENABLED). Gates createOrder and checkout creation only. */
+  salesOpen: () => boolean;
   baseUrl: string;
   ipSalt: string;
 };
@@ -64,6 +66,9 @@ export async function createOrder(input: OrderInput, deps: MerchDeps): Promise<O
   // Double submit / reload: the same key returns the same order.
   const existing = await db.daaliMerchOrder.findUnique({ where: { idempotencyKey: idem } });
   if (existing) return outcomeOf(existing);
+
+  // New sales switched off: no new orders. (A replayed key above still returns its order.)
+  if (!deps.salesOpen()) throw new MerchError("CLOSED", "This sale isn't taking orders right now.");
 
   const listing = await db.daaliMerchListing.findUnique({
     where: { slug: input.slug },
@@ -294,7 +299,8 @@ export type CheckoutResult =
   | { kind: "retry" } // ambiguous: try again with the same key
   | { kind: "failed"; message: string } // definite: order cancelled, nothing charged
   | { kind: "expired" }
-  | { kind: "not_pending"; status: string };
+  | { kind: "not_pending"; status: string }
+  | { kind: "sales_closed" }; // new sales switched off before a session was created
 
 /**
  * Create the Checkout Session for a pending order, or recover the one Stripe
@@ -307,6 +313,14 @@ export async function startCheckout(orderId: string, deps: MerchDeps): Promise<C
   if (!order) throw new MerchError("NOT_FOUND", "Order not found.");
   if (order.status !== "PENDING_PAYMENT") return { kind: "not_pending", status: order.status };
   if (order.stripeSessionId && order.checkoutUrl) return { kind: "redirect", url: order.checkoutUrl };
+
+  // New sales switched off: create nothing. A never-attempted order releases its
+  // hold now; one with an earlier attempt is left for recoverPendingWithoutSession,
+  // which replays the key and ends any session Stripe did create.
+  if (!deps.salesOpen()) {
+    if (order.checkoutAttempts === 0) await expireOrder(db, order.id, now, "sales_closed");
+    return { kind: "sales_closed" };
+  }
 
   const params = order.checkoutParams as unknown as CheckoutParams;
   if (order.checkoutAttempts === 0 && params.expiresAtUnix - Math.floor(now.getTime() / 1000) < STRIPE_MIN_EXPIRY_SECONDS) {

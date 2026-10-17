@@ -8,17 +8,24 @@ import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { stripeMerchGateway } from "./stripe.ts";
+import { merchBaseUrl } from "./origin.ts";
+export { merchBaseUrl, merchPublicPrefix } from "./origin.ts";
 import type { MerchDeps, Payee } from "./orders.ts";
 import { EmailSendError, type EmailSender, type OutboxDeps } from "./notifications.ts";
 
-export function merchEnabled(): boolean {
-  return process.env.MERCH_ENABLED === "true";
-}
-
-export function merchBaseUrl(): string {
-  const u = process.env.NEXT_PUBLIC_URL;
-  if (!u) throw new Error("NEXT_PUBLIC_URL is not set");
-  return u.replace(/\/+$/, "");
+/**
+ * NEW-SALE availability only (spec §13, migration impact §6). Off: no new sale
+ * pages, orders, checkout sessions, sale creation, publishing or uploads.
+ *
+ * Deliberately NOT a switch for payment operations. The merch webhook, the
+ * return gate, the status poll, the order page, the reconciliation cron, the
+ * receipt outbox and every host order action keep running whatever this says,
+ * because once a supporter has a checkout session Daali must process what
+ * Stripe reports about it. There is no flag that acknowledges a Stripe event
+ * without processing it.
+ */
+export function merchSalesOpen(): boolean {
+  return process.env.MERCH_SALES_ENABLED === "true";
 }
 
 export async function resolveMerchPayee(ownerUserId: string): Promise<Payee | null> {
@@ -38,6 +45,7 @@ export function merchDeps(): MerchDeps {
     stripe: stripeMerchGateway(stripe),
     now: () => new Date(),
     resolvePayee: resolveMerchPayee,
+    salesOpen: merchSalesOpen,
     baseUrl: merchBaseUrl(),
     ipSalt: salt,
   };

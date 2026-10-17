@@ -8,15 +8,17 @@ import { getHost } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { merchEnabled } from "@/domain/merch/runtime";
+import { merchSalesOpen } from "@/domain/merch/runtime";
 
 export default async function HostBoardsPage() {
   const host = await getHost();
   if (!host) redirect("/login");
 
   // Merch sales (standalone, decision D8). Read-only list; nothing here touches boards.
+  // The list shows whenever the host has sales, so orders stay reachable after
+  // new sales are switched off; only the "New merch sale" button is gated.
   const merchSales =
-    merchEnabled() && host.supabaseUserId
+    host.supabaseUserId
       ? await prisma.daaliMerchListing.findMany({
           where: { ownerUserId: host.supabaseUserId },
           select: { id: true, title: true, status: true },
@@ -106,7 +108,7 @@ export default async function HostBoardsPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-xl font-bold">Your Boards</h1>
         <div className="flex gap-2">
-          {merchEnabled() ? (
+          {merchSalesOpen() ? (
             <Link
               href="/host/merch/new"
               className="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium hover:bg-gray-900 transition-colors"

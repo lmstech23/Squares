@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { createClient as createAdmin } from "@supabase/supabase-js";
 import { merchOwnerId } from "@/domain/merch/host-auth";
-import { merchEnabled } from "@/domain/merch/runtime";
+import { merchSalesOpen } from "@/domain/merch/runtime";
 import { notFound } from "@/domain/merch/http";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ const TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png",
 const MAX_BYTES = 5 * 1024 * 1024;
 
 export async function POST(req: Request) {
-  if (!merchEnabled()) return notFound();
+  if (!merchSalesOpen()) return notFound();
   const owner = await merchOwnerId();
   if (!owner) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const form = await req.formData().catch(() => null);

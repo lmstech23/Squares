@@ -122,7 +122,7 @@ GRANT ALL ON TABLE
 | Item | Change | Reversible |
 |---|---|---|
 | Stripe live Dashboard | New Connect webhook endpoint `https://beta.daali.app/api/webhooks/merch`, events `checkout.session.completed`, `checkout.session.expired`, `charge.refunded`, **listening on connected accounts**. Existing endpoint untouched | Disable or delete the endpoint |
-| Vercel env | `STRIPE_MERCH_WEBHOOK_SECRET`, `MERCH_IP_HASH_SALT`, `MERCH_ENABLED` (feature flag; off turns every merch route into a 404 and stops the cron's merch work) | Remove, or set `MERCH_ENABLED=false` |
+| Vercel env | `STRIPE_MERCH_WEBHOOK_SECRET`, `MERCH_IP_HASH_SALT`, `MERCH_SALES_ENABLED` (**new sales only**: off stops sale pages, new orders, new checkout sessions, sale creation and publishing; the webhook, return gate, cron, receipts and host order actions keep running — spec §13.1). `NEXT_PUBLIC_URL` must be the production https origin, the same host as the Stripe endpoint (spec §13.2) | Set `MERCH_SALES_ENABLED=false` to stop new sales. Never a way to stop payment processing |
 | Supabase Storage | New public-read bucket `merch-images`, server-side uploads only (same pattern as `hbcu-logos` [REPO]) | Delete bucket |
 | `vercel.json` | One cron: `/api/cron/merch-reconcile` every 10 minutes | Remove line |
 
@@ -146,9 +146,11 @@ Forward-only, like every migration in this repo. **Rows in `_prisma_migrations` 
 | Situation | Rollback |
 |---|---|
 | Code problem | Vercel rollback to the previous deployment. Tables stay; nothing references them |
-| Migration fails while applying | It runs as one transaction, so a failure leaves no merch objects behind (verified in rehearsal by forcing a failure on the last statement). Prisma records the attempt as failed; after the cause is fixed, the documented command `prisma migrate resolve --rolled-back <name>` marks it, and the migration is re-applied through the guarded path |
+| Migration fails while applying | It runs as one transaction, so a failure leaves no merch objects behind (verified in rehearsal by forcing a failure on the last statement, both as one simple-query message and through `prisma migrate deploy`). Prisma records the attempt as failed and refuses every later `migrate deploy` until it is resolved (verified). After the cause is fixed, the documented command `prisma migrate resolve --rolled-back <name>` marks it, and the migration is re-applied through the guarded path |
 | Applied, needs removing, **no real orders yet** | A new, reviewed forward migration `…_drop_daali_merch` drops the seven tables and eight types, applied through `db:migrate:production` with containment. It is written and rehearsed now, kept unapplied, so it is ready if needed |
-| After real orders exist | Never drop. Close listings and turn off the merch routes with a feature flag (`MERCH_ENABLED=false`); order data stays for the organizer and for refunds |
+| After real orders exist — **stop new sales** | Never drop. Set `MERCH_SALES_ENABLED=false` (and close the listings). New orders and new checkout sessions stop. Everything already in flight keeps settling: payments made on sessions that already exist are processed and redirected, refunds and expirations are applied, the cron reconciles, receipts send, and hosts keep their orders page and CSV. Covered by the shutdown tests in spec §9 |
+| After real orders exist — **code problem** | Vercel rollback to the previous deployment that has the merch code. Do **not** roll back past the first merch deployment while orders are pending or refundable, because the merch webhook and cron would disappear. If that is unavoidable, disable the merch endpoint in Stripe first (Stripe queues and retries for up to three days), and redeploy merch within that window so the cron settles from Stripe directly |
+| Emergency: stop payment processing | Disable the merch webhook endpoint in the Stripe Dashboard. Do not use the sales switch for this, because it deliberately leaves payment processing running |
 
 ## 7. Risks
 

@@ -46,7 +46,7 @@ const blankItem = (): Item => ({ name: "", description: "", imageUrl: "", priceM
 const input = "h-[42px] rounded-lg border border-gray-700 bg-gray-950 px-3 text-[15px] text-white";
 const card = "rounded-2xl border border-gray-800 bg-gray-900 p-5 flex flex-col gap-3.5";
 
-export default function ListingEditor({ initial, paymentsReady }: { initial: EditorInitial | null; paymentsReady: boolean }) {
+export default function ListingEditor({ initial, paymentsReady, publicBase }: { initial: EditorInitial | null; paymentsReady: boolean; publicBase: string }) {
   const router = useRouter();
   const [s, setS] = useState<EditorInitial>(
     initial ?? { id: "", status: "DRAFT", title: "", description: "", slug: "", closesAt: "", redirectUrl: "", redirectVerified: false, questions: [], items: [blankItem()], fulfillmentOptions: [{ label: "Pick up at the event", kind: "PICKUP" }], taxHandling: "", taxConfirmed: false }
@@ -155,7 +155,7 @@ export default function ListingEditor({ initial, paymentsReady }: { initial: Edi
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">Name<input className={input} value={s.title} onChange={(e) => set({ title: e.target.value })} /></label>
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">About this sale<textarea className={input + " h-20 py-2"} value={s.description} onChange={(e) => set({ description: e.target.value })} /></label>
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">Link
-              <div className="flex items-center rounded-lg border border-gray-700 bg-gray-950 px-3 h-[42px]"><span className="text-gray-400">daali.app/merch/</span>
+              <div className="flex items-center rounded-lg border border-gray-700 bg-gray-950 px-3 h-[42px]"><span className="text-gray-400">{publicBase}</span>
                 <input className="bg-transparent flex-1 outline-none" value={s.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase() })} placeholder="your-sale" /></div>
             </label>
           </section>

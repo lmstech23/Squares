@@ -4,13 +4,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { saveListing } from "@/domain/merch/listings";
 import { merchOwnerId } from "@/domain/merch/host-auth";
-import { merchEnabled } from "@/domain/merch/runtime";
+import { merchSalesOpen } from "@/domain/merch/runtime";
 import { errorResponse, notFound } from "@/domain/merch/http";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  if (!merchEnabled()) return notFound();
+  if (!merchSalesOpen()) return notFound();
   const owner = await merchOwnerId();
   if (!owner) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {

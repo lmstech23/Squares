@@ -578,6 +578,134 @@ describe("merch (integration)", { skip: !url && "TEST_DATABASE_URL not set" }, (
     });
   });
 
+  // ------------------------------------------- new sales switched off --
+
+  describe("new sales switched off while payments are in flight (spec §13)", () => {
+    /** A listing, a sales switch, and helpers that share it. */
+    async function setup(stock: number | null = 5) {
+      clock.t = new Date();
+      const stripe = new FakeStripe(() => new Date(clock.t));
+      const sales = { open: true };
+      const f = await seedListing(db, { stock });
+      const d = deps(db, stripe, clock, { chargesEnabled: true }, sales);
+      const newOrder = (qty = 1) => createOrder(orderInput(f, [{ variantId: f.m, quantity: qty }]), d);
+      const sessionOf = async (orderId: string) => (await db.daaliMerchOrder.findUniqueOrThrow({ where: { id: orderId } })).stripeSessionId!;
+      const statusOf = async (orderId: string) => (await db.daaliMerchOrder.findUniqueOrThrow({ where: { id: orderId } })).status;
+      return { stripe, sales, f, d, newOrder, sessionOf, statusOf };
+    }
+
+    test("no new orders or checkout sessions; a replayed form key still finds its order", async () => {
+      const { stripe, sales, f, d, newOrder } = await setup();
+      const input = orderInput(f, [{ variantId: f.m, quantity: 1 }]);
+      const before = await createOrder(input, d);
+      sales.open = false;
+      await rejectsCode(newOrder(), "CLOSED");
+      assert.equal((await createOrder(input, d)).orderId, before.orderId);
+      const free = await seedListing(db, { paid: false });
+      await rejectsCode(createOrder(orderInput(free, [{ variantId: free.m, quantity: 1 }]), d), "CLOSED");
+      assert.equal(stripe.creates, 0);
+    });
+
+    test("pending checkout, never attempted → hold released at once, Stripe never called", async () => {
+      const { stripe, sales, f, d, newOrder, statusOf } = await setup(1);
+      const o = await newOrder();
+      sales.open = false;
+      assert.deepEqual(await startCheckout(o.orderId, d), { kind: "sales_closed" });
+      assert.equal(await statusOf(o.orderId), "EXPIRED");
+      assert.equal(stripe.creates, 0);
+      assert.equal((await remainingStock(db, [f.m], clock.t)).get(f.m), 1);
+    });
+
+    test("lost response before shutdown → no new session; the cron replays the key and ends the one Stripe made", async () => {
+      const { stripe, sales, d, newOrder, statusOf } = await setup();
+      const o = await newOrder();
+      stripe.failNext = { kind: "ambiguous", executeAnyway: true };
+      assert.equal((await startCheckout(o.orderId, d)).kind, "retry");
+      sales.open = false;
+      assert.deepEqual(await startCheckout(o.orderId, d), { kind: "sales_closed" });
+      assert.equal(await statusOf(o.orderId), "PENDING_PAYMENT"); // left for recovery, not guessed
+      clock.t = new Date(clock.t.getTime() + 3 * 60_000);
+      const out = await recoverPendingWithoutSession(d, 500);
+      assert.deepEqual(out.filter((x) => x.orderId === o.orderId).map((x) => x.outcome), ["expired"]);
+      const mine = [...stripe.sessions.values()].filter((x) => x.clientReferenceId === o.orderId);
+      assert.equal(mine.length, 1);
+      assert.equal(mine[0].status, "expired");
+    });
+
+    test("supporter already at Stripe pays after shutdown → PAID, receipt sent, redirect target kept", async () => {
+      const { stripe, sales, d, newOrder, sessionOf, statusOf } = await setup();
+      const o = await newOrder(2);
+      await startCheckout(o.orderId, d);
+      const sid = await sessionOf(o.orderId);
+      sales.open = false;
+      // An existing session is handed back (nothing is created); a reload at Stripe must still work.
+      assert.equal((await startCheckout(o.orderId, d)).kind, "redirect");
+      const r = await fulfillFromSession(stripe.pay(sid), ACCOUNT, d);
+      assert.equal(r.kind, "paid");
+      assert.equal(r.kind === "paid" && r.redirectUrl, "https://www.nba.com/wizards/tickets");
+      assert.equal(await statusOf(o.orderId), "PAID");
+      const sender = new FakeSender();
+      await processOutbox(outbox(sender), { orderId: o.orderId });
+      assert.equal(sender.sent.length, 1);
+    });
+
+    test("lost webhook after shutdown → reconcile still marks PAID", async () => {
+      const { stripe, sales, d, newOrder, sessionOf, statusOf } = await setup();
+      const o = await newOrder();
+      await startCheckout(o.orderId, d);
+      stripe.pay(await sessionOf(o.orderId));
+      sales.open = false;
+      clock.t = new Date(clock.t.getTime() + (HOLD_MINUTES + 6) * 60_000);
+      const out = await reconcileStalePending(d, 500);
+      assert.deepEqual(out.filter((x) => x.orderId === o.orderId).map((x) => x.outcome), ["paid"]);
+      assert.equal(await statusOf(o.orderId), "PAID");
+    });
+
+    test("abandoned checkout after shutdown → expired event still releases stock", async () => {
+      const { sales, f, d, newOrder, sessionOf, statusOf } = await setup(1);
+      const o = await newOrder();
+      await startCheckout(o.orderId, d);
+      sales.open = false;
+      assert.equal(await expireFromSession(await sessionOf(o.orderId), ACCOUNT, d), true);
+      assert.equal(await statusOf(o.orderId), "EXPIRED");
+      assert.equal((await remainingStock(db, [f.m], clock.t)).get(f.m), 1);
+    });
+
+    test("refunds pending at shutdown → partial then full still applied; stock released on full", async () => {
+      const { stripe, sales, f, d, newOrder, sessionOf } = await setup(5);
+      const o = await newOrder(2);
+      await startCheckout(o.orderId, d);
+      const paid = stripe.pay(await sessionOf(o.orderId));
+      await fulfillFromSession(paid, ACCOUNT, d);
+      sales.open = false;
+      await applyRefund(paid.paymentIntentId!, ACCOUNT, 4150, d);
+      let row = await db.daaliMerchOrder.findUniqueOrThrow({ where: { id: o.orderId } });
+      assert.deepEqual([row.status, row.refundedCents], ["PARTIALLY_REFUNDED", 4150]);
+      await applyRefund(paid.paymentIntentId!, ACCOUNT, 8300, d);
+      row = await db.daaliMerchOrder.findUniqueOrThrow({ where: { id: o.orderId } });
+      assert.deepEqual([row.status, row.refundedCents], ["REFUNDED", 8300]);
+      assert.equal((await remainingStock(db, [f.m], clock.t)).get(f.m), 5);
+    });
+
+    test("receipts pending at shutdown keep retrying; host resend and hand-out still work", async () => {
+      const { stripe, sales, f, d, newOrder, sessionOf } = await setup();
+      const o = await newOrder();
+      await startCheckout(o.orderId, d);
+      await fulfillFromSession(stripe.pay(await sessionOf(o.orderId)), ACCOUNT, d);
+      const sender = new FakeSender();
+      sender.script = ["retryable"];
+      await processOutbox(outbox(sender), { orderId: o.orderId });
+      sales.open = false;
+      clock.t = new Date(clock.t.getTime() + 2 * 60_000);
+      await processOutbox(outbox(sender), { orderId: o.orderId });
+      assert.equal(sender.sent.length, 1);
+      assert.equal(await hostResend(o.orderId, f.owner, db, clock.t), true);
+      await processOutbox(outbox(sender), { orderId: o.orderId });
+      assert.equal(sender.sent.length, 2);
+      assert.equal(await markHandedOut(o.orderId, f.owner, db, clock.t), true);
+    });
+  });
+
   // ------------------------------------------------- database constraints --
 
   describe("constraints in migration SQL", () => {

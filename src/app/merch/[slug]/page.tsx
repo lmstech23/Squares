@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { displayUnitPrice } from "@/domain/merch/listings";
 import { remainingStock } from "@/domain/merch/orders";
-import { merchEnabled } from "@/domain/merch/runtime";
+import { merchSalesOpen } from "@/domain/merch/runtime";
 import SaleClient, { type SaleView } from "./sale-client";
 
 export const dynamic = "force-dynamic";
@@ -22,13 +22,13 @@ async function load(slug: string) {
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  if (!merchEnabled()) return {};
+  if (!merchSalesOpen()) return {};
   const l = await load((await params).slug);
   return l && l.status !== "DRAFT" ? { title: l.title, description: l.description ?? undefined } : {};
 }
 
 export default async function MerchSalePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ cancelled?: string }> }) {
-  if (!merchEnabled()) notFound();
+  if (!merchSalesOpen()) notFound();
   const { slug } = await params;
   const { cancelled } = await searchParams;
   const listing = await load(slug);

@@ -148,7 +148,14 @@ export class FakeSender implements EmailSender {
 
 export const ACCOUNT = "acct_test_merch";
 
-export function deps(db: PrismaClient, stripe: FakeStripe, clock: { t: Date }, payee: { chargesEnabled: boolean } = { chargesEnabled: true }): MerchDeps {
+/** `sales.open` is read on every call, so a test can switch new sales off mid-flow. */
+export function deps(
+  db: PrismaClient,
+  stripe: FakeStripe,
+  clock: { t: Date },
+  payee: { chargesEnabled: boolean } = { chargesEnabled: true },
+  sales: { open: boolean } = { open: true }
+): MerchDeps {
   return {
     db,
     stripe,
@@ -156,6 +163,7 @@ export function deps(db: PrismaClient, stripe: FakeStripe, clock: { t: Date }, p
     resolvePayee: async () => ({ accountId: ACCOUNT, chargesEnabled: payee.chargesEnabled }),
     baseUrl: "https://daali.test",
     ipSalt: "test-salt",
+    salesOpen: () => sales.open,
   };
 }
 

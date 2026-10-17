@@ -9,7 +9,7 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fulfillFromSession, recordStripeFee } from "@/domain/merch/orders";
 import { processOutbox } from "@/domain/merch/notifications";
-import { merchBaseUrl, merchDeps, merchEnabled, outboxDeps } from "@/domain/merch/runtime";
+import { merchBaseUrl, merchDeps, outboxDeps } from "@/domain/merch/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ function go(url: string) {
 }
 
 export async function GET(req: Request) {
-  if (!merchEnabled()) return new NextResponse("Not found", { status: 404 });
+  // Always on, whatever MERCH_SALES_ENABLED says: a supporter who paid must be confirmed.
   const base = merchBaseUrl();
   const cs = new URL(req.url).searchParams.get("cs") ?? "";
   if (!/^cs_(test|live)_[A-Za-z0-9]{10,200}$/.test(cs)) return go(`${base}/merch/order/not-found`);

@@ -2,7 +2,6 @@
 
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { merchEnabled } from "@/domain/merch/runtime";
 import { merchOwnerId } from "@/domain/merch/host-auth";
 import OrderActions from "./order-actions";
 
@@ -20,7 +19,6 @@ function receiptLabel(n: { status: string; lastError: string | null } | undefine
 }
 
 export default async function MerchOrdersPage({ params }: { params: Promise<{ id: string }> }) {
-  if (!merchEnabled()) notFound();
   const owner = await merchOwnerId();
   if (!owner) redirect("/login");
   const { id } = await params;

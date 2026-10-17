@@ -4,7 +4,6 @@
 
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { merchEnabled } from "@/domain/merch/runtime";
 import Confirming from "./confirming";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +12,6 @@ export const metadata = { referrer: "no-referrer" as const };
 const money = (c: number) => "$" + (c / 100).toFixed(2);
 
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ confirming?: string }> }) {
-  if (!merchEnabled()) notFound();
   const { token } = await params;
   const { confirming } = await searchParams;
   if (token === "not-found") return <Shell><h1 className="text-xl font-bold">Order not found</h1><p className="text-sm text-gray-300">If you paid, your receipt email has a link to your order.</p></Shell>;

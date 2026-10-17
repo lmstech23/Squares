@@ -1,13 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { merchEnabled, resolveMerchPayee } from "@/domain/merch/runtime";
+import { merchPublicPrefix, resolveMerchPayee } from "@/domain/merch/runtime";
 import { merchOwnerId } from "@/domain/merch/host-auth";
 import ListingEditor, { type EditorInitial } from "../listing-editor";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditMerchSalePage({ params }: { params: Promise<{ id: string }> }) {
-  if (!merchEnabled()) notFound();
   const owner = await merchOwnerId();
   if (!owner) redirect("/login");
   const { id } = await params;
@@ -46,5 +45,5 @@ export default async function EditMerchSalePage({ params }: { params: Promise<{ 
     taxHandling: l.taxHandling ?? "",
     taxConfirmed: !!l.taxConfirmedAt,
   };
-  return <ListingEditor initial={initial} paymentsReady={!!payee?.chargesEnabled} />;
+  return <ListingEditor initial={initial} paymentsReady={!!payee?.chargesEnabled} publicBase={merchPublicPrefix()} />;
 }

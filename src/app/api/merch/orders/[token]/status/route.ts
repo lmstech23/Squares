@@ -5,14 +5,13 @@ import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fulfillFromSession, recordStripeFee } from "@/domain/merch/orders";
 import { processOutbox } from "@/domain/merch/notifications";
-import { merchDeps, merchEnabled, outboxDeps } from "@/domain/merch/runtime";
+import { merchDeps, outboxDeps } from "@/domain/merch/runtime";
 import { notFound } from "@/domain/merch/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ token: string }> }) {
-  if (!merchEnabled()) return notFound();
   const { token } = await ctx.params;
   const order = await prisma.daaliMerchOrder.findUnique({ where: { publicToken: token } });
   if (!order) return notFound();

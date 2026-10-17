@@ -16,7 +16,7 @@ import { stripe } from "@/lib/stripe";
 import { applyRefund, expireFromSession, fulfillFromSession, recordStripeFee } from "@/domain/merch/orders";
 import { processOutbox } from "@/domain/merch/notifications";
 import { sessionView } from "@/domain/merch/stripe";
-import { merchDeps, merchEnabled, outboxDeps } from "@/domain/merch/runtime";
+import { merchDeps, outboxDeps } from "@/domain/merch/runtime";
 
 export const runtime = "nodejs";
 
@@ -34,8 +34,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // Feature flag off: acknowledge so Stripe doesn't retry; nothing is written.
-  if (!merchEnabled()) return NextResponse.json({ received: true, ignored: "disabled" });
+  // No feature-flag check here, on purpose: switching off new sales must never
+  // turn this endpoint into one that acknowledges payment or refund events
+  // without processing them (spec §13).
 
   const account = event.account;
   if (!account) return NextResponse.json({ received: true, ignored: "platform event" });

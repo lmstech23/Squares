@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reconcileStalePending, recordStripeFee, recoverPendingWithoutSession } from "@/domain/merch/orders";
 import { processOutbox } from "@/domain/merch/notifications";
-import { merchDeps, merchEnabled, outboxDeps } from "@/domain/merch/runtime";
+import { merchDeps, outboxDeps } from "@/domain/merch/runtime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +19,8 @@ export async function GET(request: Request) {
   if (request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!merchEnabled()) return NextResponse.json({ skipped: "MERCH_ENABLED is not true" });
+  // Runs whatever MERCH_SALES_ENABLED says: pending payments, refunds and receipts
+  // must keep settling after new sales are switched off.
 
   const deps = merchDeps();
   const recovered = await recoverPendingWithoutSession(deps, 25);

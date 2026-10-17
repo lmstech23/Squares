@@ -5,13 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { cancelFreeOrder, markHandedOut } from "@/domain/merch/orders";
 import { hostResend, processOutbox } from "@/domain/merch/notifications";
 import { merchOwnerId } from "@/domain/merch/host-auth";
-import { merchEnabled, outboxDeps } from "@/domain/merch/runtime";
+import { outboxDeps } from "@/domain/merch/runtime";
 import { notFound } from "@/domain/merch/http";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string; orderId: string }> }) {
-  if (!merchEnabled()) return notFound();
   const owner = await merchOwnerId();
   if (!owner) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id, orderId } = await ctx.params;

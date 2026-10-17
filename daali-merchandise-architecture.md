@@ -1,7 +1,7 @@
 # Daali Merchandise — Specification
 
 **Status:** Approved as the implementation direction (Revision 3 + 3.1). Built locally on branch `merch-standalone`; no production migration, push or deployment.
-**Date:** October 16, 2026 — **Revision 3.2** (implementation record, no product change): checkout recovery replays the idempotency key instead of expiring blindly (§5.7); delivery-unknown is sticky across attempts (§5.8.1); implementation notes added (§13); `package.json` added to the touched-files list (§10). **Revision 3.1**: migration privileges scoped to the seven new tables, forward-only rollback (migration impact §2.4, §6); receipt idempotency limits stated (§5.8.1); UX-1 settled as the immediate redirect. **Revision 3**: (R1) post-payment navigation restored to automatic redirect, the 3-second confirmation screen recorded as an open UX option (§5.4); (R2) pricing finds the minimum price that meets the net under Stripe's actual rounding (§4); (R3) receipts move to a delivery outbox with pending/sending/sent/failed states, retries and duplicate-send protection, never blocking the redirect (§5.8); (R4) checkout-session creation failures, timeouts and lost responses defined, with idempotency and recovery tests (§5.7). Revision 2.1's change is withdrawn as an approved change
+**Date:** October 16, 2026 — **Revision 3.3**: the new-sales switch (`MERCH_SALES_ENABLED`) is separated from payment operations, which can no longer be switched off (§13.1); one public origin for every merch link (§13.2). **Revision 3.2** (implementation record, no product change): checkout recovery replays the idempotency key instead of expiring blindly (§5.7); delivery-unknown is sticky across attempts (§5.8.1); implementation notes added (§13); `package.json` added to the touched-files list (§10). **Revision 3.1**: migration privileges scoped to the seven new tables, forward-only rollback (migration impact §2.4, §6); receipt idempotency limits stated (§5.8.1); UX-1 settled as the immediate redirect. **Revision 3**: (R1) post-payment navigation restored to automatic redirect, the 3-second confirmation screen recorded as an open UX option (§5.4); (R2) pricing finds the minimum price that meets the net under Stripe's actual rounding (§4); (R3) receipts move to a delivery outbox with pending/sending/sent/failed states, retries and duplicate-send protection, never blocking the redirect (§5.8); (R4) checkout-session creation failures, timeouts and lost responses defined, with idempotency and recovery tests (§5.7). Revision 2.1's change is withdrawn as an approved change
 **Repo baseline:** `lmstech23/squares` `main` at `ab6de64`. Every [REPO] line is re-checked against `main` before coding.
 **Companions:** `daali-merchandise-migration-impact.md` (migration impact assessment) · mockup canvas "Daali merch shop mockups" (5 revised screens + host dashboard before/after).
 **Process:** `CLAUDE.md` mockup → document → code. Mockups and this document are each approved before code. Per the document-authority rule, this file is imported into the repo before anything is built from it.
@@ -16,7 +16,7 @@
 | D4 | Per-unit all-in price | **Approved** |
 | D5 | 30-minute stock hold during payment | **Approved** |
 | D6 | Refunds issued in Stripe; Daali syncs status | **Approved** |
-| D7 | Public address `daali.app/merch/[slug]` | **Approved** |
+| D7 | Public address `daali.app/merch/[slug]` | **Approved** — *see §13.2: production is served at `beta.daali.app` today, so the address is `<production host>/merch/[slug]`; the host name is an open decision* |
 | D8 | One "New merch sale" link plus a merch list on the host dashboard | **Approved** |
 | D9 | No automated tax. **Organizer must confirm how sales tax is handled before publishing a paid listing.** No assumption that fundraiser merch is exempt | **Approved as amended** — §6 |
 | D10 | Email required; **rate limiting and duplicate-order protection**; no email verification | **Approved as amended** — §8 |
@@ -306,6 +306,17 @@ No email verification in this release.
 - Duplicate free order by the same email → rejected; host cancel → re-order allowed
 - Rate limits trigger and reset
 - **Isolation:** a merch session's `checkout.session.completed` and `.expired` passed to the existing Board webhook handler → 200 and zero rows changed in every table
+- **New sales switched off with payments in flight** (Revision 3.3, §13.1):
+  - New orders and checkout sessions are refused, and a replayed form key still finds its order.
+  - A never-attempted pending order releases its hold without calling Stripe.
+  - A lost-response order is left for the cron, which replays the key and ends the session.
+  - A supporter already at Stripe pays: the order is PAID, the receipt is sent, and the browser redirects.
+  - A lost webhook is still reconciled.
+  - Expired and refunded events are applied, not acknowledged and dropped.
+  - A processing failure still returns 500.
+  - The cron is not skipped.
+  - Host order actions and the CSV keep working.
+  - Creating and publishing a sale are refused.
 - **Checkout creation** (Stripe client stubbed at the boundary):
   - Success → session stored once; supporter sent to Stripe
   - Stripe 4xx → order CANCELLED, stock released, nothing stored
@@ -380,11 +391,46 @@ Everything else is new files. No change to Board checkout, the existing webhook,
 
 Details settled while building that the earlier revisions left open. None changes an approved behavior.
 
-- **Feature flag.** Every merch route and page returns 404 unless `MERCH_ENABLED=true`; the dashboard button and list are hidden the same way. With real orders in production, turning the flag off is the rollback (migration impact §6).
 - **Edits never delete.** `daali_merch_items` and `daali_merch_fulfillment_options` carry an `active` column. Saving a sale updates rows by id (or by label), and anything removed in the editor is deactivated, not deleted, because past order lines reference it.
 - **Receipt window.** `daali_merch_notifications.first_attempt_at` records the first claim; the 23-hour auto-send cutoff (§5.8.1) is measured from it.
 - **Reserved link names.** `return`, `order`, `orders`, `new`, `api`, `admin` cannot be used as a sale's link, so a sale can never shadow a route.
 - **Receipt wording.** The after-order button reads "Continue to <site>" (for example, "Continue to nba.com"), and the footer says "Contact the organizer" for questions. All buyer and host text in the email is HTML-escaped.
 - **Close date.** Stored in UTC. The host enters it in their own browser's time zone, and the editor shows it back in that zone. (Merch has no Board, so there is no `Board.timezone` to use.)
 - **Host resend.** "Resend receipt" sends right after the click (after the response), then falls back to the cron like any other row.
+
+### 13.1 Switching off new sales never switches off payments (Revision 3.3)
+
+`MERCH_SALES_ENABLED` controls **new-sale availability only**. It replaces Revision 3.2's `MERCH_ENABLED`, which also silenced the merch webhook (acknowledging Stripe events without processing them) and skipped the reconciliation cron. Once real orders exist, that switch could have dropped a paid order or a refund.
+
+| Off stops | Off never stops |
+|---|---|
+| The public sale page (`/merch/[slug]`, 404) | The merch webhook: completed, expired and refund events are **processed** |
+| New orders, paid or free (`createOrder` → "This sale isn't taking orders right now. Nothing was charged.") | The return gate `/merch/return`: a supporter who pays after shutdown is still sent to the after-order link |
+| New Checkout Sessions (`startCheckout` creates nothing; a pending order that was never sent to Stripe releases its hold at once) | The status poll and the order page `/merch/order/[token]` |
+| Creating a sale, publishing, image upload | The reconciliation cron: lost sessions, lost webhooks, receipts, fee backfill |
+| The dashboard "New merch sale" button | The receipt outbox, and host "Resend receipt" |
+| | Host orders page, CSV, mark handed out, cancel free reservation, close a sale; the dashboard "Merch sales" list |
+
+Rules that make this safe:
+- **There is no switch that makes the webhook acknowledge without processing.** The endpoint returns 200 only after the event is handled (or is provably not a merch event), and 500 on any failure, so Stripe retries.
+- **The check lives in the domain, not just the routes.** `MerchDeps.salesOpen` is read by `createOrder` and `startCheckout` themselves.
+- **An existing session is not a new one.** A supporter already on Stripe's page when sales switch off can still pay; their payment is processed normally. A reload of the checkout page returns the session already stored on the order.
+- **Recovery is not creation.** The cron's lost-session recovery replays an idempotency key from an earlier attempt and immediately expires whatever comes back; it never hands a checkout URL to anyone, and a genuinely new request is refused by Stripe because the frozen expiry is under 30 minutes away.
+- **To stop payment processing entirely** (an emergency, not a rollback), disable the merch endpoint in the Stripe Dashboard. Stripe then queues and retries deliveries for up to three days, and the reconciliation cron settles every pending order from Stripe directly when it runs. Re-enable the endpoint to resume.
+
+### 13.2 One public origin
+
+Every address merch hands out comes from one value, `NEXT_PUBLIC_URL`, read by `merchBaseUrl()` (`src/domain/merch/origin.ts`):
+- Stripe `success_url` (`/merch/return?cs=…`) and `cancel_url` (`/merch/[slug]?cancelled=1`)
+- The receipt email's order link (`/merch/order/[token]`)
+- The return gate's own redirects
+- The link prefix shown in the host editor (for example `beta.daali.app/merch/`)
+
+It is never taken from the incoming request (unlike Board checkout, `src/lib/base-url.ts`), so a supporter who arrives through a `vercel.app` alias still gets canonical links. In production it must be an `https` origin with no path, not localhost; otherwise every merch route fails rather than handing out a wrong link. A unit test fails if any merch source hard-codes a site host (the email From address excepted).
+
+The Stripe webhook endpoint is configured separately, in the Stripe Dashboard, and must use the same host. The deployment checklist compares them.
+
+**Open decision.** D7 named `daali.app/merch/[slug]`, but the repo's deployment record lists the production deployment as `beta.daali.app` plus three `vercel.app` aliases, and `NEXT_PUBLIC_URL` is `beta.daali.app`. Two options:
+1. **Use `beta.daali.app`.** This works today with no other change.
+2. **Serve `daali.app` from the same deployment.** This needs the domain added in Vercel. It also needs `NEXT_PUBLIC_URL` changed, which **also changes Board links**: Board confirmation emails and the Stripe Connect return use it. That is outside this change.
 
