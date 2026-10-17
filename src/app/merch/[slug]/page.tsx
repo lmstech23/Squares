@@ -1,4 +1,4 @@
-// Public merch sale page — daali.app/merch/[slug] (mockups: "Supporter: pick
+// Public merch sale page — https://beta.daali.app/merch/[slug] (spec D7) (mockups: "Supporter: pick
 // sizes", "Supporter: your details").
 
 import { notFound } from "next/navigation";

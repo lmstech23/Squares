@@ -2,7 +2,7 @@
 
 **Status:** For approval. Nothing applied anywhere.
 **Date:** October 16, 2026
-**Companion to:** `daali-merchandise-architecture.md` Revision 3.2 · this document updated to match the migration as built (`prisma/migrations/20261017000000_daali_merch/migration.sql`, sha256 `8a279618…b490cd`)
+**Companion to:** `daali-merchandise-architecture.md` Revision 3.4 · this document updated to match the migration as built (`prisma/migrations/20261017000000_daali_merch/migration.sql`, sha256 `8a279618…b490cd`)
 **Baseline:** `main` at `ab6de64`; last applied migration in the repo `20260921000000_board_entry_ticket_limit` [REPO]. Production's applied list is confirmed with `prisma migrate status` over `DIRECT_URL` immediately before applying.
 
 ## 1. Summary
@@ -122,7 +122,7 @@ GRANT ALL ON TABLE
 | Item | Change | Reversible |
 |---|---|---|
 | Stripe live Dashboard | New Connect webhook endpoint `https://beta.daali.app/api/webhooks/merch`, events `checkout.session.completed`, `checkout.session.expired`, `charge.refunded`, **listening on connected accounts**. Existing endpoint untouched | Disable or delete the endpoint |
-| Vercel env | `STRIPE_MERCH_WEBHOOK_SECRET`, `MERCH_IP_HASH_SALT`, `MERCH_SALES_ENABLED` (**new sales only**: off stops sale pages, new orders, new checkout sessions, sale creation and publishing; the webhook, return gate, cron, receipts and host order actions keep running — spec §13.1). `NEXT_PUBLIC_URL` must be the production https origin, the same host as the Stripe endpoint (spec §13.2) | Set `MERCH_SALES_ENABLED=false` to stop new sales. Never a way to stop payment processing |
+| Vercel env | `STRIPE_MERCH_WEBHOOK_SECRET`, `MERCH_IP_HASH_SALT`, `MERCH_SALES_ENABLED` (**new sales only**: off stops sale pages, new orders, new checkout sessions, sale creation and publishing; the webhook, return gate, cron, receipts and host order actions keep running — spec §13.1). `NEXT_PUBLIC_URL` stays `https://beta.daali.app` (unchanged; the selected merch host, spec §13.2), the same host as the Stripe endpoint | Set `MERCH_SALES_ENABLED=false` to stop new sales. Never a way to stop payment processing |
 | Supabase Storage | New public-read bucket `merch-images`, server-side uploads only (same pattern as `hbcu-logos` [REPO]) | Delete bucket |
 | `vercel.json` | One cron: `/api/cron/merch-reconcile` every 10 minutes | Remove line |
 

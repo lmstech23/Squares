@@ -1,7 +1,7 @@
 # Daali Merchandise — Specification
 
 **Status:** Approved as the implementation direction (Revision 3 + 3.1). Built locally on branch `merch-standalone`; no production migration, push or deployment.
-**Date:** October 16, 2026 — **Revision 3.3**: the new-sales switch (`MERCH_SALES_ENABLED`) is separated from payment operations, which can no longer be switched off (§13.1); one public origin for every merch link (§13.2). **Revision 3.2** (implementation record, no product change): checkout recovery replays the idempotency key instead of expiring blindly (§5.7); delivery-unknown is sticky across attempts (§5.8.1); implementation notes added (§13); `package.json` added to the touched-files list (§10). **Revision 3.1**: migration privileges scoped to the seven new tables, forward-only rollback (migration impact §2.4, §6); receipt idempotency limits stated (§5.8.1); UX-1 settled as the immediate redirect. **Revision 3**: (R1) post-payment navigation restored to automatic redirect, the 3-second confirmation screen recorded as an open UX option (§5.4); (R2) pricing finds the minimum price that meets the net under Stripe's actual rounding (§4); (R3) receipts move to a delivery outbox with pending/sending/sent/failed states, retries and duplicate-send protection, never blocking the redirect (§5.8); (R4) checkout-session creation failures, timeouts and lost responses defined, with idempotency and recovery tests (§5.7). Revision 2.1's change is withdrawn as an approved change
+**Date:** October 16, 2026 — **Revision 3.4**: production host fixed as `https://beta.daali.app` (D7, §13.2). **Revision 3.3**: the new-sales switch (`MERCH_SALES_ENABLED`) is separated from payment operations, which can no longer be switched off (§13.1); one public origin for every merch link (§13.2). **Revision 3.2** (implementation record, no product change): checkout recovery replays the idempotency key instead of expiring blindly (§5.7); delivery-unknown is sticky across attempts (§5.8.1); implementation notes added (§13); `package.json` added to the touched-files list (§10). **Revision 3.1**: migration privileges scoped to the seven new tables, forward-only rollback (migration impact §2.4, §6); receipt idempotency limits stated (§5.8.1); UX-1 settled as the immediate redirect. **Revision 3**: (R1) post-payment navigation restored to automatic redirect, the 3-second confirmation screen recorded as an open UX option (§5.4); (R2) pricing finds the minimum price that meets the net under Stripe's actual rounding (§4); (R3) receipts move to a delivery outbox with pending/sending/sent/failed states, retries and duplicate-send protection, never blocking the redirect (§5.8); (R4) checkout-session creation failures, timeouts and lost responses defined, with idempotency and recovery tests (§5.7). Revision 2.1's change is withdrawn as an approved change
 **Repo baseline:** `lmstech23/squares` `main` at `ab6de64`. Every [REPO] line is re-checked against `main` before coding.
 **Companions:** `daali-merchandise-migration-impact.md` (migration impact assessment) · mockup canvas "Daali merch shop mockups" (5 revised screens + host dashboard before/after).
 **Process:** `CLAUDE.md` mockup → document → code. Mockups and this document are each approved before code. Per the document-authority rule, this file is imported into the repo before anything is built from it.
@@ -16,7 +16,7 @@
 | D4 | Per-unit all-in price | **Approved** |
 | D5 | 30-minute stock hold during payment | **Approved** |
 | D6 | Refunds issued in Stripe; Daali syncs status | **Approved** |
-| D7 | Public address `daali.app/merch/[slug]` | **Approved** — *see §13.2: production is served at `beta.daali.app` today, so the address is `<production host>/merch/[slug]`; the host name is an open decision* |
+| D7 | Public address **`https://beta.daali.app/merch/[slug]`** | **Approved** (amended Oct 16, 2026). The production origin for this release is `https://beta.daali.app`, the existing `NEXT_PUBLIC_URL`. The original wording, `daali.app/merch/[slug]`, is superseded; no `daali.app` change is part of this work (§13.2) |
 | D8 | One "New merch sale" link plus a merch list on the host dashboard | **Approved** |
 | D9 | No automated tax. **Organizer must confirm how sales tax is handled before publishing a paid listing.** No assumption that fundraiser merch is exempt | **Approved as amended** — §6 |
 | D10 | Email required; **rate limiting and duplicate-order protection**; no email verification | **Approved as amended** — §8 |
@@ -430,7 +430,12 @@ It is never taken from the incoming request (unlike Board checkout, `src/lib/bas
 
 The Stripe webhook endpoint is configured separately, in the Stripe Dashboard, and must use the same host. The deployment checklist compares them.
 
-**Open decision.** D7 named `daali.app/merch/[slug]`, but the repo's deployment record lists the production deployment as `beta.daali.app` plus three `vercel.app` aliases, and `NEXT_PUBLIC_URL` is `beta.daali.app`. Two options:
-1. **Use `beta.daali.app`.** This works today with no other change.
-2. **Serve `daali.app` from the same deployment.** This needs the domain added in Vercel. It also needs `NEXT_PUBLIC_URL` changed, which **also changes Board links**: Board confirmation emails and the Stripe Connect return use it. That is outside this change.
+**Selected host (decided Oct 16, 2026): `https://beta.daali.app`.** This is the current production origin, the value of `NEXT_PUBLIC_URL`, and the host of the existing Board webhook. For this release:
+- Stripe `success_url`: `https://beta.daali.app/merch/return?cs={CHECKOUT_SESSION_ID}`
+- Stripe `cancel_url`: `https://beta.daali.app/merch/<slug>?cancelled=1`
+- Merch webhook endpoint (Stripe live, configured at deployment): `https://beta.daali.app/api/webhooks/merch`
+- Public sale link: `https://beta.daali.app/merch/<slug>`. The editor shows `beta.daali.app/merch/`.
+- Receipt order link: `https://beta.daali.app/merch/order/<token>`
+
+`NEXT_PUBLIC_URL` is **not** changed, and no `daali.app` domain work is part of this release. Serving merch from `daali.app` later would mean adding that domain in Vercel and changing `NEXT_PUBLIC_URL`, which also moves Board links, so it is a separate decision.
 

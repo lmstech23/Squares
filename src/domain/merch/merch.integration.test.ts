@@ -18,6 +18,7 @@ import {
 } from "./orders.ts";
 import { claim, hostResend, processOutbox, sendClaimed, idempotencyKeyFor, LEASE_MS, MAX_ATTEMPTS } from "./notifications.ts";
 import { ordersCsv } from "./csv.ts";
+import { merchBaseUrl } from "./origin.ts";
 import { isMerchError } from "./errors.ts";
 import { ACCOUNT, FakeSender, FakeStripe, deps, orderInput, seedListing, testClient } from "./test-support.ts";
 
@@ -703,6 +704,38 @@ describe("merch (integration)", { skip: !url && "TEST_DATABASE_URL not set" }, (
       await processOutbox(outbox(sender), { orderId: o.orderId });
       assert.equal(sender.sent.length, 2);
       assert.equal(await markHandedOut(o.orderId, f.owner, db, clock.t), true);
+    });
+  });
+
+  // ------------------------------------------------ selected production host --
+
+  describe("production host https://beta.daali.app (spec D7, §13.2)", () => {
+    test("Stripe success/cancel URLs and the receipt's order link all use beta.daali.app", async () => {
+      const saved = { u: process.env.NEXT_PUBLIC_URL, e: process.env.VERCEL_ENV };
+      process.env.NEXT_PUBLIC_URL = "https://beta.daali.app";
+      process.env.VERCEL_ENV = "production";
+      try {
+        clock.t = new Date();
+        const base = merchBaseUrl();
+        assert.equal(base, "https://beta.daali.app");
+        const stripe = new FakeStripe(() => new Date(clock.t));
+        const f = await seedListing(db);
+        const d = { ...deps(db, stripe, clock), baseUrl: base };
+        const o = await createOrder(orderInput(f, [{ variantId: f.m, quantity: 1 }]), d);
+        const params = (await db.daaliMerchOrder.findUniqueOrThrow({ where: { id: o.orderId } })).checkoutParams as { successUrl: string; cancelUrl: string };
+        assert.equal(params.successUrl, "https://beta.daali.app/merch/return?cs={CHECKOUT_SESSION_ID}");
+        assert.equal(params.cancelUrl, `https://beta.daali.app/merch/${f.slug}?cancelled=1`);
+        await startCheckout(o.orderId, d);
+        const sid = (await db.daaliMerchOrder.findUniqueOrThrow({ where: { id: o.orderId } })).stripeSessionId!;
+        await fulfillFromSession(stripe.pay(sid), ACCOUNT, d);
+        const sender = new FakeSender();
+        await processOutbox({ db, sender, now: () => new Date(clock.t), baseUrl: base }, { orderId: o.orderId });
+        assert.ok(sender.sent[0].html.includes(`https://beta.daali.app/merch/order/${o.publicToken}`));
+        assert.ok(!/https?:\/\/(?!beta\.daali\.app|www\.nba\.com)[a-z0-9.-]+/i.test(sender.sent[0].html.replace(/mailto:[^"]+/g, "")), "no other host in the receipt");
+      } finally {
+        if (saved.u === undefined) delete process.env.NEXT_PUBLIC_URL; else process.env.NEXT_PUBLIC_URL = saved.u;
+        if (saved.e === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = saved.e;
+      }
     });
   });
 

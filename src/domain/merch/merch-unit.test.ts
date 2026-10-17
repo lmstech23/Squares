@@ -164,3 +164,49 @@ describe("one public origin for return URLs, receipt links and sale links", () =
     assert.deepEqual(offenders, []);
   });
 });
+
+// ------------------------------------------ the sales switch's reach (§13.1) --
+
+describe("MERCH_SALES_ENABLED reaches new-sale paths only", () => {
+  const read = (rel: string) => readFileSync(join(SRC, rel), "utf8");
+  // Payment operations and order access: must never consult the sales switch.
+  const ALWAYS_ON = [
+    "app/api/webhooks/merch/route.ts",
+    "app/merch/return/route.ts",
+    "app/api/merch/orders/[token]/status/route.ts",
+    "app/merch/order/[token]/page.tsx",
+    "app/api/cron/merch-reconcile/route.ts",
+    "app/api/host/merch/[id]/orders/[orderId]/route.ts",
+    "app/api/host/merch/[id]/orders.csv/route.ts",
+    "app/host/merch/[id]/orders/page.tsx",
+    "app/host/merch/[id]/page.tsx",
+    "domain/merch/notifications.ts",
+  ];
+  // New-sale entry points: must be gated (in the route, or in the domain call they make).
+  const GATED = [
+    "app/merch/[slug]/page.tsx",
+    "app/api/host/merch/route.ts",
+    "app/api/host/merch/upload/route.ts",
+    "app/host/merch/new/page.tsx",
+  ];
+
+  test("operations and order access never read the switch", () => {
+    const code = (rel: string) => read(rel).split("\n").filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join("\n");
+    for (const rel of ALWAYS_ON) assert.ok(!/merchSalesOpen|MERCH_SALES_ENABLED|salesOpen/.test(code(rel)), rel);
+  });
+  test("new-sale entry points are gated", () => {
+    for (const rel of GATED) assert.match(read(rel), /merchSalesOpen\(\)/, rel);
+    // Orders and checkout creation are gated inside the domain, where every caller passes through.
+    const orders = read("domain/merch/orders.ts");
+    assert.match(orders, /if \(!deps\.salesOpen\(\)\) throw new MerchError\("CLOSED"/);
+    assert.match(orders, /if \(!deps\.salesOpen\(\)\) \{\n\s+if \(order\.checkoutAttempts === 0\)/);
+    // Publishing is gated; close is not.
+    const listing = read("app/api/host/merch/[id]/route.ts");
+    assert.match(listing, /action === "publish"\) \{\n\s+if \(!merchSalesOpen\(\)\)/);
+  });
+  test("the recovery cron path never consults the switch", () => {
+    const orders = read("domain/merch/orders.ts");
+    const recover = orders.slice(orders.indexOf("export async function recoverPendingWithoutSession"), orders.indexOf("export async function cancelFreeOrder"));
+    assert.ok(!/salesOpen/.test(recover));
+  });
+});
