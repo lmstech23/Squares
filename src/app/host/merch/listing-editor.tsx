@@ -45,6 +45,23 @@ function toLocalInput(iso: string): string {
 const blankItem = (): Item => ({ name: "", description: "", imageUrl: "", priceMode: "PAID", net: "", perOrderLimit: "10", variants: ["S", "M", "L", "XL", "2XL"].map((label) => ({ label, stockLimit: "" })) });
 const input = "h-[42px] rounded-lg border border-gray-700 bg-gray-950 px-3 text-[15px] text-white";
 const card = "rounded-2xl border border-gray-800 bg-gray-900 p-5 flex flex-col gap-3.5";
+const NOTICE_KEY = "daali-merch-editor-notice";
+
+// The reply may not be JSON (an expired sign-in can come back as a login page),
+// so never let parsing throw and swallow the outcome.
+async function readJson(res: Response): Promise<{ id?: unknown; url?: unknown; error?: unknown } | null> {
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function failureText(res: Response, data: { error?: unknown } | null, fallback: string): string {
+  if (res.status === 401 || res.redirected) return "You've been signed out. Sign in again, then save.";
+  if (typeof data?.error === "string" && data.error) return data.error;
+  return `${fallback} Please try again.`;
+}
 
 export default function ListingEditor({ initial, paymentsReady, publicBase }: { initial: EditorInitial | null; paymentsReady: boolean; publicBase: string }) {
   const router = useRouter();
@@ -59,6 +76,16 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const hasPaid = s.items.some((i) => i.priceMode === "PAID");
+  // Pick up the message carried from the create step (see goToSale).
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(NOTICE_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(NOTICE_KEY);
+      const m = JSON.parse(raw);
+      if (m && typeof m.text === "string") setMsg({ ok: !!m.ok, text: m.text });
+    } catch {}
+  }, []);
 
   const set = (patch: Partial<EditorInitial>) => setS((x) => ({ ...x, ...patch }));
   const setItem = (idx: number, patch: Partial<Item>) => setS((x) => ({ ...x, items: x.items.map((it, i) => (i === idx ? { ...it, ...patch } : it)) }));
@@ -91,32 +118,47 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload()),
       });
-      const data = await res.json();
-      if (!res.ok) return setMsg({ ok: false, text: data.error ?? "Couldn't save." });
-      const id = data.id as string;
+      const data = await readJson(res);
+      if (!res.ok || typeof data?.id !== "string") return showMsg({ ok: false, text: failureText(res, data, "Couldn't save.") });
+      const id = data.id;
       if (publish) {
         const p = await fetch(`/api/host/merch/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "publish" }) });
-        const pd = await p.json();
+        const pd = await readJson(p);
         if (!p.ok) {
-          setMsg({ ok: false, text: pd.error ?? "Couldn't publish." });
-          if (!s.id) router.replace(`/host/merch/${id}`);
-          return;
+          const text = `Saved as a draft, but not published. ${failureText(p, pd, "Couldn't publish.")}`;
+          if (!s.id) return goToSale(id, { ok: false, text });
+          return showMsg({ ok: false, text });
         }
       }
-      setMsg({ ok: true, text: publish ? "Published." : "Saved." });
-      if (!s.id) router.replace(`/host/merch/${id}`);
-      else router.refresh();
+      const done = { ok: true, text: publish ? "Published. Your sale is open." : "Draft saved." };
+      if (!s.id) return goToSale(id, done);
+      showMsg(done);
+      router.refresh();
+    } catch {
+      showMsg({ ok: false, text: "Couldn't reach Daali. Check your connection and try again." });
     } finally {
       setBusy(false);
     }
   }
 
+  // A new sale moves to its own page after the first save; the message is
+  // carried across that navigation so it is not lost on the way.
+  function goToSale(id: string, m: { ok: boolean; text: string }) {
+    try { sessionStorage.setItem(NOTICE_KEY, JSON.stringify(m)); } catch {}
+    router.replace(`/host/merch/${id}`);
+  }
+
+  function showMsg(m: { ok: boolean; text: string }) {
+    setMsg(m);
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}
+  }
+
   async function upload(idx: number, file: File) {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch("/api/host/merch/upload", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok) return setMsg({ ok: false, text: data.error ?? "Upload failed." });
+    const res = await fetch("/api/host/merch/upload", { method: "POST", body: fd }).catch(() => null);
+    const data = res ? await readJson(res) : null;
+    if (!res || !res.ok || typeof data?.url !== "string") return showMsg({ ok: false, text: res ? failureText(res, data, "Upload failed.") : "Upload failed. Check your connection and try again." });
     setItem(idx, { imageUrl: data.url });
   }
 
