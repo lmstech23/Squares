@@ -197,8 +197,15 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">Name<input className={input} value={s.title} onChange={(e) => set({ title: e.target.value })} /></label>
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">About this sale<textarea className={input + " h-20 py-2"} value={s.description} onChange={(e) => set({ description: e.target.value })} /></label>
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">Link
-              <div className="flex items-center rounded-lg border border-gray-700 bg-gray-950 px-3 h-[42px]"><span className="text-gray-400">{publicBase}</span>
-                <input className="bg-transparent flex-1 outline-none" value={s.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase() })} placeholder="your-sale" /></div>
+              <input className={input + " w-full"} value={s.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase() })} placeholder="your-sale" />
+              {/* Full address on one line under the box. A long host is cut from the
+                  start ("…") so the part being typed always stays visible. */}
+              <span className="flex min-w-0 gap-1 text-xs text-gray-400">
+                <span className="shrink-0">Your sale&apos;s address:</span>
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ direction: "rtl", textAlign: "left" }}>
+                  <bdi dir="ltr">{publicBase}{s.slug || "your-sale"}</bdi>
+                </span>
+              </span>
             </label>
           </section>
 
