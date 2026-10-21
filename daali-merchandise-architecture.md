@@ -1,7 +1,7 @@
 # Daali Merchandise — Specification
 
 **Status:** Approved as the implementation direction (Revision 3 + 3.1). Built locally on branch `merch-standalone`; no production migration, push or deployment.
-**Date:** October 16, 2026 — **Revision 3.5**: Stripe test-mode measurements recorded in §5.7 (late replay returns the original session; new-request expiry cutoff). **Revision 3.4**: production host fixed as `https://beta.daali.app` (D7, §13.2). **Revision 3.3**: the new-sales switch (`MERCH_SALES_ENABLED`) is separated from payment operations, which can no longer be switched off (§13.1); one public origin for every merch link (§13.2). **Revision 3.2** (implementation record, no product change): checkout recovery replays the idempotency key instead of expiring blindly (§5.7); delivery-unknown is sticky across attempts (§5.8.1); implementation notes added (§13); `package.json` added to the touched-files list (§10). **Revision 3.1**: migration privileges scoped to the seven new tables, forward-only rollback (migration impact §2.4, §6); receipt idempotency limits stated (§5.8.1); UX-1 settled as the immediate redirect. **Revision 3**: (R1) post-payment navigation restored to automatic redirect, the 3-second confirmation screen recorded as an open UX option (§5.4); (R2) pricing finds the minimum price that meets the net under Stripe's actual rounding (§4); (R3) receipts move to a delivery outbox with pending/sending/sent/failed states, retries and duplicate-send protection, never blocking the redirect (§5.8); (R4) checkout-session creation failures, timeouts and lost responses defined, with idempotency and recovery tests (§5.7). Revision 2.1's change is withdrawn as an approved change
+**Date:** October 21, 2026 — **Revision 3.6**: simplified organizer setup with progressive disclosure, a review-and-publish step and a live confirmation (§5.6.1, UX-2); the after-order link no longer needs a separate "I opened it" confirmation (LV-1, §5.6); shipping is not offered in setup (§5.6.1); the tax choice moves into the review step, wording and rules unchanged (§6). UI only — no change to data, pricing, payment verification or server rules. **Revision 3.5** (Oct 16): Stripe test-mode measurements recorded in §5.7 (late replay returns the original session; new-request expiry cutoff). **Revision 3.4**: production host fixed as `https://beta.daali.app` (D7, §13.2). **Revision 3.3**: the new-sales switch (`MERCH_SALES_ENABLED`) is separated from payment operations, which can no longer be switched off (§13.1); one public origin for every merch link (§13.2). **Revision 3.2** (implementation record, no product change): checkout recovery replays the idempotency key instead of expiring blindly (§5.7); delivery-unknown is sticky across attempts (§5.8.1); implementation notes added (§13); `package.json` added to the touched-files list (§10). **Revision 3.1**: migration privileges scoped to the seven new tables, forward-only rollback (migration impact §2.4, §6); receipt idempotency limits stated (§5.8.1); UX-1 settled as the immediate redirect. **Revision 3**: (R1) post-payment navigation restored to automatic redirect, the 3-second confirmation screen recorded as an open UX option (§5.4); (R2) pricing finds the minimum price that meets the net under Stripe's actual rounding (§4); (R3) receipts move to a delivery outbox with pending/sending/sent/failed states, retries and duplicate-send protection, never blocking the redirect (§5.8); (R4) checkout-session creation failures, timeouts and lost responses defined, with idempotency and recovery tests (§5.7). Revision 2.1's change is withdrawn as an approved change
 **Repo baseline:** `lmstech23/squares` `main` at `ab6de64`. Every [REPO] line is re-checked against `main` before coding.
 **Companions:** `daali-merchandise-migration-impact.md` (migration impact assessment) · mockup canvas "Daali merch shop mockups" (5 revised screens + host dashboard before/after).
 **Process:** `CLAUDE.md` mockup → document → code. Mockups and this document are each approved before code. Per the document-authority rule, this file is imported into the repo before anything is built from it.
@@ -21,6 +21,8 @@
 | D9 | No automated tax. **Organizer must confirm how sales tax is handled before publishing a paid listing.** No assumption that fundraiser merch is exempt | **Approved as amended** — §6 |
 | D10 | Email required; **rate limiting and duplicate-order protection**; no email verification | **Approved as amended** — §8 |
 | UX-1 | After verified payment: **immediate automatic redirect with no click** | **Approved Oct 16.** The 3-second confirmation screen is not part of this release |
+| UX-2 | **Simplified organizer setup** (§5.6.1): one short screen, optional settings collapsed, review before publish, live confirmation after the server confirms | **Approved Oct 21** (mockup) |
+| LV-1 | **No separate after-order link confirmation.** Saving a link counts as the organizer's confirmation; checking it is the organizer's responsibility | **Approved Oct 21.** Replaces "must be opened and confirmed before publish" (§5.6). Remaining protections: `https` only and server-validated, used only after verified payment, destination shown to the buyer before paying |
 
 **Out of this release:** Event and Fundraiser integration, the INCLUDED price mode, AI agent actions, optional Daali contributions, Daali fees, refunds inside Daali, shipping rates, tax calculation.
 
@@ -142,8 +144,29 @@ The receipt email and `/merch/order/[public_token]` show the order and the after
 - Host dashboard (D8): "New merch sale" button and a "Merch sales" list under the boards list — the only change to an existing page.
 - `/host/merch/new`, `/host/merch/[id]` — setup, publish, close.
 - `/host/merch/[id]/orders` — totals, counts by size, mark handed out, cancel a free order, CSV.
-- After-order link: shown decoded, `https` only, must be opened and confirmed before publish; any edit clears the confirmation.
+- After-order link: shown decoded, `https` only, server-validated. **No separate confirmation step (LV-1):** saving the link records it as confirmed by the organizer (`redirect_verified_at/by` are set on save), so the existing publish rule is met without a checkbox. The buyer page still names the destination before payment, and navigation still happens only after verified payment (§5.4).
 - Orders page shows each receipt's delivery state (sent, retrying, failed) with a "Resend receipt" action for failed ones.
+
+#### 5.6.1 Setup screen (Revision 3.6, UX-2)
+
+Goal: an organizer selling one T-shirt with one pickup location finishes setup without meeting a setting she doesn't need. UI only; the same save and publish rules apply.
+
+**Main screen, in order:**
+1. Sale name; description (optional).
+2. Each item: name, photo (optional), Free / Paid. Paid shows "You receive per item" and "Supporters pay", from the existing pricing function (§4).
+3. Sizes (optional), each with an optional stock limit. **An item saved with no sizes is stored as one option labelled "One size"**, which buyers see as a single row. The data model still requires at least one option per item.
+4. "Is there a limit on how many items a customer can purchase?" **No** (default) stores the system maximum, **100 per order**; **Yes** asks "How many per order?" (1–100). The limit is per item per order. Verified Oct 21: `priceForNet(net, 100)` equals `priceForNet(net, 10)` for every net from $0.50 to $1,000, so this changes no price.
+5. "+ Add another item".
+6. **"How will buyers receive their items?"** Pickup only in this release: "Pickup location or instructions" (one option to start) and "+ Add another pickup location". **Shipping and "Both" are not offered** until address collection, shipping cost and fulfillment rules exist; to be discussed for the new platform.
+7. Buttons: **Save draft** and **Continue**. Editing an open sale also shows **Orders** and **Close sale**, and Continue reads **Save changes**.
+
+**Additional options (collapsed):** order deadline; buyer questions (up to 2, free text, each optionally required); after-order link (LV-1); **sale link**, auto-created from the sale name until the organizer edits it, with the full address shown on one line beneath.
+
+**Review and publish (Continue opens it):** sale name; each item with its price summary and sizes; pickup location(s); order deadline if set; after-order link if set (shown, not confirmed); and, **for paid sales only**, the sales-tax choice and confirmation from §6. Publish stays unavailable until a paid sale's tax choice is made and confirmed. Free-only sales show no tax section. On Publish the page saves, then publishes; any server error is shown inside the review and the sale stays a draft.
+
+**After the server confirms publication:** "Your sale is live", the public sale address with **Copy link**, **View sale**, and **Back to dashboard**. Nothing says or implies the sale is live before the server confirms it.
+
+**Unchanged:** pricing, payment verification, tax data and how it is stored, fulfillment records, the publish rules in `publishListing`, existing listings, drafts and orders, the new-sales switch (§13.1), and the standalone domain's readiness for Event/Fundraiser parents (§2).
 
 ### 5.7 Checkout-session creation: failure, timeout, lost response
 
@@ -223,7 +246,7 @@ Publishing a listing that has at least one **Paid** item requires the organizer 
 | `EXEMPT_CONFIRMED` | "My organization has confirmed these sales are exempt from sales tax." |
 | `NOT_DUE_CONFIRMED` | "My organization has confirmed no sales tax is due on these sales." |
 
-Above the choice: "Daali doesn't calculate, collect separately or pay sales tax. Fundraiser merchandise isn't automatically tax-exempt — check your state's rules." There is **no default**; Publish stays unavailable until one is chosen and the confirmation box is ticked. `tax_confirmed_at` and `tax_confirmed_by` are recorded. Changing the choice requires confirming again. The orders CSV includes the listing's tax choice in its header line.
+Above the choice: "Daali doesn't calculate, collect separately or pay sales tax. Fundraiser merchandise isn't automatically tax-exempt — check your state's rules." There is **no default**; Publish stays unavailable until one is chosen and the confirmation box is ticked. From Revision 3.6 this choice is made in the review-and-publish step (§5.6.1) rather than on the main setup screen; wording and rules are unchanged. `tax_confirmed_at` and `tax_confirmed_by` are recorded. Changing the choice requires confirming again. The orders CSV includes the listing's tax choice in its header line.
 
 ---
 
