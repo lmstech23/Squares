@@ -85,7 +85,7 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 export default function ListingEditor({ initial, paymentsReady, publicBase }: { initial: EditorInitial | null; paymentsReady: boolean; publicBase: string }) {
   const router = useRouter();
   const [s, setS] = useState<EditorInitial>(
-    initial ?? { id: "", status: "DRAFT", title: "", description: "", slug: "", closesAt: "", redirectUrl: "", redirectVerified: false, questions: [], items: [blankItem()], fulfillmentOptions: [{ label: "", kind: "PICKUP" }], taxHandling: "", taxConfirmed: false }
+    initial ?? { id: "", status: "DRAFT", title: "", description: "", slug: "", closesAt: "", redirectUrl: "", redirectVerified: false, questions: [], items: [blankItem()], fulfillmentOptions: [], taxHandling: "", taxConfirmed: false }
   );
   // closesAt arrives as ISO from the server; show it in the host's own time zone.
   useEffect(() => {
@@ -142,8 +142,9 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
         perOrderLimit: limited[i] ? Number(it.perOrderLimit || 0) : Number(NO_LIMIT),
         variants: variantsFor(it),
       })),
-      // Blank pickup rows are skipped so a draft can be saved before they are filled in.
-      fulfillmentOptions: s.fulfillmentOptions.filter((f) => f.label.trim() !== "").map((f) => ({ ...f, label: f.label.trim(), kind: "PICKUP" as const })),
+      // §5.6.1 (Rev 3.7): setup has no pickup step. A new sale has none; an existing
+      // sale's options are sent back exactly as loaded so they are never removed.
+      fulfillmentOptions: s.fulfillmentOptions,
       taxHandling: (tax ? tax.handling : s.taxHandling) || null,
       taxConfirmed: tax ? tax.confirmed : false,
     };
@@ -172,8 +173,8 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
   }
 
   function noteLinkProblem(text: string) {
-    // The sale link lives under Additional options; open it when it's the problem.
-    if (/link/i.test(text) && !/after-order/i.test(text)) setShowMore(true);
+    // The after-order link lives under Additional options; open it when it's the problem.
+    if (/after-order/i.test(text)) setShowMore(true);
   }
 
   async function saveDraft() {
@@ -309,7 +310,18 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
 
       <section className={card}>
         <label className="flex flex-col gap-1.5 text-sm text-gray-300">Sale name<input className={input} value={s.title} onChange={(e) => setTitle(e.target.value)} /></label>
-        <label className="flex flex-col gap-1.5 text-sm text-gray-300">Description (optional)<textarea className={input + " h-20 py-2"} value={s.description} onChange={(e) => set({ description: e.target.value })} /></label>
+        <label className="flex flex-col gap-1.5 text-sm text-gray-300">Sale link
+          <input className={input + " w-full"} value={s.slug} onChange={(e) => { setLinkEdited(true); set({ slug: e.target.value.toLowerCase() }); }} placeholder="your-sale" />
+          {/* Full address on one line under the box. A long host is cut from the
+              start ("…") so the part being typed always stays visible. */}
+          <span className="flex min-w-0 gap-1 text-xs text-gray-400">
+            <span className="shrink-0">Your sale&apos;s address:</span>
+            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ direction: "rtl", textAlign: "left" }}>
+              <bdi dir="ltr">{publicBase}{s.slug || "your-sale"}</bdi>
+            </span>
+          </span>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm text-gray-300">Description (optional)<textarea className={input + " h-24 py-2"} value={s.description} onChange={(e) => set({ description: e.target.value })} placeholder="Include pickup details, like where and when to collect." /></label>
       </section>
 
       {s.items.map((it, idx) => {
@@ -375,23 +387,11 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
       })}
       <button className={dashed + " h-11"} onClick={() => { set({ items: [...s.items, blankItem()] }); setLimited((l) => [...l, false]); }}>+ Add another item</button>
 
-      <section className={card}>
-        <h2 className="text-lg font-semibold">How will buyers receive their items?</h2>
-        {s.fulfillmentOptions.map((f, i) => (
-          <div key={i} className="flex gap-2 items-end">
-            <label className="flex-1 flex flex-col gap-1.5 text-sm text-gray-300">{i === 0 ? "Pickup location or instructions" : "Another pickup location"}
-              <input className={input} value={f.label} placeholder="Practice gym, Saturday 10–12" onChange={(e) => set({ fulfillmentOptions: s.fulfillmentOptions.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
-            </label>
-            {s.fulfillmentOptions.length > 1 ? <button aria-label="Remove pickup location" className="w-[42px] h-[42px] rounded-lg border border-gray-700 text-gray-400" onClick={() => set({ fulfillmentOptions: s.fulfillmentOptions.filter((_, j) => j !== i) })}>×</button> : null}
-          </div>
-        ))}
-        <button className={dashed} onClick={() => set({ fulfillmentOptions: [...s.fulfillmentOptions, { label: "", kind: "PICKUP" }] })}>+ Add another pickup location</button>
-      </section>
 
       <section className={card}>
         <button aria-expanded={showMore} onClick={() => setShowMore((x) => !x)} className="flex flex-col items-start gap-1 text-left">
           <span className="text-lg font-semibold">{showMore ? "▾" : "▸"} Additional options</span>
-          <span className="text-xs text-gray-400">Order deadline · buyer questions · after-order link · sale link</span>
+          <span className="text-xs text-gray-400">Order deadline · buyer questions · after-order link</span>
         </button>
         {showMore ? (
           <div className="flex flex-col gap-5 pt-2">
@@ -412,18 +412,6 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">After-order link (optional)
               <input className={input} value={s.redirectUrl} onChange={(e) => set({ redirectUrl: e.target.value })} placeholder="https://…" />
               <span className="text-xs text-gray-400">Buyers go here once payment is confirmed, like your game ticket page.</span>
-            </label>
-
-            <label className="flex flex-col gap-1.5 text-sm text-gray-300">Sale link
-              <input className={input + " w-full"} value={s.slug} onChange={(e) => { setLinkEdited(true); set({ slug: e.target.value.toLowerCase() }); }} placeholder="your-sale" />
-              {/* Full address on one line under the box. A long host is cut from the
-                  start ("…") so the part being typed always stays visible. */}
-              <span className="flex min-w-0 gap-1 text-xs text-gray-400">
-                <span className="shrink-0">Your sale&apos;s address:</span>
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap" style={{ direction: "rtl", textAlign: "left" }}>
-                  <bdi dir="ltr">{publicBase}{s.slug || "your-sale"}</bdi>
-                </span>
-              </span>
             </label>
           </div>
         ) : null}
@@ -456,8 +444,7 @@ function Review({ s, limited, hasPaid, busy, error, onBack, onPublish }: {
   // §6: no default choice for a new sale; a previously confirmed choice is shown, but must be confirmed again here.
   const [handling, setHandling] = useState(s.taxConfirmed ? s.taxHandling : "");
   const [confirmed, setConfirmed] = useState(false);
-  const pickups = s.fulfillmentOptions.map((f) => f.label.trim()).filter(Boolean);
-  const canPublish = !busy && pickups.length > 0 && (!hasPaid || (!!handling && confirmed));
+  const canPublish = !busy && (!hasPaid || (!!handling && confirmed));
   const deadline = s.closesAt ? new Date(s.closesAt) : null;
 
   return (
@@ -479,7 +466,6 @@ function Review({ s, limited, hasPaid, busy, error, onBack, onPublish }: {
               </span>
             );
           })}
-          {pickups.length ? <span className="text-gray-300">Pickup: {pickups.join(" · ")}</span> : <span className="text-red-300">Add a pickup location before publishing.</span>}
           {deadline && !Number.isNaN(deadline.getTime()) ? <span className="text-gray-300">Orders close: {deadline.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span> : null}
           {s.redirectUrl.trim() ? <span className="text-gray-300 break-all">After-order link: {s.redirectUrl.trim()}</span> : null}
         </div>
