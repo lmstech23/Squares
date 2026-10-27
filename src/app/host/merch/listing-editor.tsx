@@ -398,7 +398,7 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">Order deadline (optional)<input type="datetime-local" className={input} value={s.closesAt} onChange={(e) => set({ closesAt: e.target.value })} /></label>
 
             <div className="flex flex-col gap-2">
-              <span className="text-sm text-gray-300">Buyer questions <span className="text-gray-400">(up to 2)</span></span>
+              <span className="text-sm text-gray-300">Buyer questions <span className="text-gray-400">(up to 5)</span></span>
               {s.questions.map((q, i) => (
                 <div key={i} className="flex gap-2 items-center">
                   <input aria-label="Question" className={input + " flex-1"} value={q.label} onChange={(e) => set({ questions: s.questions.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
@@ -406,7 +406,7 @@ export default function ListingEditor({ initial, paymentsReady, publicBase }: { 
                   <button aria-label="Remove question" className="w-9 h-9 rounded-lg border border-gray-700 text-gray-400" onClick={() => set({ questions: s.questions.filter((_, j) => j !== i) })}>×</button>
                 </div>
               ))}
-              {s.questions.length < 2 ? <button className={dashed} onClick={() => set({ questions: [...s.questions, { label: "", required: false }] })}>+ Add question</button> : null}
+              {s.questions.length < 5 ? <button className={dashed} onClick={() => set({ questions: [...s.questions, { label: "", required: false }] })}>+ Add question</button> : null}
             </div>
 
             <label className="flex flex-col gap-1.5 text-sm text-gray-300">After-order link (optional)

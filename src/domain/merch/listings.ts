@@ -67,12 +67,12 @@ export async function saveListing(
   }
   const redirectUrl = input.redirectUrl ? validateAfterOrderUrl(input.redirectUrl) : null;
 
-  const questions = (input.questions ?? []).slice(0, 3).map((q, i) => ({
+  const questions = (input.questions ?? []).slice(0, 6).map((q, i) => ({
     key: `q${i + 1}`,
     label: requireText(q.label, "Question", 120)!,
     required: q.required === true,
   }));
-  if (questions.length > 2) throw new MerchError("INVALID_INPUT", "Up to 2 extra questions.");
+  if (questions.length > 5) throw new MerchError("INVALID_INPUT", "Up to 5 extra questions.");
 
   if (!Array.isArray(input.items) || input.items.length === 0) throw new MerchError("INVALID_INPUT", "Add at least one item.");
   if (input.items.length > 10) throw new MerchError("INVALID_INPUT", "Up to 10 items.");

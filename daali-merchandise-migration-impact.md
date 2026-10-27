@@ -39,7 +39,7 @@
 
 **`daali_merch_listings`**
 `id uuid PK` · `owner_user_id text NOT NULL` (Supabase user id; no FK — `auth.users` is outside `public`) · `context` · `slug text UNIQUE` · `title` · `description` · `status` (default DRAFT) · `closes_at timestamptz` · `redirect_url text` · `redirect_verified_at` · `redirect_verified_by text` · `questions jsonb NOT NULL DEFAULT '[]'` · `tax_handling` · `tax_confirmed_at` · `tax_confirmed_by text` · `created_at` · `updated_at`
-CHECKs: STANDALONE ⇒ slug NOT NULL; slug matches `^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$`; redirect_url NULL or starts `https://`; redirect_verified_at NULL when redirect_url NULL; tax_handling and tax_confirmed_at set together; `jsonb_array_length(questions) <= 2`.
+CHECKs: STANDALONE ⇒ slug NOT NULL; slug matches `^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$`; redirect_url NULL or starts `https://`; redirect_verified_at NULL when redirect_url NULL; tax_handling and tax_confirmed_at set together; `jsonb_array_length(questions) <= 5` (amended in spec Revision 3.8 by `20261026000000_daali_merch_questions_max5`; originally `<= 2`, constraint `daali_merch_listings_questions_max2`).
 
 **`daali_merch_items`**
 `id` · `listing_id → listings ON DELETE CASCADE` · `name` · `description` · `image_url` · `sort int` · `price_mode` · `net_cents int` · `per_order_limit int NOT NULL DEFAULT 10` · `active bool DEFAULT true`
@@ -162,3 +162,15 @@ Forward-only, like every migration in this repo. **Rows in `_prisma_migrations` 
 | Privilege statements touch existing tables | Not possible: every statement names only the seven new tables; proven by the before/after permission snapshot of every other relation |
 | Legacy webhook reacts to merch events | Verified by code reading and an integration test before deploy |
 | Docs-only or migration commit triggers a production deploy | Migration ships in the same commit as the code that uses it, after step 4 has been run manually; or the commit lands only once approved |
+
+---
+
+## Amendment — Revision 3.8: up to 5 buyer questions (October 26, 2026)
+
+**Migration:** `prisma/migrations/20261026000000_daali_merch_questions_max5`.
+
+- **What it does:** drops `daali_merch_listings_questions_max2` and adds `daali_merch_listings_questions_max5`: `CHECK (jsonb_typeof(questions) = 'array' AND jsonb_array_length(questions) <= 5)`.
+- **Data:** none changed. It only loosens a limit; every existing listing has 2 or fewer questions and satisfies the new check (checked Oct 26: dev 3 listings, max 0; production 0 listings).
+- **Security:** no table, column, grant, RLS or policy change, so containment is unaffected. The containment check still runs on the guarded production path.
+- **Order:** dev → Preview test → production through `npm run db:migrate:production`, then the code deploy. Code allowing 5 questions must not reach production before the migration; a sale saved with 3 or more questions would otherwise fail on the old check.
+- **Rollback:** forward-only. Returning to 2 is possible only while no listing has more than 2 questions.

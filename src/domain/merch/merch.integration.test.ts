@@ -18,6 +18,7 @@ import {
 } from "./orders.ts";
 import { claim, hostResend, processOutbox, sendClaimed, idempotencyKeyFor, LEASE_MS, MAX_ATTEMPTS } from "./notifications.ts";
 import { ordersCsv } from "./csv.ts";
+import { saveListing } from "./listings.ts";
 import { merchBaseUrl } from "./origin.ts";
 import { isMerchError } from "./errors.ts";
 import { ACCOUNT, FakeSender, FakeStripe, deps, orderInput, seedListing, testClient } from "./test-support.ts";
@@ -751,6 +752,39 @@ describe("merch (integration)", { skip: !url && "TEST_DATABASE_URL not set" }, (
       const o = await createOrder(orderInput(f, [{ variantId: f.m, quantity: 1 }]), deps(db, new FakeStripe(() => new Date(clock.t)), clock));
       await assert.rejects(db.$executeRaw`UPDATE daali_merch_order_lines SET quantity = 0 WHERE order_id = ${o.orderId}::uuid`);
       await assert.rejects(db.$executeRaw`UPDATE daali_merch_orders SET refunded_cents = total_cents + 1 WHERE id = ${o.orderId}::uuid`);
+    });
+
+    test("buyer questions: the database allows 5 and refuses 6 (Rev 3.8)", async () => {
+      const f = await seedListing(db);
+      const qs = (n: number) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ key: `q${i + 1}`, label: `Q${i + 1}`, required: false })));
+      await db.$executeRaw`UPDATE daali_merch_listings SET questions = ${qs(5)}::jsonb WHERE id = ${f.listing.id}::uuid`;
+      await assert.rejects(db.$executeRaw`UPDATE daali_merch_listings SET questions = ${qs(6)}::jsonb WHERE id = ${f.listing.id}::uuid`);
+    });
+  });
+
+  // ------------------------------------------------------- buyer questions --
+
+  describe("saveListing buyer questions (Rev 3.8)", () => {
+    const input = (n: number) => ({
+      title: "Wizards Dance Team",
+      slug: "q-" + Math.random().toString(36).slice(2, 12),
+      questions: Array.from({ length: n }, (_, i) => ({ label: `Question ${i + 1}`, required: i === 0 })),
+      items: [{ name: "Team T-shirt", priceMode: "FREE", variants: [{ label: "M" }] }],
+    });
+
+    test("5 questions save, keyed q1..q5, required flags kept", async () => {
+      const owner = "user-q5-" + Math.random().toString(36).slice(2);
+      const id = await saveListing(owner, null, input(5), db, new Date());
+      const row = await db.daaliMerchListing.findUniqueOrThrow({ where: { id } });
+      const q = row.questions as { key: string; label: string; required: boolean }[];
+      assert.deepEqual(q.map((x) => x.key), ["q1", "q2", "q3", "q4", "q5"]);
+      assert.deepEqual(q.map((x) => x.required), [true, false, false, false, false]);
+    });
+
+    test("6 questions are refused with the up-to-5 message and write nothing", async () => {
+      const owner = "user-q6-" + Math.random().toString(36).slice(2);
+      await assert.rejects(saveListing(owner, null, input(6), db, new Date()), (e: unknown) => isMerchError(e) && (e as Error).message === "Up to 5 extra questions.");
+      assert.equal(await db.daaliMerchListing.count({ where: { ownerUserId: owner } }), 0);
     });
   });
 });
