@@ -75,6 +75,22 @@ reference `paymentPreference`, `boardCredits`, `stripeAccountId`,
 
 E2 is mechanically checkable. See §6.
 
+**Merch exception to the E2 scan (approved Nov 12, 2026).** The guard that
+checks E2, `scripts/check-event-isolation.sh`, scans `src/domain` because the
+Event domain lives there. Merchandise (`daali-merchandise-architecture.md`)
+lives beside it in `src/domain/merch`, takes card payments and reads the Host
+payee by design. It is a separate product path, not Event code.
+
+- The guard skips files inside `src/domain/merch/` and nothing else. The
+  exception is that exact directory. It is not a pattern and gains no second
+  entry.
+- E2 itself is unchanged. Every Event file is held to the same forbidden list,
+  the same legacy-accessor rule, the same write rule and the same host-app rule
+  as before.
+- No scanned Event-path file may import from `src/domain/merch`. The guard
+  fails on such an import, so the excluded directory cannot become a route to
+  Host, Board, payment-preference, Board-credit or Stripe state.
+
 ### 3.2 Layout and middleware inheritance
 
 A guard in a shared `layout.tsx` or in `middleware.ts` matching a broad path

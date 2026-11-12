@@ -63,6 +63,18 @@ PATHS=(
   "src/app/api/notifications"
 )
 
+# EXCLUDED FROM THE SCAN. Exactly one directory, approved Nov 12, 2026
+# (docs/phase0/event-path-gate-independence.md, Rule E2, "Merch exception").
+# "src/domain" is scanned because the Event domain lives there, and Merchandise
+# (daali-merchandise-architecture.md) lives beside it in src/domain/merch. Merch
+# is a separate product path that takes card payments and reads the Host payee
+# by design, so it is not Event code and E2 does not describe it.
+# This is a path prefix with its trailing slash: it matches files inside that
+# directory and nothing else. Do not add a second entry, a pattern or a
+# wildcard here. An Event file that needs something from this directory is a
+# violation of E2, not a reason to widen this.
+EXCLUDED_DIR="src/domain/merch/"
+
 # (a) Forbidden identifiers. Word-boundary anchored to avoid matching e.g.
 # "hostname" or "localhost".
 FORBIDDEN=(
@@ -172,7 +184,7 @@ while IFS= read -r f; do FILES+=("$f"); done < <(
   for path in "${PATHS[@]}"; do
     [ -e "$path" ] || continue
     if [ -d "$path" ]; then find "$path" -type f \( -name '*.ts' -o -name '*.tsx' \); else echo "$path"; fi
-  done | sort -u
+  done | sort -u | awk -v ex="$EXCLUDED_DIR" 'index($0, ex) != 1'
 )
 
 # (a) E2
@@ -202,6 +214,11 @@ for f in "${FILES[@]}"; do
   hits=$(grep -nE "$WRITE" "$f" 2>/dev/null)
   [ -n "$hits" ] && report "WRITE" "a Prisma write outside src/commands/** and the named db helpers, in $f" "$hits"
 done
+
+# The excluded directory is not a way in: no scanned file may import from it.
+MERCH_IMPORT="from ['\"](@/domain/merch|(\.\./)+([A-Za-z0-9_\[\]-]+/)*domain/merch|\./merch)(/|['\"])"
+hits=$(grep -nE "$MERCH_IMPORT" "${FILES[@]}" /dev/null 2>/dev/null)
+[ -n "$hits" ] && report "E2" "an Event-path file imports from src/domain/merch (excluded from the scan, never importable)" "$hits"
 
 # (d) host app: no new file under src/app/host, no import from it
 if [ -d "src/app/host" ]; then
