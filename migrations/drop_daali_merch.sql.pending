@@ -1,0 +1,45 @@
+-- NOT RUNNABLE AS-IS. Kept for reference, like other `.sql.pending` files.
+--
+-- Rollback for 20261017000000_daali_merch, for the case "applied, needs
+-- removing, and NO real orders exist yet" (migration impact §6).
+--
+-- To use it: copy this file into a NEW Prisma migration directory
+-- (prisma/migrations/<timestamp>_drop_daali_merch/migration.sql), review it,
+-- and apply it through `npm run db:migrate:production` so containment runs and
+-- `_prisma_migrations` records it normally. Never delete or edit rows in
+-- `_prisma_migrations` by hand.
+--
+-- Precondition, enforced below: zero orders. After real orders exist the
+-- procedure is MERCH_ENABLED=false, not a drop.
+
+DO $$
+BEGIN
+  IF (SELECT count(*) FROM "daali_merch_orders") > 0 THEN
+    RAISE EXCEPTION 'drop_daali_merch aborted: daali_merch_orders has rows; disable with MERCH_ENABLED=false instead';
+  END IF;
+END $$;
+
+DROP TABLE "daali_merch_notifications";
+DROP TABLE "daali_merch_order_lines";
+DROP TABLE "daali_merch_orders";
+DROP TABLE "daali_merch_fulfillment_options";
+DROP TABLE "daali_merch_variants";
+DROP TABLE "daali_merch_items";
+DROP TABLE "daali_merch_listings";
+
+DROP TYPE "daali_merch_notification_status";
+DROP TYPE "daali_merch_tax_handling";
+DROP TYPE "daali_merch_fulfillment_status";
+DROP TYPE "daali_merch_order_status";
+DROP TYPE "daali_merch_fulfillment_kind";
+DROP TYPE "daali_merch_price_mode";
+DROP TYPE "daali_merch_listing_status";
+DROP TYPE "daali_merch_context";
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_class WHERE relname LIKE 'daali\_merch\_%')
+     OR EXISTS (SELECT 1 FROM pg_type WHERE typname LIKE 'daali\_merch\_%') THEN
+    RAISE EXCEPTION 'drop_daali_merch aborted: daali_merch objects remain';
+  END IF;
+END $$;
