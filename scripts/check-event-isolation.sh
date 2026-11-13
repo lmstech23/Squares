@@ -161,6 +161,14 @@ HOST_BASELINE=(
   "src/app/host/boards/new/page.tsx"
   "src/app/host/boards/page.tsx"
   "src/app/host/layout.tsx"
+  # Merchandise organizer pages, added on main Oct 17-21, 2026 and listed here
+  # in the commit that merges main into integration/daali-event (approval
+  # pending in the pull request). Legacy host-app files, not Event code.
+  "src/app/host/merch/[id]/orders/order-actions.tsx"
+  "src/app/host/merch/[id]/orders/page.tsx"
+  "src/app/host/merch/[id]/page.tsx"
+  "src/app/host/merch/listing-editor.tsx"
+  "src/app/host/merch/new/page.tsx"
   "src/app/host/nav.tsx"
   "src/app/host/page.tsx"
   "src/app/host/payment-setup/page.tsx"
