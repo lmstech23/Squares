@@ -14,6 +14,12 @@
 # database, environment-variable or deployment changes, and this workflow
 # neither deploys nor can deploy: it has read-only permissions and no secrets.
 # Vercel continues to deploy from pushes to main independently of this file.
+#
+# TWO JOBS. `verify` is the typecheck, the Event isolation guard and the unit
+# tests, unchanged. `event-database` (L0 step 7, Nov 2026) runs the Event
+# database and concurrency suites against a disposable Postgres that lives and
+# dies inside the runner. Neither job has a secret, and neither can reach dev
+# or production: no Supabase credential exists anywhere in this workflow.
 
 name: CI
 
@@ -151,12 +157,16 @@ jobs:
             echo "::warning title=Suite completeness unknown::No '# skipped' summary line found in the test output. Completeness could not be verified."
           elif [ "$SKIPPED" -gt 0 ]; then
             {
-              echo "> **The concurrency suite did not run.**"
+              echo "> **The legacy money-path concurrency suite did not run in this job.**"
               echo ">"
-              echo "> \`${SKIPPED}\` test(s) skipped because no integration database was"
-              echo "> available. The confirmation and pass-minting cases — the only"
-              echo "> real-database coverage of the money path — were NOT exercised by"
-              echo "> this run. This is expected in CI and does not fail the build."
+              echo "> \`${SKIPPED}\` test(s) skipped because this job has no integration"
+              echo "> database. The confirmation and pass-minting cases — the only"
+              echo "> real-database coverage of the legacy money path — were NOT exercised"
+              echo "> by this run. This is expected in this job and does not fail the build."
+              echo ">"
+              echo "> The Event database and concurrency suites are NOT covered by this"
+              echo "> note: they run in the \`event-database\` job, where a skip or a"
+              echo "> failure fails the build."
               echo ">"
               echo "> To run them locally:"
               echo "> \`npm run test:db:up && npm run test:integration && npm run test:db:down\`"
@@ -166,3 +176,216 @@ jobs:
           else
             echo "All tests ran; nothing skipped." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # ---------------------------------------------------------------------------
+  # EVENT DATABASE AND CONCURRENCY SUITES — L0 step 7.
+  #
+  # WHY. The Event engine's guarantees are concurrency guarantees: 20 RSVPs
+  # against 10 seats must admit exactly 10, ten claims on the last position of
+  # a shift must admit exactly one. Those are proven only against a real
+  # database, and until this job they ran on one developer machine and nowhere
+  # else — every CI run skipped them.
+  #
+  # ISOLATED BY CONSTRUCTION. The database is the repository's own disposable
+  # container (`npm run test:db:up`, scripts/test-db.mjs): Postgres in Docker on
+  # the runner, schema built by replaying prisma/migrations and then asserted
+  # equal to schema.prisma. It is created by this job and destroyed with the
+  # runner. This job has no secrets and no Supabase credential; the only
+  # connection string in it is the container's fixed local one, which is
+  # committed in scripts/test-db.mjs and reaches nothing but 127.0.0.1.
+  #
+  # A SKIP IS A FAILURE HERE. Each suite is `describe(..., { skip: !url })`, so
+  # without TEST_DATABASE_URL it reports success having run nothing — and a
+  # skipped describe is not reliably counted in the `# skipped` total. So this
+  # job does not trust the absence of failures. For every suite it requires the
+  # run to have executed at least the known number of tests, all passing, none
+  # skipped, cancelled or todo, and it requires the named guarantees below to
+  # appear as passing tests.
+  # ---------------------------------------------------------------------------
+  event-database:
+    name: event database and concurrency suites
+    runs-on: ubuntu-latest
+
+    env:
+      # Same non-functional placeholders as `verify`, for `prisma generate`.
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/unused
+      DIRECT_URL: postgresql://ci:ci@127.0.0.1:5432/unused
+      # The disposable container's own URL, identical to TEST_URL in
+      # scripts/test-db.mjs. Local to the runner; not a secret.
+      TEST_DATABASE_URL: postgresql://postgres:daali@localhost:55432/daali_test
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Use Node 22.19.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Refuse to go further unless the test URL is the local container. This
+      # cannot be anything else today; the check is here so that it cannot
+      # quietly become something else later.
+      - name: Confirm the test database is local
+        shell: bash
+        run: |
+          case "$TEST_DATABASE_URL" in
+            postgresql://postgres:daali@localhost:55432/daali_test) echo "test database: localhost:55432/daali_test (disposable container)";;
+            *) echo "::error title=Unexpected test database::TEST_DATABASE_URL is not the disposable local container."; exit 1;;
+          esac
+          if printf '%s' "$TEST_DATABASE_URL$DATABASE_URL$DIRECT_URL" | grep -qiE 'supabase|pooler'; then
+            echo "::error title=Remote database in CI::A Supabase host appears in a database URL."; exit 1
+          fi
+
+      # The repository's own script: start the container, replay
+      # prisma/migrations, assert the result matches schema.prisma. Any failure
+      # exits non-zero and fails the job.
+      - name: Start the disposable database and replay migrations
+        run: npm run test:db:up
+
+      # A real query, not pg_isready, which can report ready while the server is
+      # still restarting after first initialisation.
+      - name: Wait for the database to answer a query
+        shell: bash
+        run: |
+          ok=0
+          for i in $(seq 1 30); do
+            if docker exec daali-test-db psql -U postgres -d daali_test -tAc 'select 1' >/dev/null 2>&1; then
+              ok=$((ok+1)); [ "$ok" -ge 3 ] && break
+            else
+              ok=0
+            fi
+            sleep 1
+          done
+          [ "$ok" -ge 3 ] || { echo "::error title=Database not ready::No three consecutive successful queries in 30 seconds."; exit 1; }
+          echo "migrations applied: $(docker exec daali-test-db psql -U postgres -d daali_test -tAc 'select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null')"
+          echo "event tables present: $(docker exec daali-test-db psql -U postgres -d daali_test -tAc "select count(*) from pg_tables where schemaname='public' and tablename in ('daali_events','daali_event_people','daali_command_executions','daali_registrations','daali_event_person_access_tokens','daali_signup_sheets','daali_signup_slots','daali_helper_signups','daali_helper_signup_positions','daali_signup_logs','daali_registration_logs','daali_notification_deliveries')") of 12"
+
+      # ONE SUITE AT A TIME, each in its own process, with the exact command its
+      # own header documents. They share one database, and the concurrency
+      # cases must contend only with themselves.
+      #
+      # `set -o pipefail` so a failing suite fails the step through `tee`.
+      # `--test-reporter=tap` so the summary lines the next step parses are in
+      # a fixed format regardless of the runner's terminal.
+      - name: RSVP capacity (0B)
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --test --test-reporter=tap \
+            src/db/capacity.integration.test.ts 2>&1 | tee event-db-capacity.txt
+
+      - name: Sign-up positions (0C)
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --test --test-reporter=tap \
+            src/db/signups.integration.test.ts 2>&1 | tee event-db-signups.txt
+
+      - name: Notifications (0D.0)
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --test --test-reporter=tap \
+            src/notifications/notification.integration.test.ts 2>&1 | tee event-db-notifications.txt
+
+      - name: Gate independence T1–T7
+        shell: bash
+        run: |
+          set -o pipefail
+          node --experimental-strip-types --experimental-test-module-mocks \
+            --import ./scripts/test-alias-only.mjs --test --test-reporter=tap \
+            src/lib/event-gate-independence.integration.test.ts 2>&1 | tee event-db-gates.txt
+
+      # THE COMPLETENESS GATE. Runs only if every suite above exited zero, and
+      # then refuses to accept that as proof: a suite that skipped itself also
+      # exits zero. Any shortfall here FAILS the job — never a warning.
+      - name: Require every Event database test to have run and passed
+        shell: bash
+        run: |
+          status=0
+          total_tests=0; total_pass=0; total_fail=0; total_skip=0
+
+          num() { grep -oE "^# $2 [0-9]+" "$1" | awk '{print $3}' | tail -1 || true; }
+
+          {
+            echo "### Event database and concurrency suites"
+            echo ""
+            echo "| suite | tests | pass | fail | skipped | cancelled | todo | required at least |"
+            echo "|---|---|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          check_suite() {
+            local label="$1" file="$2" min="$3"
+            if [ ! -s "$file" ]; then
+              echo "::error title=$label::No output file. The suite did not run."; status=1; return
+            fi
+            local t p f s c d
+            t=$(num "$file" tests); p=$(num "$file" pass); f=$(num "$file" fail)
+            s=$(num "$file" skipped); c=$(num "$file" cancelled); d=$(num "$file" todo)
+            echo "| $label | ${t:-?} | ${p:-?} | ${f:-?} | ${s:-?} | ${c:-?} | ${d:-?} | $min |" >> "$GITHUB_STEP_SUMMARY"
+            if [ -z "$t" ] || [ -z "$p" ] || [ -z "$f" ] || [ -z "$s" ] || [ -z "$c" ] || [ -z "$d" ]; then
+              echo "::error title=$label::Could not read the test summary. Completeness unknown, treated as failure."; status=1; return
+            fi
+            total_tests=$((total_tests+t)); total_pass=$((total_pass+p)); total_fail=$((total_fail+f)); total_skip=$((total_skip+s))
+            [ "$t" -ge "$min" ] || { echo "::error title=$label::Only $t test(s) ran; at least $min are required. A skipped suite looks like this."; status=1; }
+            [ "$p" -eq "$t" ]   || { echo "::error title=$label::$p of $t test(s) passed."; status=1; }
+            [ "$f" -eq 0 ]      || { echo "::error title=$label::$f test(s) failed."; status=1; }
+            [ "$s" -eq 0 ]      || { echo "::error title=$label::$s test(s) skipped. A skip is a failure in this job."; status=1; }
+            [ "$c" -eq 0 ]      || { echo "::error title=$label::$c test(s) cancelled."; status=1; }
+            [ "$d" -eq 0 ]      || { echo "::error title=$label::$d test(s) marked todo."; status=1; }
+            if grep -qE '# SKIP|# TODO' "$file"; then
+              echo "::error title=$label::A SKIP or TODO directive appears in the output."; status=1
+            fi
+          }
+
+          # Minimums are the number of tests each file holds today. Adding tests
+          # never needs a change here; removing or skipping one does.
+          check_suite "RSVP capacity (0B)"        event-db-capacity.txt       5
+          check_suite "Sign-up positions (0C)"    event-db-signups.txt        6
+          check_suite "Notifications (0D.0)"      event-db-notifications.txt  5
+          check_suite "Gate independence T1–T7"   event-db-gates.txt          7
+
+          # THE NAMED GUARANTEES. Each must appear as a passing test, by name.
+          require_ok() {
+            local file="$1" name="$2"
+            if grep -E '^[[:space:]]*ok [0-9]+ - ' "$file" | grep -qF -- "$name"; then
+              echo "- passed: $name" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- **MISSING OR NOT PASSING: $name**" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Required guarantee did not pass::$name"; status=1
+            fi
+          }
+          { echo ""; echo "Required guarantees:"; echo ""; } >> "$GITHUB_STEP_SUMMARY"
+          require_ok event-db-capacity.txt "20 concurrent RSVPs against 10 seats"
+          require_ok event-db-capacity.txt "10 concurrent parties of 3 against 10 seats"
+          require_ok event-db-capacity.txt "cancellation frees seats"
+          require_ok event-db-capacity.txt "one live registration per person"
+          require_ok event-db-signups.txt  "10 parallel claims on the FINAL available position (capacity 1)"
+          require_ok event-db-signups.txt  "8 parallel claims against a 3-person shift"
+          require_ok event-db-signups.txt  "4 parallel claims of 2 cases against a 6-case item"
+          require_ok event-db-signups.txt  "composite FK integrity"
+          require_ok event-db-signups.txt  "cancellation frees positions for reuse"
+          require_ok event-db-notifications.txt "A failed email must never roll back or invalidate the RSVP"
+
+          {
+            echo ""
+            echo "**Total: ${total_tests} tests, ${total_pass} passed, ${total_fail} failed, ${total_skip} skipped.**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "EVENT DATABASE SUITES: tests=${total_tests} pass=${total_pass} fail=${total_fail} skipped=${total_skip}"
+
+          if [ "$status" -ne 0 ]; then
+            echo "> **This job failed.** See the errors above." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: Remove the disposable database
+        if: always()
+        run: npm run test:db:down
