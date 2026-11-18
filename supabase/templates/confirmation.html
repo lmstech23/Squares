@@ -1,0 +1,9 @@
+<!-- Daali sign-up email (Supabase Confirm Signup template).
+     Supabase may send this or the Magic Link template to a new address, so both
+     carry the same link and code (Auth spec, "Email path"). -->
+<h2>Continue to Daali</h2>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&redirect_to={{ .RedirectTo }}">Continue to Daali</a>
+</p>
+<p>Or enter this code: <strong>{{ .Token }}</strong></p>
+<p>This link and code expire in 10 minutes. If you didn't ask for this, you can ignore this email.</p>

@@ -1,0 +1,10 @@
+<!-- Daali sign-in email (Supabase Magic Link template).
+     token_hash link to /auth/confirm, so it works on another device, plus the
+     same six-digit code as a fallback (Auth spec, "Email path"). Nothing
+     verifies on page load; /auth/confirm has a button. -->
+<h2>Continue to Daali</h2>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&redirect_to={{ .RedirectTo }}">Continue to Daali</a>
+</p>
+<p>Or enter this code: <strong>{{ .Token }}</strong></p>
+<p>This link and code expire in 10 minutes. If you didn't ask for this, you can ignore this email.</p>

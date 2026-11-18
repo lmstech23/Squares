@@ -1,0 +1,224 @@
+/* AppShell — UI System 1.0 "Minimal navigation": wordmark left, context
+ * optional, organizer identity right. No sidebar.
+ * Desktop bar 76px; 390 reference bar 64px with 20px side padding. */
+
+.header {
+  background: var(--daali-surface);
+  border-bottom: 1px solid var(--daali-line);
+}
+
+.bar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--daali-space-16);
+  height: 76px;
+  max-width: calc(var(--daali-content-max) + 2 * var(--daali-gutter));
+  margin: 0 auto;
+  padding: 0 var(--daali-gutter);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--daali-radius-control);
+  background: var(--daali-accent);
+  color: var(--daali-on-accent);
+  font-family: var(--daali-font-heading);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--daali-ink);
+  text-decoration: none;
+  font-family: var(--daali-font-heading);
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+a.wordmark:focus-visible {
+  outline: var(--daali-focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--daali-radius-control);
+}
+
+.crumb {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--daali-muted);
+  font-size: var(--daali-text-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main {
+  box-sizing: border-box;
+  max-width: calc(var(--daali-content-max) + 2 * var(--daali-gutter));
+  margin: 0 auto;
+  padding: var(--daali-space-64) var(--daali-gutter);
+}
+
+@media (max-width: 767px) {
+  .bar {
+    height: 64px;
+    padding: 0 20px;
+  }
+  .brand {
+    gap: 8px;
+  }
+  .mark {
+    width: 30px;
+    height: 30px;
+    font-size: 17px;
+  }
+  .wordmark {
+    gap: 8px;
+    font-size: 22px;
+  }
+  .crumb {
+    display: none;
+  }
+  .main {
+    padding: var(--daali-space-24) var(--daali-gutter) var(--daali-space-48);
+  }
+}
+
+/* ── avatar menu ─────────────────────────────────────────────────────────── */
+
+.menuWrap {
+  position: relative;
+  flex: none;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--daali-control-height);
+  padding: 0 var(--daali-space-8);
+  border: 0;
+  border-radius: var(--daali-radius-control);
+  background: transparent;
+  color: var(--daali-ink);
+  font-family: var(--daali-font-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trigger:focus-visible {
+  outline: var(--daali-focus-ring);
+  outline-offset: 0;
+}
+
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--daali-accent-tint);
+  color: var(--daali-accent-strong);
+  font-size: var(--daali-text-small);
+  font-weight: 600;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.name {
+  font-size: var(--daali-text-small);
+  color: var(--daali-ink);
+}
+
+.role {
+  font-size: 11px;
+  color: var(--daali-muted);
+}
+
+.chevron {
+  color: var(--daali-muted);
+}
+
+@media (max-width: 767px) {
+  .avatar {
+    width: 32px;
+    height: 32px;
+  }
+  .who,
+  .chevron {
+    display: none;
+  }
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  min-width: 200px;
+  margin: 0;
+  padding: var(--daali-space-8);
+  list-style: none;
+  background: var(--daali-surface);
+  border: 1px solid var(--daali-line);
+  border-radius: var(--daali-radius-input);
+  box-shadow: 0 8px 24px rgba(23, 33, 43, 0.08);
+}
+
+.item {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--daali-control-height);
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--daali-radius-control);
+  background: transparent;
+  color: var(--daali-ink);
+  font-family: var(--daali-font-body);
+  font-size: var(--daali-text-body);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--daali-sunken);
+}
+
+.item:focus-visible {
+  outline: var(--daali-focus-ring);
+  outline-offset: -2px;
+}

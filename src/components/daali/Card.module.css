@@ -1,0 +1,39 @@
+/* Card — UI System 1.0: surface, 1px line border, 18px radius, 24px padding
+ * (20px at the 390 reference). */
+
+.card {
+  box-sizing: border-box;
+  background: var(--daali-surface);
+  border: 1px solid var(--daali-line);
+  border-radius: var(--daali-radius-card);
+  padding: var(--daali-space-24);
+}
+
+@media (max-width: 767px) {
+  .card {
+    padding: 20px;
+  }
+}
+
+.title {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-h3);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--daali-ink);
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  font-size: var(--daali-text-small);
+  color: var(--daali-muted);
+}
+
+.body {
+  margin-top: var(--daali-space-24);
+}
+
+.body:first-child {
+  margin-top: 0;
+}

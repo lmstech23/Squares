@@ -1,41 +1,30 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
+import { finalizeOrganizerProfile } from "@/lib/finalize-organizer";
+import { resolveOrganizerState } from "@/lib/organizer-state";
+import { postAuthDestination } from "@/lib/post-auth-destination";
 
+// CREATES NOTHING IN `hosts`. It exchanges the code, runs finalize (the
+// organizer_profiles row, insert-or-nothing) and redirects through the
+// post-auth gate (post-auth-destination.ts): an allowlisted /host or /invite
+// `next`, else /setup while setup is incomplete, else today's default. A Host
+// is still created lazily by getHostOrNull the first time a legacy page needs
+// one (Auth + Onboarding spec, "Host creation guard").
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/host/boards";
 
   if (code) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user) {
-      const identifier =
-        data.user.email ?? data.user.phone ?? data.user.id;
-
-      try {
-        await prisma.host.upsert({
-          where: { supabaseUserId: data.user.id },
-          update: {
-            email: identifier,
-          },
-          create: {
-            supabaseUserId: data.user.id,
-            email: identifier,
-            name: data.user.user_metadata?.full_name ?? null,
-          },
-        });
-      } catch (e: any) {
-        // P2002 = unique constraint race — record already exists, safe to proceed
-        if (e?.code !== "P2002") throw e;
-      }
-
-      return NextResponse.redirect(`${origin}${next}`);
+      await finalizeOrganizerProfile(data.user);
+      const destination = postAuthDestination(await resolveOrganizerState(data.user), searchParams.get("next"));
+      return NextResponse.redirect(`${origin}${destination}`);
     }
   }
 
-  // Auth failed — redirect to login with error hint
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  // Auth failed — redirect to sign-in with error hint
+  return NextResponse.redirect(`${origin}/sign-in?error=auth`);
 }

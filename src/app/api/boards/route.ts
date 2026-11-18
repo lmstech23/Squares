@@ -8,6 +8,7 @@ import { parseZoned, endOfDayZoned } from "@/lib/zoned-time";
 import { validateEntryPricing } from "@/lib/entry-pricing";
 import { boardCreationGate } from "@/lib/board-creation-gate";
 import { generateSlug } from "@/lib/slug";
+import { isGameDayEnabled } from "@/lib/game-day-access";
 
 // ============================================================
 // PHASE 1 ADDITIONS:
@@ -150,6 +151,17 @@ export async function POST(request: Request) {
     const body: CreateBoardBody = await request.json();
 
     const boardType: BoardType = body.boardType === "fundraiser" ? "fundraiser" : "game";
+
+    // 3a. Game Day entitlement (L2, Auth spec "Game Day access"). Checked against
+    // the RESOLVED type, so a missing or unrecognised boardType - which the line
+    // above treats as "game" - is refused too. An account with no
+    // organizer_profiles row is not entitled. Nothing has been written yet.
+    if (boardType === "game" && !(await isGameDayEnabled(user.id))) {
+      return NextResponse.json(
+        { error: "Game Day isn't available on this account.", reason: "game_day_not_enabled" },
+        { status: 403 }
+      );
+    }
 
     if (!body.gameName?.trim()) {
       return NextResponse.json(

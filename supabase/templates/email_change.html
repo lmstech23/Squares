@@ -1,0 +1,11 @@
+<!-- Daali add-your-email message (Supabase Change Email Address template).
+     Sent when an existing account adds its first email at /setup. The same
+     token_hash link to /auth/confirm as the other templates, typed
+     email_change, and the same six-digit code (Auth spec, "Existing accounts
+     without an email"). Nothing verifies on page load. -->
+<h2>Confirm your email for Daali</h2>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email_change&redirect_to={{ .RedirectTo }}">Continue to Daali</a>
+</p>
+<p>Or enter this code: <strong>{{ .Token }}</strong></p>
+<p>This link and code expire in 10 minutes. If you didn't ask for this, you can ignore this email.</p>

@@ -1,0 +1,102 @@
+/* Stack, Text and Divider — the spacing and copy primitives that keep page
+ * code free of styling. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.gap8 { gap: var(--daali-space-8); }
+.gap16 { gap: var(--daali-space-16); }
+.gap24 { gap: var(--daali-space-24); }
+.gap32 { gap: var(--daali-space-32); }
+
+.text {
+  margin: 0;
+  font-size: var(--daali-text-body);
+  color: var(--daali-ink-soft);
+}
+
+.small {
+  font-size: var(--daali-text-small);
+}
+
+.muted {
+  color: var(--daali-muted);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--daali-muted);
+  font-size: var(--daali-text-small);
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--daali-line);
+}
+
+/* Page heading: an accent eyebrow over a Lora display line (Your Daali). */
+.pageHeading {
+  margin: 0 0 var(--daali-space-48);
+}
+
+.eyebrow {
+  margin: 0 0 var(--daali-space-8);
+  color: var(--daali-accent);
+  font-size: var(--daali-text-body);
+}
+
+.display {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-display);
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--daali-ink);
+}
+
+/* Section heading: Lora h2 and a muted line under it. */
+.sectionHeading {
+  margin: 0 0 var(--daali-space-24);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--daali-font-heading);
+  font-size: var(--daali-text-h2);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--daali-ink);
+}
+
+.sectionSubtitle {
+  margin: 4px 0 0;
+  font-size: var(--daali-text-small);
+  color: var(--daali-muted);
+}
+
+/* Organizer footer (Product Flow Spec, Global rules). */
+.footer {
+  margin: var(--daali-space-64) 0 0;
+  text-align: center;
+  font-size: var(--daali-text-small);
+  color: var(--daali-muted);
+}
+
+@media (max-width: 767px) {
+  .eyebrow {
+    font-size: var(--daali-text-small);
+  }
+  .pageHeading {
+    margin-bottom: var(--daali-space-32);
+  }
+  .footer {
+    margin-top: var(--daali-space-48);
+  }
+}

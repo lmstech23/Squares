@@ -56,6 +56,10 @@ mock.module("@/lib/prisma", {
   namedExports: {
     prisma: {
       host: { findUnique: async () => currentHost },
+      // S1.7 (L2): these bodies carry no boardType, which the route resolves to
+      // "game", so the account must hold the Game Day entitlement for them to
+      // test what they always tested. Refusals: board-creation-game-day.test.ts.
+      organizerProfile: { findUnique: async () => ({ legacyBoardsEnabled: true }) },
       // No slug collision, and no board awaiting payment.
       board: { findUnique: async () => null, findFirst: async () => null },
       $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),

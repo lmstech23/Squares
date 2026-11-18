@@ -1,0 +1,52 @@
+/* AuthFrame — the signed-out frame for account screens. The AppShell bar
+ * without an organizer, and one centred card. */
+
+.column {
+  box-sizing: border-box;
+  max-width: calc(440px + 2 * var(--daali-gutter));
+  margin: 0 auto;
+  padding: var(--daali-space-64) var(--daali-gutter);
+}
+
+.footer {
+  margin: var(--daali-space-24) 0 0;
+  text-align: center;
+  font-size: var(--daali-text-small);
+  color: var(--daali-muted);
+}
+
+.footer a,
+.footer button {
+  color: var(--daali-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.footer button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.footer a:hover,
+.footer button:hover {
+  color: var(--daali-accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footer a:focus-visible,
+.footer button:focus-visible {
+  outline: var(--daali-focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (max-width: 767px) {
+  .column {
+    padding: var(--daali-space-24) var(--daali-gutter) var(--daali-space-48);
+  }
+}

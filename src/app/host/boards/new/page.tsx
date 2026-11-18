@@ -1,5 +1,6 @@
 import { getHost } from "@/lib/auth";
 import { boardCreationGate } from "@/lib/board-creation-gate";
+import { isGameDayEnabled } from "@/lib/game-day-access";
 import { redirect } from "next/navigation";
 import NewBoardFlow from "./new-board-flow";
 import Link from "next/link";
@@ -26,7 +27,11 @@ export default async function NewBoardPage() {
         Set the game, price, and payout split. You can share the link
         immediately after.
       </p>
-      <NewBoardFlow isCashHost={host.paymentPreference === "cash"} />
+      {/* L2: Game Day is offered only to accounts with legacy_boards_enabled. */}
+      <NewBoardFlow
+        isCashHost={host.paymentPreference === "cash"}
+        gameDayEnabled={await isGameDayEnabled(host.supabaseUserId)}
+      />
     </div>
   );
 }

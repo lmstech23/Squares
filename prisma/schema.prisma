@@ -2126,3 +2126,41 @@ model DaaliMerchNotification {
   @@index([status, nextAttemptAt], map: "idx_daali_merch_notifications_claim")
   @@map("daali_merch_notifications")
 }
+
+/// One profile per Supabase auth user — Daali Slice 1 (Auth + Onboarding).
+///
+/// user_id is the Supabase auth user id, held as TEXT with NO foreign key into
+/// auth.users, matching hosts.supabase_user_id and public_themes.organizer_user_id
+/// (ruling, 2026-10-08). A profile does not require, and never creates, a hosts row.
+///
+/// CHECK (created_via IN ('SIGNUP', 'BACKFILL')) lives in SQL only.
+model OrganizerProfile {
+  userId              String   @id(map: "organizer_profiles_pkey") @map("user_id")
+  displayName         String?  @map("display_name")
+  avatarUrl           String?  @map("avatar_url")
+  legacyBoardsEnabled Boolean  @default(false) @map("legacy_boards_enabled")
+  createdVia          String   @map("created_via")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("organizer_profiles")
+}
+
+/// A single-use Game Day access link — Daali Slice 1, S1.7 (Auth spec, "Game
+/// Day access"). Only the SHA-256 of the random token is stored. Created by an
+/// administrator; redeeming it sets organizer_profiles.legacy_boards_enabled.
+/// User ids are Supabase auth user ids held as text with no foreign key,
+/// matching organizer_profiles.user_id. CHECKs in the migration: used_at and
+/// used_by_user_id are set together, and a link is never both used and revoked.
+model DaaliGameDayLink {
+  id              String    @id(map: "daali_game_day_links_pkey") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash       String    @unique(map: "daali_game_day_links_token_hash_key") @map("token_hash")
+  createdByUserId String    @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedByUserId    String?   @map("used_by_user_id")
+  usedAt          DateTime? @map("used_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  @@map("daali_game_day_links")
+}

@@ -1,0 +1,86 @@
+/*
+ * Daali UI System 1.0 — tokens. Daali Slice 1, S1.3 (D-S1-3).
+ *
+ * SCOPED, NOT GLOBAL. Every value is a custom property on `.root`, which only
+ * the (daali) route-group layout applies. Nothing here touches globals.css, the
+ * root layout or a legacy page; a component used outside that wrapper simply
+ * finds no tokens.
+ *
+ * Source: Daali.pdf, "UI system 1.0" and "1.0 extension" boards. The four named
+ * colours, spacing, radii and layout are the boards' labelled values. The
+ * supporting neutrals and status colours are not labelled on the boards; they
+ * are read from the boards' vector fills, exactly.
+ */
+
+.root {
+  /* Colour foundation (labelled) */
+  --daali-canvas: #f4f0e9;
+  --daali-surface: #fffefb;
+  --daali-ink: #17212b;
+  --daali-accent: #a84f35;
+
+  /* Supporting colours (read from the boards' fills) */
+  --daali-ink-soft: #34414a; /* body copy, chip text */
+  --daali-muted: #6f777a; /* subtitles, helper text, placeholders */
+  --daali-line: #ded8cf; /* card borders, dividers */
+  --daali-line-strong: #c8c0b5; /* input and secondary-button borders */
+  --daali-sunken: #f7f3ed; /* empty-state panel, type badge */
+  --daali-accent-strong: #863d29; /* primary hover, accent text on tint */
+  --daali-accent-tint: #f1ded4; /* avatar, icon wells */
+  --daali-accent-wash: #f5e9df; /* secondary hover */
+  --daali-live-bg: #e4efe8;
+  --daali-live-fg: #376b55;
+  --daali-draft-bg: #f7ecd8;
+  --daali-draft-fg: #986b28;
+  --daali-on-accent: #ffffff;
+
+  /* Spacing: tight, element, group, card, region, section */
+  --daali-space-8: 8px;
+  --daali-space-16: 16px;
+  --daali-space-24: 24px;
+  --daali-space-32: 32px;
+  --daali-space-48: 48px;
+  --daali-space-64: 64px;
+
+  /* Radii */
+  --daali-radius-control: 8px; /* small controls */
+  --daali-radius-input: 12px;
+  --daali-radius-card: 18px;
+  --daali-radius-panel: 24px; /* feature panels */
+  --daali-radius-pill: 999px;
+
+  /* Controls */
+  --daali-control-height: 48px;
+  --daali-focus-ring: 2px solid var(--daali-accent);
+
+  /* Layout: 1440 page, 88 gutters, 1264 content; 390 mobile, 24 gutters */
+  --daali-content-max: 1264px;
+  --daali-gutter: 88px;
+
+  /* Type. The families are set by next/font in the (daali) layout. */
+  --daali-font-heading: var(--daali-font-lora), Georgia, "Times New Roman", serif;
+  --daali-font-body: var(--daali-font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --daali-text-display: 48px; /* page question, e.g. "What are you organizing?" */
+  --daali-text-h1: 40px;
+  --daali-text-h2: 26px;
+  --daali-text-h3: 20px; /* card titles */
+  --daali-text-body: 15px;
+  --daali-text-small: 13px;
+  --daali-text-label: 12px;
+
+  min-height: 100vh;
+  background: var(--daali-canvas);
+  color: var(--daali-ink);
+  font-family: var(--daali-font-body);
+  font-size: var(--daali-text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (max-width: 767px) {
+  .root {
+    --daali-gutter: 24px;
+    --daali-text-display: 34px;
+    --daali-text-h1: 30px;
+  }
+}

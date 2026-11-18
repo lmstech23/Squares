@@ -1,0 +1,68 @@
+/* TextField — UI System 1.0 "Form fields": labels remain visible; helper text
+ * is optional and concise. Input 52px tall, 12px radius. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--daali-space-8);
+}
+
+.label {
+  font-size: var(--daali-text-small);
+  font-weight: 500;
+  color: var(--daali-ink);
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--daali-space-16);
+  border: 1px solid var(--daali-line-strong);
+  border-radius: var(--daali-radius-input);
+  background: var(--daali-surface);
+  color: var(--daali-ink);
+  font-family: var(--daali-font-body);
+  font-size: var(--daali-text-body);
+}
+
+/* 16px at mobile widths: iOS Safari zooms the page on focus for anything
+ * smaller. 15px, as drawn, above. */
+@media (max-width: 767px) {
+  .input {
+    font-size: 16px;
+  }
+}
+
+.input::placeholder {
+  color: var(--daali-muted);
+  opacity: 1;
+}
+
+.input:focus-visible {
+  outline: var(--daali-focus-ring);
+  outline-offset: 0;
+  border-color: var(--daali-accent);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.helper {
+  font-size: var(--daali-text-small);
+  color: var(--daali-muted);
+}
+
+/* No error colour exists on the boards. Errors use the accent family, and say
+ * what went wrong in words; colour is never the only signal. */
+.invalid .input {
+  border-color: var(--daali-accent);
+}
+
+.error {
+  font-size: var(--daali-text-small);
+  color: var(--daali-accent-strong);
+  font-weight: 500;
+}
