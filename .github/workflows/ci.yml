@@ -248,11 +248,13 @@ jobs:
       # prisma/migrations, assert the result matches schema.prisma. Any failure
       # exits non-zero and fails the job.
       - name: Start the disposable database and replay migrations
+        id: db
         run: npm run test:db:up
 
       # A real query, not pg_isready, which can report ready while the server is
       # still restarting after first initialisation.
       - name: Wait for the database to answer a query
+        id: ready
         shell: bash
         run: |
           ok=0
@@ -265,8 +267,16 @@ jobs:
             sleep 1
           done
           [ "$ok" -ge 3 ] || { echo "::error title=Database not ready::No three consecutive successful queries in 30 seconds."; exit 1; }
-          echo "migrations applied: $(docker exec daali-test-db psql -U postgres -d daali_test -tAc 'select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null')"
-          echo "event tables present: $(docker exec daali-test-db psql -U postgres -d daali_test -tAc "select count(*) from pg_tables where schemaname='public' and tablename in ('daali_events','daali_event_people','daali_command_executions','daali_registrations','daali_event_person_access_tokens','daali_signup_sheets','daali_signup_slots','daali_helper_signups','daali_helper_signup_positions','daali_signup_logs','daali_registration_logs','daali_notification_deliveries')") of 12"
+
+          # ASSERTED, NOT JUST PRINTED. Every migration folder must be applied,
+          # and all twelve Event tables must exist, before a suite runs.
+          expected=$(find prisma/migrations -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          applied=$(docker exec daali-test-db psql -U postgres -d daali_test -tAc 'select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null')
+          tables=$(docker exec daali-test-db psql -U postgres -d daali_test -tAc "select count(*) from pg_tables where schemaname='public' and tablename in ('daali_events','daali_event_people','daali_command_executions','daali_registrations','daali_event_person_access_tokens','daali_signup_sheets','daali_signup_slots','daali_helper_signups','daali_helper_signup_positions','daali_signup_logs','daali_registration_logs','daali_notification_deliveries')")
+          echo "migrations applied: ${applied} of ${expected}"
+          echo "event tables present: ${tables} of 12"
+          [ "$applied" = "$expected" ] || { echo "::error title=Migrations not fully applied::${applied} of ${expected} migrations applied in the test database."; exit 1; }
+          [ "$tables" = "12" ] || { echo "::error title=Event tables missing::${tables} of 12 Event tables present in the test database."; exit 1; }
 
       # ONE SUITE AT A TIME, each in its own process, with the exact command its
       # own header documents. They share one database, and the concurrency
@@ -275,7 +285,12 @@ jobs:
       # `set -o pipefail` so a failing suite fails the step through `tee`.
       # `--test-reporter=tap` so the summary lines the next step parses are in
       # a fixed format regardless of the runner's terminal.
+      #
+      # EVERY SUITE RUNS EVEN IF AN EARLIER ONE FAILED, as long as the database
+      # came up. A failure in capacity must not hide the state of sign-ups,
+      # notifications and the gates. Each failing step still fails the job.
       - name: RSVP capacity (0B)
+        if: ${{ !cancelled() && steps.db.outcome == 'success' && steps.ready.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
@@ -283,6 +298,7 @@ jobs:
             src/db/capacity.integration.test.ts 2>&1 | tee event-db-capacity.txt
 
       - name: Sign-up positions (0C)
+        if: ${{ !cancelled() && steps.db.outcome == 'success' && steps.ready.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
@@ -290,6 +306,7 @@ jobs:
             src/db/signups.integration.test.ts 2>&1 | tee event-db-signups.txt
 
       - name: Notifications (0D.0)
+        if: ${{ !cancelled() && steps.db.outcome == 'success' && steps.ready.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
@@ -297,6 +314,7 @@ jobs:
             src/notifications/notification.integration.test.ts 2>&1 | tee event-db-notifications.txt
 
       - name: Gate independence T1–T7
+        if: ${{ !cancelled() && steps.db.outcome == 'success' && steps.ready.outcome == 'success' }}
         shell: bash
         run: |
           set -o pipefail
@@ -304,10 +322,13 @@ jobs:
             --import ./scripts/test-alias-only.mjs --test --test-reporter=tap \
             src/lib/event-gate-independence.integration.test.ts 2>&1 | tee event-db-gates.txt
 
-      # THE COMPLETENESS GATE. Runs only if every suite above exited zero, and
-      # then refuses to accept that as proof: a suite that skipped itself also
-      # exits zero. Any shortfall here FAILS the job — never a warning.
+      # THE COMPLETENESS GATE. Runs whatever happened above, so the summary
+      # table is always written, and refuses to accept a zero exit as proof:
+      # a suite that skipped itself also exits zero. Any shortfall here FAILS
+      # the job — never a warning. A suite that did not run at all (for
+      # example because the database never came up) is reported as such.
       - name: Require every Event database test to have run and passed
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           status=0
@@ -354,9 +375,11 @@ jobs:
           check_suite "Gate independence T1–T7"   event-db-gates.txt          7
 
           # THE NAMED GUARANTEES. Each must appear as a passing test, by name.
+          # `ok N - name # SKIP reason` is also an "ok" line, so skipped and
+          # todo lines are removed first: this check stands on its own.
           require_ok() {
             local file="$1" name="$2"
-            if grep -E '^[[:space:]]*ok [0-9]+ - ' "$file" | grep -qF -- "$name"; then
+            if [ -s "$file" ] && grep -E '^[[:space:]]*ok [0-9]+ - ' "$file" | grep -vE '# (SKIP|TODO)' | grep -qF -- "$name"; then
               echo "- passed: $name" >> "$GITHUB_STEP_SUMMARY"
             else
               echo "- **MISSING OR NOT PASSING: $name**" >> "$GITHUB_STEP_SUMMARY"
